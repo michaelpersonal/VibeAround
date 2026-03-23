@@ -56,6 +56,6 @@ fn chat_id_of_notification(notif: &ChannelNotification) -> &str {
         ChannelNotification::AgentToolResult { chat_id, .. } => chat_id,
         ChannelNotification::AgentEnd { chat_id, .. } => chat_id,
         ChannelNotification::AgentError { chat_id, .. } => chat_id,
-        ChannelNotification::SendText { chat_id, .. } => chat_id,
+        ChannelNotification::SendSystemText { chat_id, .. } => chat_id,
     }
 }

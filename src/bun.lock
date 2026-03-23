@@ -12,31 +12,6 @@
         "@tauri-apps/cli": "^2.10.0",
       },
     },
-    "desktop-tray": {
-      "name": "@vibearound/desktop-tray",
-      "version": "0.0.1",
-      "dependencies": {
-        "@tauri-apps/api": "^2.10.0",
-        "class-variance-authority": "^0.7.1",
-        "clsx": "^2.1.1",
-        "lucide-react": "^0.575.0",
-        "radix-ui": "^1.4.3",
-        "react": "^19.0.0",
-        "react-dom": "^19.0.0",
-        "tailwind-merge": "^3.5.0",
-      },
-      "devDependencies": {
-        "@tailwindcss/vite": "^4.0.0",
-        "@types/react": "^19.0.0",
-        "@types/react-dom": "^19.0.0",
-        "@vitejs/plugin-react": "^4.0.0",
-        "shadcn": "^3.8.5",
-        "tailwindcss": "^4.0.0",
-        "tw-animate-css": "^1.4.0",
-        "typescript": "~5.8.0",
-        "vite": "^6.0.0",
-      },
-    },
     "desktop-ui": {
       "name": "@vibearound/desktop-ui",
       "version": "0.0.1",
@@ -45,6 +20,7 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "lucide-react": "^0.575.0",
+        "qrcode.react": "^4.2.0",
         "radix-ui": "^1.4.3",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -549,8 +525,6 @@
     "@types/validate-npm-package-name": ["@types/validate-npm-package-name@4.0.2", "https://registry.npmmirror.com/@types/validate-npm-package-name/-/validate-npm-package-name-4.0.2.tgz", {}, "sha512-lrpDziQipxCEeK5kWxvljWYhUvOiB2A9izZd9B2AFarYAkqZshb4lPbRs7zKEic6eGtH8V/2qJW+dPp9OtF6bw=="],
 
     "@ungap/structured-clone": ["@ungap/structured-clone@1.3.0", "https://registry.npmmirror.com/@ungap/structured-clone/-/structured-clone-1.3.0.tgz", {}, "sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g=="],
-
-    "@vibearound/desktop-tray": ["@vibearound/desktop-tray@workspace:desktop-tray"],
 
     "@vibearound/desktop-ui": ["@vibearound/desktop-ui@workspace:desktop-ui"],
 
@@ -1159,6 +1133,8 @@
     "property-information": ["property-information@7.1.0", "https://registry.npmmirror.com/property-information/-/property-information-7.1.0.tgz", {}, "sha512-TwEZ+X+yCJmYfL7TPUOcvBZ4QfoT5YenQiJuX//0th53DE6w0xxLEtfK3iyryQFddXuvkIk51EEgrJQ0WJkOmQ=="],
 
     "proxy-addr": ["proxy-addr@2.0.7", "https://registry.npmmirror.com/proxy-addr/-/proxy-addr-2.0.7.tgz", { "dependencies": { "forwarded": "0.2.0", "ipaddr.js": "1.9.1" } }, "sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg=="],
+
+    "qrcode.react": ["qrcode.react@4.2.0", "https://registry.npmmirror.com/qrcode.react/-/qrcode.react-4.2.0.tgz", { "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA=="],
 
     "qs": ["qs@6.15.0", "https://registry.npmmirror.com/qs/-/qs-6.15.0.tgz", { "dependencies": { "side-channel": "^1.1.0" } }, "sha512-mAZTtNCeetKMH+pSjrb76NAM8V9a05I9aBZOHztWy/UqcJdQYNsf59vrRKWnojAT9Y+GbIvoTBC++CPHqpDBhQ=="],
 

@@ -193,7 +193,7 @@ pub enum ChannelNotification {
     AgentToolResult { channel_kind: ChannelKind, chat_id: ChatId, tool: String, output: String },
     AgentEnd { channel_kind: ChannelKind, chat_id: ChatId },
     AgentError { channel_kind: ChannelKind, chat_id: ChatId, error: String },
-    SendText { channel_kind: ChannelKind, chat_id: ChatId, text: String, reply_to: Option<MessageId> },
+    SendSystemText { channel_kind: ChannelKind, chat_id: ChatId, text: String, reply_to: Option<MessageId> },
 }
 
 impl ChannelNotification {
@@ -231,8 +231,8 @@ impl ChannelNotification {
                 "jsonrpc": "2.0", "method": "agent_error",
                 "params": { "channelId": Self::plugin_channel_id(channel_kind, chat_id), "error": error }
             }),
-            Self::SendText { channel_kind, chat_id, text, reply_to } => serde_json::json!({
-                "jsonrpc": "2.0", "method": "send_text",
+            Self::SendSystemText { channel_kind, chat_id, text, reply_to } => serde_json::json!({
+                "jsonrpc": "2.0", "method": "send_system_text",
                 "params": { "channelId": Self::plugin_channel_id(channel_kind, chat_id), "text": text, "replyTo": reply_to }
             }),
         }
