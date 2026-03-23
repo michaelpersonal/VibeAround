@@ -81,10 +81,19 @@ impl AgentManager {
                 message,
             } => {
                 let verbose = config::ensure_loaded().channel_verbose(&channel_kind);
+                let session_cli_kind = self.get_session_cli_kind(&channel_kind, &chat_id).await;
+                let requested_cli_kind = message.cli_kind.clone();
+
+                if let (Some(requested), Some(current)) = (&requested_cli_kind, &session_cli_kind) {
+                    if requested != current {
+                        self.kill_chat_agents(&channel_kind, &chat_id).await;
+                    }
+                }
+
                 self.dispatch(
                     message,
                     verbose,
-                    self.get_session_cli_kind(&channel_kind, &chat_id).await,
+                    requested_cli_kind.or(session_cli_kind),
                     self.get_session_profile(&channel_kind, &chat_id).await,
                 );
             }
@@ -177,17 +186,16 @@ impl AgentManager {
         let message_id = msg.message_id.clone();
 
         if let Some(session_id) = startup_session_id {
-            self.session_hub()
-                .agent_session_id_ready(AgentReady {
-                    channel_kind: channel_kind.clone(),
-                    chat_id: chat_id.clone(),
-                    message_id: message_id.clone(),
-                    session_id: String::new(),
-                    cli_kind: cli_kind_owned.clone(),
-                    cli_session_id: session_id,
-                    profile: profile_owned.clone(),
-                })
-                .await;
+            self.notify_session_ready(
+                &key,
+                &channel_kind,
+                &chat_id,
+                &message_id,
+                &cli_kind_owned,
+                &profile_owned,
+                session_id,
+            )
+            .await;
         }
 
         self.session_hub()
@@ -205,36 +213,18 @@ impl AgentManager {
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    if let AgentEvent::TurnComplete {
-                        session_id: Some(real_session_id),
-                        ..
-                    } = &event
-                    {
-                        let should_notify_ready = if let Some(mut entry) = self.agents.get_mut(&key_clone)
-                        {
-                            if entry.cli_session_id.is_none() {
-                                entry.cli_session_id = Some(real_session_id.clone());
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-
-                        if should_notify_ready {
-                            self.session_hub()
-                                .agent_session_id_ready(AgentReady {
-                                    channel_kind: channel_kind.clone(),
-                                    chat_id: chat_id.clone(),
-                                    message_id: message_id.clone(),
-                                    session_id: String::new(),
-                                    cli_kind: cli_kind_owned.clone(),
-                                    cli_session_id: real_session_id.clone(),
-                                    profile: profile_owned.clone(),
-                                })
-                                .await;
-                        }
+                    if let AgentEvent::SessionReady { session_id } = &event {
+                        self.notify_session_ready(
+                            &key_clone,
+                            &channel_kind,
+                            &chat_id,
+                            &message_id,
+                            &cli_kind_owned,
+                            &profile_owned,
+                            session_id.clone(),
+                        )
+                        .await;
+                        continue;
                     }
 
                     let reply_event = match &event {
@@ -327,6 +317,45 @@ impl AgentManager {
         }
 
         eprintln!("{} agent turn complete", pfx);
+    }
+
+    async fn notify_session_ready(
+        &self,
+        key: &str,
+        channel_kind: &str,
+        chat_id: &str,
+        message_id: &str,
+        cli_kind: &str,
+        profile: &str,
+        cli_session_id: String,
+    ) {
+        let should_notify_ready = if let Some(mut entry) = self.agents.get_mut(key) {
+            if entry.cli_session_id.as_deref() == Some(cli_session_id.as_str()) {
+                false
+            } else if entry.cli_session_id.is_none() {
+                entry.cli_session_id = Some(cli_session_id.clone());
+                true
+            } else {
+                entry.cli_session_id = Some(cli_session_id.clone());
+                false
+            }
+        } else {
+            false
+        };
+
+        if should_notify_ready {
+            self.session_hub()
+                .agent_session_id_ready(AgentReady {
+                    channel_kind: channel_kind.to_string(),
+                    chat_id: chat_id.to_string(),
+                    message_id: message_id.to_string(),
+                    session_id: String::new(),
+                    cli_kind: cli_kind.to_string(),
+                    cli_session_id,
+                    profile: profile.to_string(),
+                })
+                .await;
+        }
     }
 
     async fn ensure_agent(

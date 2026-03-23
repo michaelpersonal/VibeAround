@@ -76,6 +76,7 @@ pub enum AgentEvent {
     Text(String),
     Thinking(String),
     Progress(String),
+    SessionReady { session_id: String },
     ToolUse { name: String, id: String, input: Option<String> },
     ToolResult { id: String, output: Option<String>, is_error: bool },
     TurnComplete {
@@ -320,7 +321,21 @@ async fn acp_session_loop(
     };
     let _ = ready_tx.send(Ok(startup_session_id));
 
-    let mut real_cli_session_id: Option<String> = None;
+    if let Some(mut session_id_rx) = claude_real_session_id_rx.take() {
+        let event_tx = event_tx.clone();
+        tokio::task::spawn_local(async move {
+            let mut published_session_id: Option<String> = None;
+            while let Some(discovered_session_id) = session_id_rx.recv().await {
+                if published_session_id.as_deref() == Some(discovered_session_id.as_str()) {
+                    continue;
+                }
+                published_session_id = Some(discovered_session_id.clone());
+                let _ = event_tx.send(AgentEvent::SessionReady {
+                    session_id: discovered_session_id,
+                });
+            }
+        });
+    }
 
     loop {
         let cmd = match cmd_rx.recv().await {
@@ -336,15 +351,10 @@ async fn acp_session_loop(
                         vec![text_content],
                     ))
                     .await;
-                if let Some(session_id_rx) = claude_real_session_id_rx.as_mut() {
-                    while let Ok(discovered_session_id) = session_id_rx.try_recv() {
-                        real_cli_session_id = Some(discovered_session_id);
-                    }
-                }
                 match result {
                     Ok(_) => {
                         let _ = event_tx.send(AgentEvent::TurnComplete {
-                            session_id: real_cli_session_id.clone(),
+                            session_id: None,
                             cost_usd: None,
                         });
                         let _ = done_tx.send(Ok(()));

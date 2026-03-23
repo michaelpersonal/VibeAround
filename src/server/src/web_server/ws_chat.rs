@@ -90,6 +90,7 @@ fn client_message_to_channel_json(chat_id: &str, text: &str) -> Option<serde_jso
                         .and_then(|x| x.as_str())
                         .map(ToOwned::to_owned)
                         .unwrap_or_else(|| Uuid::new_v4().to_string());
+                    let agent = v.get("agent").and_then(|x| x.as_str()).map(str::trim).filter(|x| !x.is_empty());
                     Some(serde_json::json!({
                         "jsonrpc": "2.0",
                         "method": "on_message",
@@ -97,6 +98,7 @@ fn client_message_to_channel_json(chat_id: &str, text: &str) -> Option<serde_jso
                             "channelId": format!("web:{}", chat_id),
                             "messageId": message_id,
                             "text": text,
+                            "agent": agent,
                             "sender": { "id": "web-user" }
                         }
                     }))
@@ -126,17 +128,23 @@ fn client_message_to_channel_json(chat_id: &str, text: &str) -> Option<serde_jso
 
 fn notification_to_client_json(notif: ChannelNotification) -> serde_json::Value {
     match notif {
-        ChannelNotification::AgentStart { .. } => serde_json::json!({ "type": "start" }),
-        ChannelNotification::AgentThinking { text, .. } => serde_json::json!({ "progress": text }),
-        ChannelNotification::AgentToken { delta, .. } => serde_json::json!({ "text": delta }),
-        ChannelNotification::AgentToolUse { tool, .. } => {
-            serde_json::json!({ "progress": format!("Using tool: {}...", tool) })
+        ChannelNotification::AgentStart { .. } => serde_json::json!({ "kind": "start" }),
+        ChannelNotification::AgentThinking { text, .. } => {
+            serde_json::json!({ "kind": "thinking", "text": text })
         }
-        ChannelNotification::AgentToolResult { .. } => serde_json::json!({}),
-        ChannelNotification::AgentEnd { .. } => serde_json::json!({ "done": true }),
-        ChannelNotification::AgentError { error, .. } => serde_json::json!({ "error": error }),
-        ChannelNotification::SendText { text, .. } => {
-            serde_json::json!({ "type": "system_text", "text": text, "done": true })
+        ChannelNotification::AgentToken { delta, .. } => {
+            serde_json::json!({ "kind": "token", "delta": delta })
         }
+        ChannelNotification::AgentToolUse { tool, input, .. } => {
+            serde_json::json!({ "kind": "tool_use", "tool": tool, "input": input })
+        }
+        ChannelNotification::AgentToolResult { tool, output, .. } => {
+            serde_json::json!({ "kind": "tool_result", "tool": tool, "output": output })
+        }
+        ChannelNotification::AgentEnd { .. } => serde_json::json!({ "kind": "turn_complete" }),
+        ChannelNotification::AgentError { error, .. } => {
+            serde_json::json!({ "kind": "error", "error": error })
+        }
+        ChannelNotification::SendText { text, .. } => serde_json::json!({ "kind": "text", "text": text }),
     }
 }

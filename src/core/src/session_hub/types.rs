@@ -36,6 +36,7 @@ pub struct InboundMessage {
     pub sender_id: String,
     pub attachments: Vec<Attachment>,
     pub parent_id: Option<String>,
+    pub cli_kind: Option<String>,
 }
 
 /// Attachment metadata (platform-agnostic).

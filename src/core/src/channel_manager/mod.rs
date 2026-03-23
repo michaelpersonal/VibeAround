@@ -456,6 +456,7 @@ fn parse_on_message(params: &serde_json::Value, channel_name: &str) -> Option<In
         .unwrap_or("")
         .to_string();
     let reply_to = params.get("replyTo").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let cli_kind = params.get("agent").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     if text.is_empty() {
         return None;
@@ -474,6 +475,7 @@ fn parse_on_message(params: &serde_json::Value, channel_name: &str) -> Option<In
         sender_id,
         attachments: vec![],
         parent_id: reply_to,
+        cli_kind,
     })
 }
 
@@ -505,6 +507,7 @@ fn parse_on_callback(params: &serde_json::Value, channel_name: &str) -> Option<I
         sender_id,
         attachments: vec![],
         parent_id: None,
+        cli_kind: None,
     })
 }
 

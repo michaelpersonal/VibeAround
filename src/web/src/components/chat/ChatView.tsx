@@ -26,9 +26,10 @@ function capitalize(s: string): string {
 }
 
 export type ChatMessage = {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant";
   content: string;
   progress?: string;
+  mode?: "standalone" | "stream";
 };
 
 export function ChatView() {
@@ -39,13 +40,7 @@ export function ChatView() {
 
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("claude");
-  const [activeAgent, setActiveAgent] = useState<string>("claude");
   const wsRef = useRef<WebSocket | null>(null);
-  const pendingAgentSwitchRef = useRef<{
-    target: string;
-    resolve: () => void;
-    reject: (error: Error) => void;
-  } | null>(null);
 
   const toolType = agentIdToToolType(selectedAgent);
   const agentLabel = capitalize(selectedAgent);
@@ -58,10 +53,6 @@ export function ChatView() {
     ws.onclose = () => {
       setConnected(false);
       setStreaming(false);
-      if (pendingAgentSwitchRef.current) {
-        pendingAgentSwitchRef.current.reject(new Error("Connection closed during agent switch."));
-        pendingAgentSwitchRef.current = null;
-      }
     };
     ws.onerror = () => setConnected(false);
 
@@ -73,7 +64,7 @@ export function ChatView() {
       try {
         j = JSON.parse(s);
       } catch {
-        appendToAssistant(s);
+        appendToStreamAssistant(s);
         return;
       }
 
@@ -81,119 +72,121 @@ export function ChatView() {
         setAgents(j.agents as AgentInfo[]);
         if (typeof j.default_agent === "string") {
           setSelectedAgent(j.default_agent as string);
-          setActiveAgent(j.default_agent as string);
         }
         return;
       }
 
-      if (j.type === "agent_switched" && typeof j.agent === "string") {
-        const agent = j.agent as string;
-        setActiveAgent(agent);
-        if (pendingAgentSwitchRef.current?.target === agent) {
-          pendingAgentSwitchRef.current.resolve();
-          pendingAgentSwitchRef.current = null;
-        }
+      if (j.kind === "start") {
         return;
       }
 
-      if (j.type === "system_text" && typeof j.text === "string") {
-        const text = j.text as string;
-        const switchedMatch = /^Switched agent to\s+(.+?)\.?$/i.exec(text.trim());
-        if (switchedMatch) {
-          const switchedAgent = switchedMatch[1].trim().toLowerCase();
-          setActiveAgent(switchedAgent);
-          if (pendingAgentSwitchRef.current?.target === switchedAgent) {
-            pendingAgentSwitchRef.current.resolve();
-            pendingAgentSwitchRef.current = null;
-          }
-          return;
-        }
-
-        if (pendingAgentSwitchRef.current && /^Unknown agent:|^Agent is disabled:/i.test(text.trim())) {
-          pendingAgentSwitchRef.current.reject(new Error(text));
-          pendingAgentSwitchRef.current = null;
-          setStreaming(false);
-          setMessages((prev) => {
-            const next = [...prev];
-            const last = next[next.length - 1];
-            if (last?.role === "assistant" && last.content === "") {
-              next.pop();
-            }
-            return next;
-          });
-          return;
-        }
-
-        setMessages((prev) => [...prev, { role: "system", content: text }]);
+      if (j.kind === "turn_complete") {
+        clearStreamProgress();
         setStreaming(false);
         return;
       }
 
-      if (j.done === true) {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.progress) {
-            const next = [...prev];
-            next[next.length - 1] = { ...last, progress: undefined };
-            return next;
-          }
-          return prev;
-        });
+      if (j.kind === "error" && typeof j.error === "string") {
+        appendErrorToStream(j.error as string);
         setStreaming(false);
         return;
       }
 
-      if (typeof j.error === "string") {
-        if (pendingAgentSwitchRef.current) {
-          pendingAgentSwitchRef.current.reject(new Error(j.error as string));
-          pendingAgentSwitchRef.current = null;
-        }
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant") {
-            const next = [...prev];
-            next[next.length - 1] = {
-              ...last,
-              content: last.content + (last.content ? "\n\n" : "") + `Error: ${j.error}`,
-              progress: undefined,
-            };
-            return next;
-          }
-          return [...prev, { role: "assistant", content: `Error: ${j.error}` }];
-        });
-        setStreaming(false);
+      if (j.kind === "thinking" && typeof j.text === "string") {
+        setStreamProgress(j.text as string);
         return;
       }
 
-      if (typeof j.progress === "string") {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant") {
-            const next = [...prev];
-            next[next.length - 1] = { ...last, progress: j.progress as string };
-            return next;
-          }
-          return prev;
-        });
+      if (j.kind === "tool_use" && typeof j.tool === "string") {
+        setStreamProgress(`Using tool: ${j.tool}...`);
+        return;
+      }
+
+      if (j.kind === "tool_result") {
+        clearStreamProgress();
+        return;
+      }
+
+      if (j.kind === "text" && typeof j.text === "string") {
+        appendStandaloneAssistant(j.text as string);
+        return;
+      }
+
+      if (j.kind === "token" && typeof j.delta === "string") {
+        appendToStreamAssistant(j.delta as string);
         return;
       }
 
       if (typeof j.text === "string") {
-        appendToAssistant(j.text as string);
+        appendToStreamAssistant(j.text as string);
         return;
       }
     };
 
-    function appendToAssistant(text: string) {
+    function appendStandaloneAssistant(text: string) {
       if (!text) return;
       setMessages((prev) => {
-        if (prev.length === 0) return [{ role: "assistant", content: text }];
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.role === "assistant" && last.mode === "stream" && last.content === "" && !last.progress) {
+          next.pop();
+        }
+        next.push({ role: "assistant", content: text, mode: "standalone" });
+        return next;
+      });
+    }
+
+    function appendToStreamAssistant(text: string) {
+      if (!text) return;
+      setMessages((prev) => {
+        if (prev.length === 0) return [{ role: "assistant", content: text, mode: "stream" }];
         const last = prev[prev.length - 1];
-        if (last.role !== "assistant") {
-          return [...prev, { role: "assistant", content: text }];
+        if (last.role !== "assistant" || last.mode !== "stream") {
+          return [...prev, { role: "assistant", content: text, mode: "stream" }];
         }
         const next = [...prev];
-        next[next.length - 1] = { ...last, content: last.content + text, progress: undefined };
+        next[next.length - 1] = { ...last, content: last.content + text, progress: undefined, mode: "stream" };
+        return next;
+      });
+    }
+
+    function setStreamProgress(progress: string) {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || last.role !== "assistant" || last.mode !== "stream") {
+          return [...prev, { role: "assistant", content: "", progress, mode: "stream" }];
+        }
+        const next = [...prev];
+        next[next.length - 1] = { ...last, progress, mode: "stream" };
+        return next;
+      });
+    }
+
+    function clearStreamProgress() {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || last.role !== "assistant" || last.mode !== "stream" || !last.progress) {
+          return prev;
+        }
+        const next = [...prev];
+        next[next.length - 1] = { ...last, progress: undefined, mode: "stream" };
+        return next;
+      });
+    }
+
+    function appendErrorToStream(error: string) {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || last.role !== "assistant" || last.mode !== "stream") {
+          return [...prev, { role: "assistant", content: `Error: ${error}`, mode: "stream" }];
+        }
+        const next = [...prev];
+        next[next.length - 1] = {
+          ...last,
+          content: last.content + (last.content ? "\n\n" : "") + `Error: ${error}`,
+          progress: undefined,
+          mode: "stream",
+        };
         return next;
       });
     }
@@ -204,23 +197,6 @@ export function ChatView() {
     };
   }, []);
 
-  const switchAgentIfNeeded = useCallback(async () => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      throw new Error("WebSocket is not connected.");
-    }
-    if (selectedAgent === activeAgent) return;
-
-    if (pendingAgentSwitchRef.current) {
-      throw new Error("Agent switch already in progress.");
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      pendingAgentSwitchRef.current = { target: selectedAgent, resolve, reject };
-      ws.send(JSON.stringify({ type: "message", text: `/agent ${selectedAgent}` }));
-    });
-  }, [activeAgent, selectedAgent]);
-
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -229,31 +205,12 @@ export function ChatView() {
     setMessages((prev) => [
       ...prev,
       { role: "user", content: text },
-      { role: "assistant", content: "" },
+      { role: "assistant", content: "", mode: "stream" },
     ]);
     setStreaming(true);
 
-    try {
-      await switchAgentIfNeeded();
-      wsRef.current.send(JSON.stringify({ type: "message", text }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to switch agent.";
-      setMessages((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
-        if (last?.role === "assistant") {
-          next[next.length - 1] = {
-            ...last,
-            content: last.content + (last.content ? "\n\n" : "") + `Error: ${message}`,
-            progress: undefined,
-          };
-          return next;
-        }
-        return [...prev, { role: "assistant", content: `Error: ${message}` }];
-      });
-      setStreaming(false);
-    }
-  }, [input, switchAgentIfNeeded]);
+    wsRef.current.send(JSON.stringify({ type: "message", text, agent: selectedAgent }));
+  }, [input, selectedAgent]);
 
   const handleAgentChange = useCallback((agentId: string) => {
     setSelectedAgent(agentId);
@@ -275,15 +232,15 @@ export function ChatView() {
                   className={
                     msg.role === "user"
                       ? "rounded-lg bg-primary/15 px-4 py-3 text-foreground"
-                      : msg.role === "system"
-                        ? "rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-muted-foreground"
+                      : msg.mode === "standalone"
+                        ? "rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-muted-foreground"
                         : "rounded-lg bg-muted/50 px-4 py-3 text-foreground"
                   }
                 >
                   {msg.role === "user" ? (
                     <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                  ) : msg.role === "system" ? (
-                    <p className="whitespace-pre-wrap text-xs font-mono leading-5">{msg.content}</p>
+                  ) : msg.mode === "standalone" ? (
+                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
                   ) : (
                     <>
                       <MessageResponse

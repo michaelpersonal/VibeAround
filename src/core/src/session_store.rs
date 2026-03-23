@@ -294,6 +294,7 @@ fn agent_event_to_parts(event: &AgentEvent) -> (&'static str, Option<String>, Op
             Some(serde_json::json!({ "session_id": session_id, "cost_usd": cost_usd })),
         ),
         AgentEvent::Error(e) => ("error", Some(e.clone()), None),
+        AgentEvent::SessionReady { session_id } => ("session_ready", Some(session_id.clone()), None),
     }
 }
 
