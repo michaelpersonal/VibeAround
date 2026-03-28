@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
-
 use crate::acp::routing::ChannelKind;
 use crate::config;
 use crate::plugins::DiscoveredPlugin;
@@ -30,14 +28,4 @@ impl ChannelPluginManifest {
             raw_config,
         })
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum PluginHostHandshake {
-    Initialize {
-        channel_kind: ChannelKind,
-        host_version: String,
-        config: serde_json::Value,
-    },
 }
