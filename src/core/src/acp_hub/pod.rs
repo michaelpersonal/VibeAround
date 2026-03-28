@@ -66,6 +66,9 @@ pub struct ACPPod {
     // Prompt queue — serialize concurrent prompts on the same route
     in_flight: Mutex<bool>,
     pending: Mutex<VecDeque<Arc<Notify>>>,
+    /// Cached available commands from the agent's `available_commands_update` notification.
+    /// Updated dynamically as the agent reports its command set.
+    agent_commands: Mutex<serde_json::Value>,
 }
 
 impl ACPPod {
@@ -84,6 +87,7 @@ impl ACPPod {
             event_tx,
             in_flight: Mutex::new(false),
             pending: Mutex::new(VecDeque::new()),
+            agent_commands: Mutex::new(serde_json::Value::Array(vec![])),
         }
     }
 
@@ -211,6 +215,16 @@ impl ACPPod {
     pub async fn reset_session(&self) {
         *self.session_id.lock().await = None;
         self.emit_snapshot().await;
+    }
+
+    /// Update cached agent commands (called when `available_commands_update` arrives).
+    pub async fn update_agent_commands(&self, commands: serde_json::Value) {
+        *self.agent_commands.lock().await = commands;
+    }
+
+    /// Get the cached list of available agent commands.
+    pub async fn list_agent_commands(&self) -> serde_json::Value {
+        self.agent_commands.lock().await.clone()
     }
 
     /// Get a serializable snapshot of pod state.

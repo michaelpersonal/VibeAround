@@ -98,6 +98,21 @@ impl ACPHub {
         Some(pod.snapshot().await)
     }
 
+    /// Get cached available agent commands for a route.
+    pub async fn list_agent_commands(&self, route: &RouteKey) -> serde_json::Value {
+        match self.get_pod(route) {
+            Some(pod) => pod.list_agent_commands().await,
+            None => serde_json::Value::Array(vec![]),
+        }
+    }
+
+    /// Update cached agent commands for a route (called on available_commands_update).
+    pub async fn list_agent_commands_update(&self, route: &RouteKey, commands: serde_json::Value) {
+        if let Some(pod) = self.get_pod(route) {
+            pod.update_agent_commands(commands).await;
+        }
+    }
+
     /// Shutdown all routes.
     pub async fn shutdown_all(&self) {
         let routes: Vec<RouteKey> = self.pods.iter().map(|e| e.key().clone()).collect();

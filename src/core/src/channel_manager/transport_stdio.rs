@@ -450,4 +450,31 @@ impl acp::Agent for PluginAgentHandler {
         }
         Ok(())
     }
+
+    async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
+        let method = args.method.to_string();
+        let params: serde_json::Value = serde_json::from_str(args.params.get())
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+        match method.as_str() {
+            "channel/list_agent_commands" => {
+                let chat_id = params
+                    .get("chatId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let route = RouteKey::new(&self.channel_kind, chat_id);
+                let commands = self.acp_hub.list_agent_commands(&route).await;
+                let raw = serde_json::value::RawValue::from_string(
+                    serde_json::to_string(&serde_json::json!({ "commands": commands }))
+                        .unwrap_or_default(),
+                )
+                .map_err(|e| acp::Error::new(-32603, format!("serialize: {}", e)))?;
+                Ok(acp::ExtResponse::new(Arc::from(raw)))
+            }
+            other => {
+                eprintln!("[{}] unhandled ext_method: {}", self.channel_kind, other);
+                Err(acp::Error::method_not_found())
+            }
+        }
+    }
 }

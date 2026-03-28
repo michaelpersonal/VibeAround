@@ -475,6 +475,7 @@ pub(crate) async fn handle_prompt(
 
     let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler {
         plugin_host: Arc::clone(plugin_host),
+        acp_hub: Arc::clone(acp_hub),
         route: route.clone(),
     });
 
@@ -493,6 +494,7 @@ async fn send_system_text(plugin_host: &Arc<PluginHost>, route: &RouteKey, text:
 
 struct ChannelBridgeHandler {
     plugin_host: Arc<PluginHost>,
+    acp_hub: Arc<ACPHub>,
     route: RouteKey,
 }
 
@@ -517,7 +519,25 @@ impl BridgeClientHandler for ChannelBridgeHandler {
             "[ChannelBridgeHandler] session_notification route={} session={}",
             self.route, args.session_id
         );
-        self.send_raw_acp(&args).await
+
+        // Cache available_commands_update in the pod for later query
+        let payload = serde_json::to_value(&args)
+            .map_err(|e| acp::Error::new(-32603, format!("serialize: {}", e)))?;
+        if let Some(update) = payload.get("update") {
+            if update.get("sessionUpdate").and_then(|v| v.as_str()) == Some("available_commands_update") {
+                if let Some(commands) = update.get("availableCommands") {
+                    self.acp_hub.list_agent_commands_update(&self.route, commands.clone()).await;
+                }
+            }
+        }
+
+        self.plugin_host
+            .send_output(ChannelOutput::RawAcp {
+                route: self.route.clone(),
+                payload,
+            })
+            .await;
+        Ok(())
     }
 
     async fn request_permission(
