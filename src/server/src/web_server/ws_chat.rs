@@ -36,8 +36,17 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // Send initial config
+    // Load config
     let cfg = config::ensure_loaded();
+    // Try "ws" first (settings.json key), then "web" (internal channel kind)
+    let verbose = {
+        let v = cfg.channel_verbose("ws");
+        if !v.show_thinking && !v.show_tool_use {
+            cfg.channel_verbose("web")
+        } else {
+            v
+        }
+    };
     let agents: Vec<serde_json::Value> = cfg
         .enabled_agents
         .iter()
@@ -60,7 +69,10 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     // Outbound: drain ACP events from WebChannelManager → websocket
     let outbound_task = tokio::spawn(async move {
         while let Some(output) = rx.recv().await {
-            let msg = output_to_client_json(output);
+            let msg = output_to_client_json(output, &verbose);
+            if msg.is_null() {
+                continue; // filtered by verbose config
+            }
             eprintln!("[ws_chat] outbound → ws: {}", msg);
             if ws_tx.send(Message::Text(msg.to_string().into())).await.is_err() {
                 break;
@@ -149,9 +161,9 @@ fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {
     }
 }
 
-fn output_to_client_json(output: ChannelOutput) -> serde_json::Value {
+fn output_to_client_json(output: ChannelOutput, verbose: &common::config::ImVerboseConfig) -> serde_json::Value {
     match output {
-        ChannelOutput::RawAcp { payload, .. } => acp_to_frontend(payload),
+        ChannelOutput::RawAcp { payload, .. } => acp_to_frontend(payload, verbose),
         ChannelOutput::SystemText { text, .. } => {
             serde_json::json!({ "kind": "text", "text": text })
         }
@@ -179,7 +191,7 @@ fn output_to_client_json(output: ChannelOutput) -> serde_json::Value {
 ///
 /// ACP shape:  { "sessionId": "...", "update": { "sessionUpdate": "<variant>", ... } }
 /// Frontend expects:  { "kind": "token"|"thinking"|"tool_use"|"tool_result"|"turn_complete"|"error", ... }
-fn acp_to_frontend(payload: serde_json::Value) -> serde_json::Value {
+fn acp_to_frontend(payload: serde_json::Value, verbose: &common::config::ImVerboseConfig) -> serde_json::Value {
     let update = match payload.get("update") {
         Some(u) => u,
         None => return payload, // not a session_notification, pass through
@@ -199,6 +211,9 @@ fn acp_to_frontend(payload: serde_json::Value) -> serde_json::Value {
             serde_json::json!({ "kind": "token", "delta": text })
         }
         "agent_thought_chunk" => {
+            if !verbose.show_thinking {
+                return serde_json::Value::Null;
+            }
             let text = update
                 .pointer("/content/text")
                 .and_then(|v| v.as_str())
@@ -206,6 +221,9 @@ fn acp_to_frontend(payload: serde_json::Value) -> serde_json::Value {
             serde_json::json!({ "kind": "thinking", "text": text })
         }
         "tool_call_update" => {
+            if !verbose.show_tool_use {
+                return serde_json::Value::Null;
+            }
             let title = update
                 .pointer("/fields/title")
                 .and_then(|v| v.as_str())

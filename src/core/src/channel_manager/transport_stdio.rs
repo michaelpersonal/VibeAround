@@ -13,6 +13,12 @@
 //! When forwarding `SessionNotification` back to the plugin, the host
 //! **replaces** the real agent's sessionId with the chatId so the plugin
 //! receives notifications matching what it sent.
+//!
+//! ## Prompt lifecycle
+//!
+//! Plugin calls `prompt()` → host calls `acp_hub.prompt()` directly →
+//! session notifications stream to plugin during processing →
+//! `prompt()` returns the real `PromptResponse` with actual `StopReason`.
 
 use std::sync::Arc;
 
@@ -26,8 +32,10 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use agent_client_protocol as acp;
 
 use super::manifest::ChannelPluginManifest;
-use super::{ChannelEnvelope, ChannelInput, ChannelOutput};
+use super::plugin_host::PluginHost;
+use super::{handle_prompt, ChannelEnvelope, ChannelInput, ChannelOutput};
 use crate::acp::routing::RouteKey;
+use crate::acp_hub::ACPHub;
 
 /// A running stdio plugin connected via ACP protocol.
 #[derive(Debug)]
@@ -42,6 +50,8 @@ impl StdioPluginRuntime {
     pub async fn spawn(
         manifest: ChannelPluginManifest,
         input_tx: mpsc::UnboundedSender<ChannelInput>,
+        acp_hub: Arc<ACPHub>,
+        plugin_host: Arc<PluginHost>,
     ) -> Result<Self, String> {
         if manifest.runtime != "node" {
             return Err(format!(
@@ -105,6 +115,8 @@ impl StdioPluginRuntime {
                         stdout,
                         input_tx,
                         output_rx,
+                        acp_hub,
+                        plugin_host,
                     )
                     .await;
                 });
@@ -114,7 +126,7 @@ impl StdioPluginRuntime {
         Ok(Self {
             channel_kind,
             output_tx,
-            abort_handle: tokio::task::spawn(std::future::pending::<()>()).abort_handle(), // placeholder
+            abort_handle: tokio::task::spawn(std::future::pending::<()>()).abort_handle(),
         })
     }
 
@@ -145,20 +157,20 @@ async fn run_acp_plugin_bridge(
     stdout: tokio::process::ChildStdout,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     mut output_rx: mpsc::UnboundedReceiver<ChannelOutput>,
+    acp_hub: Arc<ACPHub>,
+    plugin_host: Arc<PluginHost>,
 ) {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async move {
-            let channel_kind_clone = channel_kind.clone();
-            let config_clone = config.clone();
-            let input_tx_clone = input_tx.clone();
-
             // Create ACP AgentSideConnection
             let (conn, handle_io) = acp::AgentSideConnection::new(
                 PluginAgentHandler {
-                    channel_kind: channel_kind_clone,
-                    config: config_clone,
-                    input_tx: input_tx_clone,
+                    channel_kind: channel_kind.clone(),
+                    config: config.clone(),
+                    input_tx: input_tx.clone(),
+                    acp_hub,
+                    plugin_host,
                 },
                 stdin.compat_write(),
                 stdout.compat(),
@@ -180,7 +192,6 @@ async fn run_acp_plugin_bridge(
             tokio::task::spawn_local(async move {
                 eprintln!("[{}] output forwarder started", fwd_channel);
                 while let Some(output) = output_rx.recv().await {
-                    eprintln!("[{}] forwarding output: {:?}", fwd_channel, std::mem::discriminant(&output));
                     forward_output_to_plugin(&conn, &fwd_channel, output).await;
                 }
                 eprintln!("[{}] output forwarder ended", fwd_channel);
@@ -200,14 +211,12 @@ async fn forward_output_to_plugin(
 ) {
     match output {
         ChannelOutput::RawAcp { route, payload } => {
-            // RawAcp is a serialized SessionNotification from the real agent.
-            // Replace the real agent's sessionId with the chatId the plugin expects.
             match serde_json::from_value::<acp::SessionNotification>(payload.clone()) {
                 Ok(mut notification) => {
-                    // Translate: real session ID → chat ID (what plugin sent as sessionId)
                     notification.session_id = route.chat_id.clone().into();
-                    eprintln!("[{}] sending session_notification to plugin, session_id={}", channel_kind, notification.session_id);
-                    if let Err(error) = acp::Client::session_notification(&*conn, notification).await {
+                    if let Err(error) =
+                        acp::Client::session_notification(&*conn, notification).await
+                    {
                         eprintln!(
                             "[{}] failed to send session_notification: {}",
                             channel_kind, error
@@ -223,20 +232,33 @@ async fn forward_output_to_plugin(
             }
         }
         ChannelOutput::SystemText { text, .. } => {
-            send_ext_notification(conn, channel_kind, "channel/system_text", &serde_json::json!({ "text": text })).await;
+            send_ext_notification(
+                conn,
+                channel_kind,
+                "channel/system_text",
+                &serde_json::json!({ "text": text }),
+            )
+            .await;
         }
         ChannelOutput::AgentReady {
             agent, version, ..
         } => {
-            send_ext_notification(conn, channel_kind, "channel/agent_ready", &serde_json::json!({
-                "agent": agent,
-                "version": version,
-            })).await;
+            send_ext_notification(
+                conn,
+                channel_kind,
+                "channel/agent_ready",
+                &serde_json::json!({ "agent": agent, "version": version }),
+            )
+            .await;
         }
         ChannelOutput::SessionReady { session_id, .. } => {
-            send_ext_notification(conn, channel_kind, "channel/session_ready", &serde_json::json!({
-                "sessionId": session_id,
-            })).await;
+            send_ext_notification(
+                conn,
+                channel_kind,
+                "channel/session_ready",
+                &serde_json::json!({ "sessionId": session_id }),
+            )
+            .await;
         }
     }
 }
@@ -247,30 +269,44 @@ async fn send_ext_notification(
     method: &str,
     params: &serde_json::Value,
 ) {
-    let raw_params: Arc<RawValue> = match RawValue::from_string(serde_json::to_string(params).unwrap_or_default()) {
-        Ok(raw) => Arc::from(raw),
-        Err(error) => {
-            eprintln!("[{}] failed to serialize ext params: {}", channel_kind, error);
-            return;
-        }
-    };
+    let raw_params: Arc<RawValue> =
+        match RawValue::from_string(serde_json::to_string(params).unwrap_or_default()) {
+            Ok(raw) => Arc::from(raw),
+            Err(error) => {
+                eprintln!(
+                    "[{}] failed to serialize ext params: {}",
+                    channel_kind, error
+                );
+                return;
+            }
+        };
     let notification = acp::ExtNotification::new(method, raw_params);
     if let Err(error) = acp::Client::ext_notification(&*conn, notification).await {
-        eprintln!("[{}] failed to send ext_notification {}: {}", channel_kind, method, error);
+        eprintln!(
+            "[{}] failed to send ext_notification {}: {}",
+            channel_kind, method, error
+        );
     }
 }
 
 /// ACP Agent handler for a channel plugin.
-/// Plugin calls prompt() → we convert to ChannelInput and route to ACPHub.
+/// `prompt()` calls through to `handle_prompt()` directly — blocks until
+/// the turn completes and returns the real `PromptResponse` with `StopReason`.
 struct PluginAgentHandler {
     channel_kind: String,
     config: serde_json::Value,
+    /// Still used for fire-and-forget operations: cancel, callback, close.
     input_tx: mpsc::UnboundedSender<ChannelInput>,
+    acp_hub: Arc<ACPHub>,
+    plugin_host: Arc<PluginHost>,
 }
 
 #[async_trait::async_trait(?Send)]
 impl acp::Agent for PluginAgentHandler {
-    async fn initialize(&self, _args: acp::InitializeRequest) -> acp::Result<acp::InitializeResponse> {
+    async fn initialize(
+        &self,
+        _args: acp::InitializeRequest,
+    ) -> acp::Result<acp::InitializeResponse> {
         eprintln!("[{}] ACP initialize from plugin", self.channel_kind);
 
         let mut meta = serde_json::Map::new();
@@ -278,29 +314,34 @@ impl acp::Agent for PluginAgentHandler {
         meta.insert("config".into(), self.config.clone());
         meta.insert("hostVersion".into(), env!("CARGO_PKG_VERSION").into());
 
-        Ok(acp::InitializeResponse::new(acp::ProtocolVersion::V1)
-            .agent_info(
-                acp::Implementation::new("vibearound-host", env!("CARGO_PKG_VERSION"))
-                    .title("VibeAround"),
-            )
-            .meta(meta))
+        Ok(
+            acp::InitializeResponse::new(acp::ProtocolVersion::V1)
+                .agent_info(
+                    acp::Implementation::new("vibearound-host", env!("CARGO_PKG_VERSION"))
+                        .title("VibeAround"),
+                )
+                .meta(meta),
+        )
     }
 
-    async fn authenticate(&self, _args: acp::AuthenticateRequest) -> acp::Result<acp::AuthenticateResponse> {
+    async fn authenticate(
+        &self,
+        _args: acp::AuthenticateRequest,
+    ) -> acp::Result<acp::AuthenticateResponse> {
         Err(acp::Error::method_not_found())
     }
 
-    async fn new_session(&self, _args: acp::NewSessionRequest) -> acp::Result<acp::NewSessionResponse> {
-        // Plugins don't manage sessions — we handle them internally.
+    async fn new_session(
+        &self,
+        _args: acp::NewSessionRequest,
+    ) -> acp::Result<acp::NewSessionResponse> {
         Err(acp::Error::method_not_found())
     }
 
     async fn prompt(&self, args: acp::PromptRequest) -> acp::Result<acp::PromptResponse> {
-        // Convention: plugin uses chatId as ACP sessionId (see module doc)
         let chat_id = args.session_id.to_string();
         let route = RouteKey::new(&self.channel_kind, &chat_id);
 
-        // Extract text from prompt content blocks
         let text: String = args
             .prompt
             .iter()
@@ -320,29 +361,17 @@ impl acp::Agent for PluginAgentHandler {
             self.channel_kind, chat_id, text.len()
         );
 
-        // Convert to ChannelInput and send for processing
-        let input = ChannelInput::Message {
-            envelope: ChannelEnvelope {
-                route,
-                message_id: uuid::Uuid::new_v4().to_string(),
-                turn_id: None,
-                text,
-                sender_id: format!("{}-user", self.channel_kind),
-                attachments: vec![],
-                parent_id: None,
-                cli_kind: None,
-            },
-        };
-
-        if let Err(error) = self.input_tx.send(input) {
-            eprintln!("[{}] failed to route prompt: {}", self.channel_kind, error);
-            return Err(acp::Error::internal_error());
-        }
-
-        // Note: prompt response comes asynchronously through ChannelOutput.
-        // The streaming events flow back via session_notification on the connection.
-        // TODO: wire up proper prompt completion tracking so we return after turn ends
-        Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
+        // Call through to handle_prompt — blocks until the turn completes.
+        // Session notifications stream to the plugin via ChannelBridgeHandler
+        // → PluginHost → output_tx → output forwarder → conn.session_notification().
+        handle_prompt(
+            &self.acp_hub,
+            &self.plugin_host,
+            route,
+            None, // cli_kind: plugin prompts don't specify
+            text,
+        )
+        .await
     }
 
     async fn cancel(&self, args: acp::CancelNotification) -> acp::Result<()> {

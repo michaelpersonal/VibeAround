@@ -182,7 +182,15 @@ impl ChannelManager {
             }
         };
 
-        match self.plugin_host.register_stdio_plugin(manifest).await {
+        match self
+            .plugin_host
+            .register_stdio_plugin(
+                manifest,
+                Arc::clone(&self.acp_hub),
+                Arc::clone(&self.plugin_host),
+            )
+            .await
+        {
             Ok(abort_handle) => Some(abort_handle),
             Err(error) => {
                 eprintln!("[{}] failed to start plugin: {}", channel_name, error);
@@ -364,71 +372,13 @@ pub async fn handle_channel_input(
         } => {
             let route = envelope.route.clone();
             let cli_kind = envelope.cli_kind.clone();
-            let mut text = envelope.text.clone();
+            let text = envelope.text.clone();
             eprintln!(
                 "[ChannelManager] input route={} cli_kind={:?} text={:?}",
                 route, cli_kind, text
             );
 
-            // Check for slash commands
-            if let Some(action) = parse_slash_command(&text) {
-                match action {
-                    SlashAction::AgentPassthrough(agent_text) => {
-                        text = agent_text; // forward to agent
-                    }
-                    SlashAction::NewSession => {
-                        acp_hub.reset_session(&route).await;
-                        send_system_text(plugin_host, &route, "Session reset.").await;
-                        return;
-                    }
-                    SlashAction::SwitchAgent(kind) => {
-                        acp_hub.switch_agent(&route, kind.clone()).await;
-                        send_system_text(plugin_host, &route, &format!("Switched to {}.", kind))
-                            .await;
-                        return;
-                    }
-                    SlashAction::SwitchProfile(profile) => {
-                        acp_hub.switch_profile(&route, profile.clone()).await;
-                        send_system_text(
-                            plugin_host,
-                            &route,
-                            &format!("Switched to profile {}.", profile),
-                        )
-                        .await;
-                        return;
-                    }
-                    SlashAction::Close => {
-                        acp_hub.close(&route, Some("user closed".to_string())).await;
-                        send_system_text(plugin_host, &route, "Conversation closed.").await;
-                        return;
-                    }
-                    SlashAction::Unknown(cmd) => {
-                        send_system_text(
-                            plugin_host,
-                            &route,
-                            &format!("Unknown command: {}", cmd),
-                        )
-                        .await;
-                        return;
-                    }
-                }
-            }
-
-            if text.is_empty() {
-                return;
-            }
-
-            eprintln!(
-                "[ChannelManager] prompt route={} cli_kind={:?} text_len={}",
-                route, cli_kind, text.len()
-            );
-
-            let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler {
-                plugin_host: Arc::clone(plugin_host),
-                route: route.clone(),
-            });
-
-            match acp_hub.prompt(route.clone(), cli_kind, text, handler).await {
+            match handle_prompt(acp_hub, plugin_host, route.clone(), cli_kind, text).await {
                 Ok(_resp) => {
                     eprintln!("[ChannelManager] prompt OK route={}", route);
                 }
@@ -454,6 +404,81 @@ pub async fn handle_channel_input(
             );
         }
     }
+}
+
+/// Handle a prompt request: process slash commands, then call through to ACPHub.
+/// Returns the real `PromptResponse` with the actual `StopReason`.
+///
+/// Used by both the channel-input processing loop (web) and the stdio plugin
+/// transport (where `prompt()` blocks until the turn completes).
+pub(crate) async fn handle_prompt(
+    acp_hub: &Arc<ACPHub>,
+    plugin_host: &Arc<PluginHost>,
+    route: RouteKey,
+    cli_kind: Option<String>,
+    text: String,
+) -> acp::Result<acp::PromptResponse> {
+    let mut text = text;
+
+    // Check for slash commands
+    if let Some(action) = parse_slash_command(&text) {
+        match action {
+            SlashAction::AgentPassthrough(agent_text) => {
+                text = agent_text; // forward to agent
+            }
+            SlashAction::NewSession => {
+                acp_hub.reset_session(&route).await;
+                send_system_text(plugin_host, &route, "Session reset.").await;
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+            SlashAction::SwitchAgent(kind) => {
+                acp_hub.switch_agent(&route, kind.clone()).await;
+                send_system_text(plugin_host, &route, &format!("Switched to {}.", kind))
+                    .await;
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+            SlashAction::SwitchProfile(profile) => {
+                acp_hub.switch_profile(&route, profile.clone()).await;
+                send_system_text(
+                    plugin_host,
+                    &route,
+                    &format!("Switched to profile {}.", profile),
+                )
+                .await;
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+            SlashAction::Close => {
+                acp_hub.close(&route, Some("user closed".to_string())).await;
+                send_system_text(plugin_host, &route, "Conversation closed.").await;
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+            SlashAction::Unknown(cmd) => {
+                send_system_text(
+                    plugin_host,
+                    &route,
+                    &format!("Unknown command: {}", cmd),
+                )
+                .await;
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+        }
+    }
+
+    if text.is_empty() {
+        return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+    }
+
+    eprintln!(
+        "[ChannelManager] prompt route={} cli_kind={:?} text_len={}",
+        route, cli_kind, text.len()
+    );
+
+    let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler {
+        plugin_host: Arc::clone(plugin_host),
+        route: route.clone(),
+    });
+
+    acp_hub.prompt(route, cli_kind, text, handler).await
 }
 
 async fn send_system_text(plugin_host: &Arc<PluginHost>, route: &RouteKey, text: &str) {

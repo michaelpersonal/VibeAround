@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
 use crate::acp::routing::ChannelKind;
+use crate::acp_hub::ACPHub;
 
 use super::manifest::ChannelPluginManifest;
 use super::plugin_runtime::PluginRuntime;
@@ -28,9 +29,14 @@ impl PluginHost {
     pub async fn register_stdio_plugin(
         &self,
         manifest: ChannelPluginManifest,
+        acp_hub: Arc<ACPHub>,
+        plugin_host: Arc<PluginHost>,
     ) -> Result<AbortHandle, String> {
         let channel_kind = manifest.channel_kind.clone();
-        let runtime = Arc::new(StdioPluginRuntime::spawn(manifest, self.input_tx.clone()).await?);
+        let runtime = Arc::new(
+            StdioPluginRuntime::spawn(manifest, self.input_tx.clone(), acp_hub, plugin_host)
+                .await?,
+        );
         let abort_handle = runtime.abort_handle();
         self.runtimes
             .insert(channel_kind, PluginRuntime::Stdio(runtime));
@@ -50,11 +56,17 @@ impl PluginHost {
 
     pub async fn send_output(&self, output: ChannelOutput) {
         let route = output.route_key().clone();
-        eprintln!("[PluginHost] send_output route={} channel_kind={}", route, route.channel_kind);
-        let runtime = self.runtimes.get(&route.channel_kind).map(|entry| match entry.value() {
-            PluginRuntime::Stdio(runtime) => PluginRuntime::Stdio(Arc::clone(runtime)),
-            PluginRuntime::WebSocket(runtime) => PluginRuntime::WebSocket(Arc::clone(runtime)),
-        });
+        eprintln!(
+            "[PluginHost] send_output route={} channel_kind={}",
+            route, route.channel_kind
+        );
+        let runtime = self
+            .runtimes
+            .get(&route.channel_kind)
+            .map(|entry| match entry.value() {
+                PluginRuntime::Stdio(runtime) => PluginRuntime::Stdio(Arc::clone(runtime)),
+                PluginRuntime::WebSocket(runtime) => PluginRuntime::WebSocket(Arc::clone(runtime)),
+            });
 
         if let Some(runtime) = runtime {
             runtime.send_output(output).await;
