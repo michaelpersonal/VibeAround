@@ -53,32 +53,83 @@ fn write_settings_value(val: &Value) -> Result<(), String> {
     std::fs::write(&path, pretty).map_err(|e| e.to_string())
 }
 
+/// Spawn a plugin's auth-standalone script (for onboarding QR/pairing flows).
+/// Uses `dist/auth-standalone.js` which speaks raw JSON-RPC, not ACP.
+async fn spawn_auth_session(name: &str, _config_value: Value) -> Result<PluginSession, String> {
+    let plugin = plugins::find_plugin(name)
+        .ok_or_else(|| format!("plugin '{}' not found or not built", name))?;
+    let auth_entry = plugin.dir.join("dist").join("auth-standalone.js");
+    if !auth_entry.exists() {
+        return Err(format!(
+            "auth script not found for plugin '{}' at {:?}",
+            name, auth_entry
+        ));
+    }
+    spawn_node_session(name, &auth_entry, &plugin.dir).await
+}
+
+/// Spawn a plugin's main entry point with ACP handshake (for runtime use).
 async fn spawn_plugin_session(name: &str, config_value: Value) -> Result<PluginSession, String> {
     let plugin = plugins::find_plugin(name)
         .ok_or_else(|| format!("plugin '{}' not found or not built", name))?;
     let entry_point = plugin.entry_path();
-    let plugin_dir = plugin.dir;
+    let plugin_dir = plugin.dir.clone();
+    let mut session = spawn_node_session(name, &entry_point, &plugin_dir).await?;
 
+    // ACP handshake: read the client's initialize request, respond with config
+    let client_init_id: Value;
+    loop {
+        let mut line = String::new();
+        let bytes = session.stdout.read_line(&mut line).await.map_err(|e| e.to_string())?;
+        if bytes == 0 {
+            return Err(format!("plugin '{}' exited before sending initialize", name));
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = serde_json::from_str(trimmed).map_err(|e| e.to_string())?;
+        if msg.get("method").and_then(|v| v.as_str()) == Some("initialize") {
+            client_init_id = msg.get("id").cloned().unwrap_or(Value::Null);
+            break;
+        }
+    }
+
+    let cache_dir = config::data_dir().join(".cache");
+    let init_response = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": client_init_id,
+        "result": {
+            "protocolVersion": "2025-03-26",
+            "agentInfo": { "name": "vibearound-onboarding", "version": env!("CARGO_PKG_VERSION") },
+            "_meta": {
+                "config": config_value,
+                "cacheDir": cache_dir.to_string_lossy(),
+                "channelKind": name,
+            }
+        }
+    });
+    let line = serde_json::to_string(&init_response).map_err(|e| e.to_string())? + "\n";
+    session.stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+    session.stdin.flush().await.map_err(|e| e.to_string())?;
+
+    Ok(session)
+}
+
+/// Spawn a Node.js script and do a raw JSON-RPC initialize handshake.
+/// Used for auth-standalone scripts that speak plain JSON-RPC (not ACP).
+async fn spawn_node_session(name: &str, entry_point: &std::path::Path, plugin_dir: &std::path::Path) -> Result<PluginSession, String> {
     let mut child = Command::new("node")
         .arg(entry_point)
-        .current_dir(&plugin_dir)
+        .current_dir(plugin_dir)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("failed to spawn plugin '{}': {}", name, e))?;
+        .map_err(|e| format!("failed to spawn '{}': {}", name, e))?;
 
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "plugin stdin unavailable".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "plugin stdout unavailable".to_string())?;
-    let stderr = child.stderr.take();
-    if let Some(stderr) = stderr {
+    let mut stdin = child.stdin.take().ok_or("stdin unavailable")?;
+    let stdout = child.stdout.take().ok_or("stdout unavailable")?;
+    if let Some(stderr) = child.stderr.take() {
         let name = name.to_string();
         tauri::async_runtime::spawn(async move {
             let reader = BufReader::new(stderr);
@@ -89,54 +140,31 @@ async fn spawn_plugin_session(name: &str, config_value: Value) -> Result<PluginS
         });
     }
 
-    // ACP handshake: the SDK-based plugin sends its initialize request first,
-    // then we respond with config in _meta (acting as ACP host).
-    let mut stdout = BufReader::new(stdout);
+    // Send raw JSON-RPC initialize and wait for response
+    let init_req = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+    });
+    let line = serde_json::to_string(&init_req).map_err(|e| e.to_string())? + "\n";
+    stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+    stdin.flush().await.map_err(|e| e.to_string())?;
 
-    // 1. Read the plugin's ACP initialize request
-    let client_init_id: Value;
+    let mut stdout = BufReader::new(stdout);
     loop {
         let mut line = String::new();
         let bytes = stdout.read_line(&mut line).await.map_err(|e| e.to_string())?;
         if bytes == 0 {
-            return Err(format!("plugin '{}' exited before sending initialize", name));
+            return Err(format!("'{}' exited before initialize completed", name));
         }
         let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
+        if trimmed.is_empty() { continue; }
         let msg: Value = serde_json::from_str(trimmed).map_err(|e| e.to_string())?;
-        let method = msg.get("method").and_then(|v| v.as_str());
-        if method == Some("initialize") {
-            client_init_id = msg.get("id").cloned().unwrap_or(Value::Null);
+        if msg.get("id").and_then(|v| v.as_u64()) == Some(1) {
+            if let Some(error) = msg.get("error") {
+                return Err(error.get("message").and_then(|v| v.as_str()).unwrap_or("init error").to_string());
+            }
             break;
         }
     }
-
-    // 2. Respond with ACP initialize result including _meta.config
-    let cache_dir = config::data_dir().join(".cache");
-    let init_response = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": client_init_id,
-        "result": {
-            "protocolVersion": "2025-03-26",
-            "agentInfo": {
-                "name": "vibearound-onboarding",
-                "version": env!("CARGO_PKG_VERSION"),
-            },
-            "_meta": {
-                "config": config_value,
-                "cacheDir": cache_dir.to_string_lossy(),
-                "channelKind": name,
-            }
-        }
-    });
-    let line = serde_json::to_string(&init_response).map_err(|e| e.to_string())? + "\n";
-    stdin
-        .write_all(line.as_bytes())
-        .await
-        .map_err(|e| format!("failed to respond to plugin '{}' initialize: {}", name, e))?;
-    stdin.flush().await.map_err(|e| e.to_string())?;
 
     Ok(PluginSession {
         child,
@@ -314,7 +342,7 @@ pub async fn wechat_qr_start(
     let config_value = serde_json::json!({
         "base_url": request.base_url,
     });
-    let mut session = spawn_plugin_session("weixin-openclaw-bridge", config_value).await?;
+    let mut session = spawn_auth_session("weixin-openclaw-bridge", config_value).await?;
 
     let result: WechatQrStartResponse = plugin_request(
         &mut session,
@@ -382,62 +410,7 @@ pub async fn whatsapp_qr_start(
         shutdown_plugin_session(&mut existing).await;
     }
 
-    // Spawn the auth-standalone script (not main.js — auth is separate)
-    let plugin = plugins::find_plugin("whatsapp")
-        .ok_or_else(|| "whatsapp plugin not found or not built".to_string())?;
-    let auth_entry = plugin.dir.join("dist").join("auth-standalone.js");
-    if !auth_entry.exists() {
-        return Err(format!("whatsapp auth script not found at {:?}", auth_entry));
-    }
-
-    let mut child = tokio::process::Command::new("node")
-        .arg(&auth_entry)
-        .current_dir(&plugin.dir)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("failed to spawn whatsapp auth: {}", e))?;
-
-    let mut stdin = child.stdin.take().ok_or("stdin unavailable")?;
-    let stdout = child.stdout.take().ok_or("stdout unavailable")?;
-    let stderr = child.stderr.take();
-    if let Some(stderr) = stderr {
-        tauri::async_runtime::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                eprintln!("[onboarding:whatsapp] {}", line);
-            }
-        });
-    }
-
-    // Initialize
-    let init_req = serde_json::json!({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
-    });
-    let line = serde_json::to_string(&init_req).map_err(|e| e.to_string())? + "\n";
-    stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
-    stdin.flush().await.map_err(|e| e.to_string())?;
-
-    let mut stdout = BufReader::new(stdout);
-    loop {
-        let mut line = String::new();
-        let bytes = stdout.read_line(&mut line).await.map_err(|e| e.to_string())?;
-        if bytes == 0 { return Err("whatsapp auth exited during init".to_string()); }
-        let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
-        let msg: Value = serde_json::from_str(trimmed).map_err(|e| e.to_string())?;
-        if msg.get("id").and_then(|v| v.as_u64()) == Some(1) {
-            if let Some(error) = msg.get("error") {
-                return Err(error.get("message").and_then(|v| v.as_str()).unwrap_or("init error").to_string());
-            }
-            break;
-        }
-    }
-
-    let mut session = PluginSession { child, stdin, stdout, next_request_id: 2 };
+    let mut session = spawn_auth_session("whatsapp", serde_json::json!({})).await?;
 
     // Start pairing code auth
     let result: WhatsappPairStartResponse = plugin_request(
