@@ -66,12 +66,11 @@ impl ServerDaemon {
     }
 
     pub async fn start_background(&self, dist_path: PathBuf) -> Result<RunningDaemon, String> {
-        if let Ok(_) = tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await {
-            eprintln!(
-                "[VibeAround] ⚠️  Another instance is already running on port {}. \
-                 The new instance will fail to bind.",
+        if tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await.is_ok() {
+            return Err(format!(
+                "Port {} is already in use — another VibeAround instance may be running",
                 self.port
-            );
+            ));
         }
 
         let cfg = config::ensure_loaded();

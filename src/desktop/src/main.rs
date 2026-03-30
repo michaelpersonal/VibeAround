@@ -83,14 +83,16 @@ pub async fn restart_daemon<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
 }
 
 fn main() {
-    // Early check: if the port is already in use, another instance is likely running.
+    // Fast-path: if our port is already in use, exit immediately before
+    // allocating Tauri resources. tauri_plugin_single_instance (below) is the
+    // real guard, but this avoids a full Tauri init just to discover the duplicate.
     let port = common::config::DEFAULT_PORT;
     if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
         eprintln!(
-            "[VibeAround] ⚠️  Another instance is already running (port {} in use). \
-             This instance will exit.",
+            "[VibeAround] Another instance is already running (port {} in use). Exiting.",
             port
         );
+        std::process::exit(0);
     }
 
     let daemon = Arc::new(server::ServerDaemon::new(port));
