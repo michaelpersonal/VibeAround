@@ -66,11 +66,12 @@ impl ServerDaemon {
     }
 
     pub async fn start_background(&self, dist_path: PathBuf) -> Result<RunningDaemon, String> {
-        if tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await.is_ok() {
-            return Err(format!(
-                "Another instance is already running on port {}",
+        if let Ok(_) = tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await {
+            eprintln!(
+                "[VibeAround] ⚠️  Another instance is already running on port {}. \
+                 The new instance will fail to bind.",
                 self.port
-            ));
+            );
         }
 
         let cfg = config::ensure_loaded();
