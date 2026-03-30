@@ -161,30 +161,25 @@ function Dashboard() {
     <div className="h-full flex flex-col">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Server className="w-4 h-4 text-primary" />
-            <span className="font-semibold text-sm">VibeAround</span>
-          </div>
-          <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
-            <button
-              onClick={() => setPage("services")}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                page === "services" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Services
-            </button>
-            <button
-              onClick={() => setPage("workspaces")}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
-                page === "workspaces" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <FolderOpen className="w-3 h-3" />
-              Workspaces
-            </button>
-          </div>
+        <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
+          <button
+            onClick={() => setPage("services")}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
+              page === "services" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Server className="w-3 h-3" />
+            VibeAround
+          </button>
+          <button
+            onClick={() => setPage("workspaces")}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
+              page === "workspaces" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <FolderOpen className="w-3 h-3" />
+            Workspaces
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <button
