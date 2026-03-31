@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": ["desktop-ui", "web", "desktop"],
   "scripts": {
-    "prebuild": "bun run plugins:build && bun run desktop-ui:build && bun run web:build",
+    "prebuild": "bun run desktop-ui:build && bun run web:build",
     "build": "bun run desktop:build",
     "dev": "bun run desktop:dev",
     "desktop-ui:dev": "bun run --cwd desktop-ui dev",
