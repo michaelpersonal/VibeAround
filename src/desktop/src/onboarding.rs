@@ -289,9 +289,12 @@ pub async fn install_plugin(request: InstallPluginRequest) -> Result<InstallPlug
         eprintln!("[install_plugin] {} already exists, skipping clone", request.plugin_id);
     }
 
+    // On Windows, npm ships as npm.cmd; use that so Command can find it.
+    let npm = if cfg!(target_os = "windows") { "npm.cmd" } else { "npm" };
+
     // npm install
     eprintln!("[install_plugin] running npm install in {:?}", target_dir);
-    let output = tokio::process::Command::new("npm")
+    let output = tokio::process::Command::new(npm)
         .args(["install"])
         .current_dir(&target_dir)
         .stdout(std::process::Stdio::piped())
@@ -306,7 +309,7 @@ pub async fn install_plugin(request: InstallPluginRequest) -> Result<InstallPlug
 
     // npm run build
     eprintln!("[install_plugin] running npm run build in {:?}", target_dir);
-    let output = tokio::process::Command::new("npm")
+    let output = tokio::process::Command::new(npm)
         .args(["run", "build"])
         .current_dir(&target_dir)
         .stdout(std::process::Stdio::piped())
@@ -400,7 +403,7 @@ pub async fn plugin_auth_start(
 
     let mut session = spawn_auth_session(&request.plugin_id, request.config.clone()).await?;
 
-    // The auth script's start method name depends on the plugin
+    // The auth script's start method name depends on the plugin.
     let method = "login_qr_start";
     let result: Value = plugin_request(&mut session, method, request.config).await?;
 

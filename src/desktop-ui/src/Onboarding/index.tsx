@@ -201,7 +201,6 @@ export default function Onboarding() {
           request: {
             pluginId,
             params: {
-              baseUrl: configForAuth.base_url,
               sessionKey: result.sessionKey,
               timeoutMs: 480000,
             },
