@@ -113,6 +113,14 @@ export function getToolTheme(tool: ToolType, appTheme: AppThemeMode): ToolTheme 
   };
 }
 
+/** Single source of truth for status indicator colors (used in tab dots, panel badges, etc). */
+export const STATUS_COLORS: Record<TerminalStatus, string> = {
+  running: "#4ade80", // green-400
+  idle:    "#fbbf24", // amber-400
+  error:   "#f87171", // red-400
+  stopped: "#64748b", // slate-500
+};
+
 export const GROUP_COLOR_PRESETS = [
   { name: "Amber", hex: "#d97706" },
   { name: "Violet", hex: "#8b5cf6" },

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { LayoutGrid, Rows3, Minimize2, MessageSquare, Plus, X, Sun, Moon } from "lucide-react";
 import type { ViewMode, TerminalGroup, TerminalSession, TerminalStatus, ToolType } from "@/lib/terminal-types";
-import { getGroupColor, TOOL_OPTIONS } from "@/lib/terminal-types";
+import { getGroupColor, TOOL_OPTIONS, STATUS_COLORS } from "@/lib/terminal-types";
 import { getToolDisplayName } from "@/lib/agents";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { ChatView } from "@/components/chat";
@@ -380,12 +380,7 @@ function App() {
                               session.status === "running" ? "animate-pulse" : ""
                             }`}
                             style={{
-                              backgroundColor:
-                                session.status === "running"
-                                  ? "#4ade80"
-                                  : session.status === "idle"
-                                    ? "#fbbf24"
-                                    : "#64748b",
+                              backgroundColor: STATUS_COLORS[session.status],
                             }}
                           />
                           {session.name}

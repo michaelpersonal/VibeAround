@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef } from "react";
 import type { Terminal as XTermTerminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { TerminalSession, TerminalStatus, ToolType, ViewMode } from "@/lib/terminal-types";
-import { getToolTheme, type ToolTheme } from "@/lib/terminal-types";
+import { getToolTheme } from "@/lib/terminal-types";
 import { useTheme } from "@/lib/theme";
+import { buildXtermTheme } from "@/lib/xtermPalette";
 import { getWebSocketUrl } from "@/lib/ws-url";
 
 /** "dom" = default DOM renderer; "canvas" = Canvas addon; "webgl" = WebGL addon (GPU). */
@@ -49,56 +50,7 @@ export function TerminalView({ session, isActive, viewMode, onSessionState, onSe
   const isDark = appTheme === "dark";
 
   const themeOption = useCallback(
-    (t: ToolTheme) =>
-      isDark
-        ? {
-            background: t.bg,
-            foreground: "#c8c8d8",
-            cursor: t.cursorColor,
-            cursorAccent: t.bg,
-            selectionBackground: t.selectionBg,
-            selectionForeground: "#ffffff",
-            black: "#1a1a2e",
-            red: "#f87171",
-            green: "#4ade80",
-            yellow: "#fbbf24",
-            blue: "#60a5fa",
-            magenta: "#c084fc",
-            cyan: "#4fd1c5",
-            white: "#c8c8d8",
-            brightBlack: "#4a4a6a",
-            brightRed: "#fca5a5",
-            brightGreen: "#86efac",
-            brightYellow: "#fde68a",
-            brightBlue: "#93c5fd",
-            brightMagenta: "#d8b4fe",
-            brightCyan: "#5eead4",
-            brightWhite: "#f0f0f8",
-          }
-        : {
-            background: t.bg,
-            foreground: "#1e293b",
-            cursor: t.cursorColor,
-            cursorAccent: t.bg,
-            selectionBackground: t.selectionBg,
-            selectionForeground: "#0f172a",
-            black: "#475569",
-            red: "#dc2626",
-            green: "#16a34a",
-            yellow: "#ca8a04",
-            blue: "#2563eb",
-            magenta: "#9333ea",
-            cyan: "#0891b2",
-            white: "#64748b",
-            brightBlack: "#94a3b8",
-            brightRed: "#ef4444",
-            brightGreen: "#22c55e",
-            brightYellow: "#eab308",
-            brightBlue: "#3b82f6",
-            brightMagenta: "#a855f7",
-            brightCyan: "#06b6d4",
-            brightWhite: "#f1f5f9",
-          },
+    (t: typeof theme) => buildXtermTheme(t, isDark),
     [isDark]
   );
 

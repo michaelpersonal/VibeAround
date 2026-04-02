@@ -3,7 +3,7 @@
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import type { TerminalSession, TerminalStatus, ToolType, ViewMode } from "@/lib/terminal-types";
-import { getToolTheme } from "@/lib/terminal-types";
+import { getToolTheme, STATUS_COLORS } from "@/lib/terminal-types";
 import { useTheme } from "@/lib/theme";
 import { TerminalView } from "./TerminalView";
 import { MobileInputBar } from "./MobileInputBar";
@@ -87,14 +87,7 @@ export function TerminalPanel({
             <div
               className={`h-1.5 w-1.5 shrink-0 rounded-full self-center ${status.pulse ? "animate-pulse" : ""}`}
               style={{
-                backgroundColor:
-                  session.status === "running"
-                    ? "#4ade80"
-                    : session.status === "idle"
-                      ? "#fbbf24"
-                      : session.status === "error"
-                        ? "#f87171"
-                        : "#64748b",
+                backgroundColor: STATUS_COLORS[session.status],
               }}
             />
             <div className="text-[9px] h-1.5 font-mono text-muted-foreground/50 uppercase leading-none">
