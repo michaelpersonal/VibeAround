@@ -150,7 +150,7 @@ impl AgentProvider for StdioAcpProvider {
     }
 }
 
-/// Auto-install an npm ACP agent package into `~/.vibearound/acp-agents/`.
+/// Auto-install an npm ACP agent package into `~/.vibearound/plugins/`.
 async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
     let agents_dir = crate::env::acp_agents_dir();
     std::fs::create_dir_all(&agents_dir)
@@ -159,7 +159,7 @@ async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
     // Ensure package.json exists
     let pkg_json = agents_dir.join("package.json");
     if !pkg_json.exists() {
-        let init = serde_json::json!({ "name": "vibearound-acp-agents", "private": true });
+        let init = serde_json::json!({ "name": "vibearound-plugins", "private": true });
         std::fs::write(&pkg_json, serde_json::to_string_pretty(&init).unwrap())
             .context("writing package.json")?;
     }

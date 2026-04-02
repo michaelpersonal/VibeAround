@@ -45,7 +45,7 @@ pub struct AgentAcpConfig {
     #[serde(default)]
     pub args: Vec<String>,
     /// If set, the agent is an npm package that should be pre-installed
-    /// into `~/.vibearound/acp-agents/` during onboarding.
+    /// into `~/.vibearound/plugins/` during onboarding.
     pub npm_package: Option<String>,
     /// Binary name inside `node_modules/.bin/` (defaults to last segment of npm_package).
     pub bin_name: Option<String>,

@@ -50,7 +50,7 @@ pub(super) fn install_agent_integrations(settings: &serde_json::Value) -> anyhow
 }
 
 /// Pre-install npm-based ACP agent packages (e.g. claude-agent-acp, codex-acp)
-/// into `~/.vibearound/acp-agents/` so they can be run with `node` at runtime
+/// into `~/.vibearound/plugins/` so they can be run with `node` at runtime
 /// instead of relying on `npx`.
 pub(super) async fn install_acp_agents(settings: &serde_json::Value) {
     let all_agents = common::resources::agent_ids();
@@ -80,14 +80,14 @@ pub(super) async fn install_acp_agents(settings: &serde_json::Value) {
 
     let agents_dir = common::env::acp_agents_dir();
     if let Err(e) = std::fs::create_dir_all(&agents_dir) {
-        eprintln!("[onboarding] failed to create acp-agents dir: {}", e);
+        eprintln!("[onboarding] failed to create plugins dir: {}", e);
         return;
     }
 
     // Initialize package.json if it doesn't exist
     let pkg_json = agents_dir.join("package.json");
     if !pkg_json.exists() {
-        let init = serde_json::json!({ "name": "vibearound-acp-agents", "private": true });
+        let init = serde_json::json!({ "name": "vibearound-plugins", "private": true });
         if let Err(e) = std::fs::write(&pkg_json, serde_json::to_string_pretty(&init).unwrap()) {
             eprintln!("[onboarding] failed to create package.json: {}", e);
             return;

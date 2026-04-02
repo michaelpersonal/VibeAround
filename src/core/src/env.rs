@@ -35,14 +35,15 @@ pub fn std_command(program: &str) -> std::process::Command {
 }
 
 /// Directory where npm-based ACP agent packages are installed.
-/// e.g. `~/.vibearound/acp-agents/node_modules/.bin/claude-agent-acp`
+/// Shared with channel plugins at `~/.vibearound/plugins/` so common
+/// dependencies (e.g. `@agentclientprotocol/sdk`, `zod`) are deduped.
 pub fn acp_agents_dir() -> std::path::PathBuf {
-    crate::config::data_dir().join("acp-agents")
+    crate::config::data_dir().join("plugins")
 }
 
 /// Resolve the JS entry point for a pre-installed npm ACP agent binary.
 ///
-/// Looks up `~/.vibearound/acp-agents/node_modules/.bin/<bin_name>`.
+/// Looks up `~/.vibearound/plugins/node_modules/.bin/<bin_name>`.
 /// On Unix the `.bin/` entries are symlinks to the actual JS file — we
 /// follow the symlink.  On Windows npm creates `.cmd` wrappers; we parse
 /// them to extract the JS path.
