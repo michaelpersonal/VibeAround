@@ -56,6 +56,16 @@ pub async fn kill_service_handler(
     State(state): State<AppState>,
     Path((category, id)): Path<(String, String)>,
 ) -> impl IntoResponse {
+    // Agent kill is async (needs ACPHub.close) — handle it here rather than in
+    // the sync ServiceStatusManager.kill_service().
+    if category == "agents" {
+        if let Some(route) = common::acp::routing::RouteKey::from_key(&id) {
+            state.channel_hub.acp_hub().close(&route, Some("killed by user".to_string())).await;
+            return (StatusCode::OK, format!("Killed {}/{}", category, id));
+        }
+        return (StatusCode::NOT_FOUND, format!("Invalid agent route key: {}", id));
+    }
+
     if state.services.kill_service(&category, &id) {
         (StatusCode::OK, format!("Killed {}/{}", category, id))
     } else {
