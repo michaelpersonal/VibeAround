@@ -1,7 +1,7 @@
 ---
 name: vibearound
 description: Hand over your current coding session so the user can continue the conversation on their phone or another device via any IM channel connected to VibeAround. Use when the user says "/vibearound handover", "hand over this session", "continue on my phone", or similar session transfer requests.
-_metadata: "vibearound ${VERSION}"
+metadata: "vibearound ${VERSION}"
 ---
 
 # VibeAround Session Handover

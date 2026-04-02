@@ -136,7 +136,7 @@ const METADATA_PREFIX: &str = "vibearound";
 /// Check if a JSON value has `_metadata` starting with "vibearound".
 fn is_vibearound_managed(value: &serde_json::Value) -> bool {
     value
-        .get("_metadata")
+        .get("metadata")
         .and_then(|v| v.as_str())
         .map(|s| s.starts_with(METADATA_PREFIX))
         .unwrap_or(false)
@@ -144,7 +144,7 @@ fn is_vibearound_managed(value: &serde_json::Value) -> bool {
 
 /// Get the metadata string (e.g. "vibearound 0.0.1") from a JSON value.
 fn get_metadata(value: &serde_json::Value) -> Option<String> {
-    value.get("_metadata").and_then(|v| v.as_str()).map(String::from)
+    value.get("metadata").and_then(|v| v.as_str()).map(String::from)
 }
 
 /// The metadata string for the current version.
