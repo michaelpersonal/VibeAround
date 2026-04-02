@@ -1,14 +1,10 @@
 [
   {
     "name": "prepare_handover",
-    "description": "Prepare a session handover to an IM channel. Returns a /pickup command for the user to send in the target IM chat. Does NOT block — the user carries the command to the IM manually.",
+    "description": "Prepare a session handover. Returns a /pickup command that the user can send in any IM channel connected to VibeAround to resume the session there.",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "target_channel": {
-          "type": "string",
-          "description": "Target IM channel: feishu, telegram, discord, weixin, or web."
-        },
         "session_id": {
           "type": "string",
           "description": "Your current session ID. If omitted, VibeAround will try to find the most recent session for the given cwd."
@@ -19,10 +15,10 @@
         },
         "agent_kind": {
           "type": "string",
-          "description": "Your agent type."
+          "description": "Your agent type (e.g. claude, gemini, codex)."
         }
       },
-      "required": ["target_channel", "cwd", "agent_kind"]
+      "required": ["cwd", "agent_kind"]
     }
   },
   {

@@ -118,10 +118,6 @@ async fn mcp_prepare_handover(
     id: Option<serde_json::Value>,
     arguments: &serde_json::Value,
 ) -> Json<serde_json::Value> {
-    let target_channel = match arguments.get("target_channel").and_then(|v| v.as_str()) {
-        Some(c) => c,
-        None => return jsonrpc_err(id, -32602, "Missing required argument: target_channel"),
-    };
     let cwd = match arguments.get("cwd").and_then(|v| v.as_str()) {
         Some(c) => c,
         None => return jsonrpc_err(id, -32602, "Missing required argument: cwd"),
@@ -168,13 +164,13 @@ async fn mcp_prepare_handover(
         }
     };
 
-    let pickup_cmd = format!("/pickup {} {}", session_id, cwd);
+    let pickup_cmd = format!("/pickup {} {} {}", session_id, cwd, agent_kind_str);
     mcp_text(id, &format!(
         "Handover prepared.\n\n\
-         Tell the user to send this command in their {} chat:\n\
+         Tell the user to send this command in any IM chat connected to VibeAround:\n\
          {}\n\n\
-         After sending the command, the user's next message in {} will resume this session.",
-        target_channel, pickup_cmd, target_channel
+         After sending the command, the user's next message will resume this session.",
+        pickup_cmd
     ))
 }
 
