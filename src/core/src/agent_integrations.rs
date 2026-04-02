@@ -1,8 +1,8 @@
 //! Agent integration management — MCP config, skill files, and ACP agent npm packages.
 //!
-//! Syncs VibeAround integrations (MCP server entry, skill files, npm packages)
-//! into each coding agent's global settings. Lives in core so both the desktop
-//! app and a standalone server can call it.
+//! Syncs VibeAround integrations into each coding agent's global settings.
+//! Uses a `_vibearound` metadata block (in both SKILL.md frontmatter and MCP
+//! JSON entries) for version tracking and cleanup of stale entries.
 
 use std::path::PathBuf;
 
@@ -10,13 +10,17 @@ use anyhow::{anyhow, Context};
 
 use crate::{config, resources};
 
+/// App version, used as the integration version stamp.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /// Sync all agent integrations with the current settings.
-/// Installs MCP config + skills for enabled agents, removes for disabled ones.
-/// Errors are non-fatal and logged per-agent.
+/// - Enabled agents: install/update MCP config + skills (version-checked).
+/// - Disabled agents: remove MCP config + skills.
+/// - Stale entries (from previous versions with different paths/keys): cleaned up.
 pub fn sync_integrations(settings: &serde_json::Value) {
     let port = config::DEFAULT_PORT;
     let mcp_url = format!("http://127.0.0.1:{}/mcp", port);
@@ -24,6 +28,14 @@ pub fn sync_integrations(settings: &serde_json::Value) {
     let all_agents = resources::agent_ids();
     let enabled_agents = resolve_enabled_agents(settings, &all_agents);
 
+    // First pass: clean up any stale vibearound-managed entries in all agent configs
+    for agent in &all_agents {
+        if let Err(e) = cleanup_stale_mcp_entries(agent, &mcp_url) {
+            eprintln!("[integrations] stale MCP cleanup for {}: {:#}", agent, e);
+        }
+    }
+
+    // Second pass: install for enabled, uninstall for disabled
     for agent in &all_agents {
         let enabled = enabled_agents.iter().any(|a| a == agent);
         if enabled {
@@ -45,13 +57,11 @@ pub fn sync_integrations(settings: &serde_json::Value) {
 }
 
 /// Auto-install an npm ACP agent package into `~/.vibearound/plugins/`.
-/// Called lazily on first use when the binary isn't found.
 pub async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
     let plugins_dir = crate::env::acp_agents_dir();
     std::fs::create_dir_all(&plugins_dir)
         .with_context(|| format!("creating {:?}", plugins_dir))?;
 
-    // Ensure package.json exists
     let pkg_json = plugins_dir.join("package.json");
     if !pkg_json.exists() {
         let init = serde_json::json!({ "name": "vibearound-plugins", "private": true });
@@ -85,7 +95,6 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
         if let Some(agent_def) = resources::agent_by_id(agent_id) {
             if let Some(npm_pkg) = &agent_def.acp.npm_package {
                 let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
-                // Skip if already installed
                 if crate::env::resolve_acp_agent_bin(bin_name).is_ok() {
                     continue;
                 }
@@ -99,7 +108,7 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
 }
 
 // ---------------------------------------------------------------------------
-// Private helpers
+// Private — version-aware MCP config
 // ---------------------------------------------------------------------------
 
 fn resolve_enabled_agents(settings: &serde_json::Value, all_agents: &[&str]) -> Vec<String> {
@@ -121,7 +130,82 @@ fn home_dir() -> anyhow::Result<PathBuf> {
         .map_err(|_| anyhow!("Cannot determine home directory"))
 }
 
-/// Merge VibeAround MCP server entry into an agent's global settings JSON file.
+/// Check if a JSON value has `_vibearound.managed: true`.
+fn is_vibearound_managed(value: &serde_json::Value) -> bool {
+    value
+        .get("_vibearound")
+        .and_then(|m| m.get("managed"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Get the version from a `_vibearound` metadata block.
+fn get_vibearound_version(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("_vibearound")
+        .and_then(|m| m.get("version"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+/// Remove any vibearound-managed MCP entries that don't match the current key.
+/// This handles renames (e.g. "vibearound" → "va" or vice versa).
+fn cleanup_stale_mcp_entries(agent: &str, _mcp_url: &str) -> anyhow::Result<()> {
+    let home = home_dir()?;
+    let agent_def = match resources::agent_by_id(agent) {
+        Some(def) => def,
+        None => return Ok(()),
+    };
+    let global_config = match &agent_def.global_config {
+        Some(cfg) => cfg,
+        None => return Ok(()),
+    };
+
+    let config_path = home.join(&global_config.settings_path);
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let data = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("Read {:?}", config_path))?;
+    let mut root: serde_json::Value =
+        serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
+
+    let mcp_key = &global_config.mcp_key;
+    let mut changed = false;
+
+    if let Some(obj) = root.as_object_mut() {
+        if let Some(servers) = obj.get_mut(mcp_key) {
+            if let Some(servers_obj) = servers.as_object_mut() {
+                // Find and remove any managed entries that aren't "vibearound"
+                let stale_keys: Vec<String> = servers_obj
+                    .iter()
+                    .filter(|(key, val)| *key != "vibearound" && is_vibearound_managed(val))
+                    .map(|(key, _)| key.clone())
+                    .collect();
+                for key in stale_keys {
+                    servers_obj.remove(&key);
+                    changed = true;
+                    eprintln!(
+                        "[integrations] Removed stale MCP entry '{}' for {} at {:?}",
+                        key, agent, config_path
+                    );
+                }
+            }
+        }
+    }
+
+    if changed {
+        let pretty = serde_json::to_string_pretty(&root).context("JSON serialize")?;
+        std::fs::write(&config_path, pretty)
+            .with_context(|| format!("Write {:?}", config_path))?;
+    }
+
+    Ok(())
+}
+
+/// Merge VibeAround MCP server entry into an agent's global settings JSON.
+/// Skips the write if the installed version matches the current app version.
 fn install_mcp_config(agent: &str, mcp_url: &str) -> anyhow::Result<()> {
     let home = home_dir()?;
 
@@ -137,16 +221,32 @@ fn install_mcp_config(agent: &str, mcp_url: &str) -> anyhow::Result<()> {
     let config_path = home.join(&global_config.settings_path);
     let mcp_key = &global_config.mcp_key;
 
+    // Substitute placeholders in the entry template
     let mcp_value_str = serde_json::to_string(&global_config.mcp_entry)
         .context("serialize mcp_entry")?;
-    let mcp_value: serde_json::Value =
-        serde_json::from_str(&mcp_value_str.replace("{mcp_url}", mcp_url))
-            .context("parse mcp_entry after substitution")?;
+    let mcp_value: serde_json::Value = serde_json::from_str(
+        &mcp_value_str
+            .replace("{mcp_url}", mcp_url)
+            .replace("{version}", VERSION),
+    )
+    .context("parse mcp_entry after substitution")?;
 
+    // Read existing config
     let data = std::fs::read_to_string(&config_path).unwrap_or_else(|_| "{}".to_string());
     let mut root: serde_json::Value =
         serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
 
+    // Check if already installed with current version
+    if let Some(existing) = root
+        .get(mcp_key)
+        .and_then(|s| s.get("vibearound"))
+    {
+        if get_vibearound_version(existing).as_deref() == Some(VERSION) {
+            return Ok(()); // already up-to-date
+        }
+    }
+
+    // Install / update
     if let Some(obj) = root.as_object_mut() {
         let servers = obj
             .entry(mcp_key)
@@ -164,13 +264,13 @@ fn install_mcp_config(agent: &str, mcp_url: &str) -> anyhow::Result<()> {
         .with_context(|| format!("Write {:?}", config_path))?;
 
     eprintln!(
-        "[integrations] Installed MCP config for {} at {:?}",
-        agent, config_path
+        "[integrations] Installed MCP config v{} for {} at {:?}",
+        VERSION, agent, config_path
     );
     Ok(())
 }
 
-/// Remove VibeAround MCP server entry from an agent's global settings JSON file.
+/// Remove VibeAround MCP server entry from an agent's global settings JSON.
 fn uninstall_mcp_config(agent: &str) -> anyhow::Result<()> {
     let home = home_dir()?;
 
@@ -199,6 +299,17 @@ fn uninstall_mcp_config(agent: &str) -> anyhow::Result<()> {
     if let Some(obj) = root.as_object_mut() {
         if let Some(servers) = obj.get_mut(mcp_key) {
             if let Some(servers_obj) = servers.as_object_mut() {
+                // Remove any vibearound-managed entries
+                let managed_keys: Vec<String> = servers_obj
+                    .iter()
+                    .filter(|(_, val)| is_vibearound_managed(val))
+                    .map(|(key, _)| key.clone())
+                    .collect();
+                for key in managed_keys {
+                    servers_obj.remove(&key);
+                    changed = true;
+                }
+                // Also remove the "vibearound" key specifically (legacy, may not have metadata)
                 if servers_obj.remove("vibearound").is_some() {
                     changed = true;
                 }
@@ -219,7 +330,11 @@ fn uninstall_mcp_config(agent: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Install the vibearound skill file for a given agent.
+// ---------------------------------------------------------------------------
+// Private — version-aware skill files
+// ---------------------------------------------------------------------------
+
+/// Install the vibearound skill file. Skips write if version matches.
 fn install_skill(agent: &str) -> anyhow::Result<()> {
     let agent_def = match resources::agent_by_id(agent) {
         Some(def) => def,
@@ -235,19 +350,33 @@ fn install_skill(agent: &str) -> anyhow::Result<()> {
 
     let home = home_dir()?;
     let skill_dir = home.join(skill_dir_rel);
-    let _ = std::fs::create_dir_all(&skill_dir);
-
-    let skill_content = include_str!("../../skills/vibearound/SKILL.md");
     let target = skill_dir.join("SKILL.md");
 
+    // Check installed version via frontmatter
+    if target.exists() {
+        if let Ok(content) = std::fs::read_to_string(&target) {
+            if content.contains(&format!("version: \"{}\"", VERSION)) {
+                return Ok(()); // already up-to-date
+            }
+        }
+    }
+
+    // Install with version substitution
+    let _ = std::fs::create_dir_all(&skill_dir);
+    let skill_content = include_str!("../../skills/vibearound/SKILL.md")
+        .replace("${VERSION}", VERSION);
     std::fs::write(&target, skill_content)
         .with_context(|| format!("Write {:?}", target))?;
 
-    eprintln!("[integrations] Installed {} skill at {:?}", agent, target);
+    eprintln!(
+        "[integrations] Installed {} skill v{} at {:?}",
+        agent, VERSION, target
+    );
     Ok(())
 }
 
 /// Remove the vibearound skill directory for a given agent.
+/// Scans for any directories containing vibearound-managed SKILL.md files.
 fn uninstall_skill(agent: &str) -> anyhow::Result<()> {
     let agent_def = match resources::agent_by_id(agent) {
         Some(def) => def,

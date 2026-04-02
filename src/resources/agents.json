@@ -16,7 +16,7 @@
     "global_config": {
       "settings_path": ".claude/settings.json",
       "mcp_key": "mcpServers",
-      "mcp_entry": { "url": "{mcp_url}" },
+      "mcp_entry": { "url": "{mcp_url}", "_vibearound": { "version": "{version}", "managed": true } },
       "skill_dir": ".claude/skills/vibearound"
     }
   },
@@ -36,7 +36,7 @@
     "global_config": {
       "settings_path": ".gemini/settings.json",
       "mcp_key": "mcpServers",
-      "mcp_entry": { "httpUrl": "{mcp_url}" }
+      "mcp_entry": { "httpUrl": "{mcp_url}", "_vibearound": { "version": "{version}", "managed": true } }
     }
   },
   {
