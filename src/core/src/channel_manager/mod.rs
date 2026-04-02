@@ -306,8 +306,8 @@ enum SlashAction {
     Close,
     /// /help or /commands — list available agent commands
     ListAgentCommands,
-    /// /pickup <session_id> <cwd> [agent_kind] — import a session from a coding agent (Direction 1)
-    Pickup { session_id: String, cwd: String, agent_kind: Option<String> },
+    /// /pickup <agent_kind> <session_id> — import a session from a coding agent (Direction 1)
+    Pickup { agent_kind: String, session_id: String },
     /// /handover — export current session to a coding agent (Direction 2)
     Handover,
     /// Unknown slash command
@@ -359,16 +359,14 @@ fn parse_slash_command(text: &str) -> Option<SlashAction> {
         "/close" => Some(SlashAction::Close),
         "/help" | "/commands" | "/list_agent_commands" => Some(SlashAction::ListAgentCommands),
         "/pickup" => {
-            // /pickup <session_id> <cwd> [agent_kind]
-            // session_id is the first token, then cwd, then optional agent_kind
+            // /pickup <agent_kind> <session_id>
             match arg {
                 Some(rest) if !rest.is_empty() => {
-                    let parts: Vec<&str> = rest.splitn(3, ' ').collect();
-                    if parts.len() >= 2 && !parts[1].is_empty() {
+                    let parts: Vec<&str> = rest.splitn(2, ' ').collect();
+                    if parts.len() == 2 && !parts[1].is_empty() {
                         Some(SlashAction::Pickup {
-                            session_id: parts[0].to_string(),
-                            cwd: parts[1].to_string(),
-                            agent_kind: parts.get(2).map(|s| s.to_string()),
+                            agent_kind: parts[0].to_string(),
+                            session_id: parts[1].to_string(),
                         })
                     } else {
                         Some(SlashAction::Unknown(trimmed.to_string()))
@@ -511,23 +509,20 @@ pub(crate) async fn handle_prompt(
                 send_system_text(plugin_host, &route, &text).await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
-            SlashAction::Pickup { session_id, cwd, agent_kind } => {
-                // Direction 1: Agent → IM. User sends /pickup <session_id> <cwd> [agent_kind]
+            SlashAction::Pickup { agent_kind, session_id } => {
+                // Direction 1: Agent → IM. User sends /pickup <agent_kind> <session_id>
                 // to import a session from a coding agent.
-                let cli_kind = agent_kind
-                    .unwrap_or_else(|| crate::config::ensure_loaded().default_agent.clone());
                 acp_hub.prepare_pickup(
                     route.clone(),
-                    cli_kind.clone(),
+                    agent_kind.clone(),
                     session_id.clone(),
-                    cwd.clone(),
                 ).await;
                 send_system_text(
                     plugin_host,
                     &route,
                     &format!(
-                        "Session pickup ready (session={}, workspace={}).\nSend your next message to continue.",
-                        session_id, cwd
+                        "Session pickup ready (agent={}, session={}).\nSend your next message to continue.",
+                        agent_kind, session_id
                     ),
                 )
                 .await;

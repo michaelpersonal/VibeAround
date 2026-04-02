@@ -164,7 +164,7 @@ async fn mcp_prepare_handover(
         }
     };
 
-    let pickup_cmd = format!("/pickup {} {} {}", session_id, cwd, agent_kind_str);
+    let pickup_cmd = format!("/pickup {} {}", agent_kind_str, session_id);
     mcp_text(id, &format!(
         "Handover prepared.\n\n\
          Tell the user to send this command in any IM chat connected to VibeAround:\n\

@@ -130,10 +130,9 @@ impl ACPHub {
         route: RouteKey,
         cli_kind: String,
         resume_session_id: String,
-        cwd: String,
     ) {
         let pod = self.get_or_create_pod(route);
-        pod.set_handover(cli_kind, resume_session_id, cwd).await;
+        pod.set_handover(cli_kind, resume_session_id).await;
     }
 
     // -----------------------------------------------------------------------

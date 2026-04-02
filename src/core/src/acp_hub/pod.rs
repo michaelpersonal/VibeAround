@@ -98,13 +98,13 @@ impl ACPPod {
         }
     }
 
-    /// Prepare this pod for a session pickup. Sets cli_kind, resume_session_id,
-    /// and cwd so the next prompt spawns a bridge that resumes the given session.
-    pub async fn set_handover(&self, cli_kind: String, resume_session_id: String, cwd: String) {
+    /// Prepare this pod for a session pickup. Sets cli_kind and resume_session_id
+    /// so the next prompt spawns a bridge that resumes the given session.
+    /// The workspace is resolved from the agent's default config.
+    pub async fn set_handover(&self, cli_kind: String, resume_session_id: String) {
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(cli_kind);
         *self.handover_resume_session_id.lock().await = Some(resume_session_id);
-        *self.handover_cwd.lock().await = Some(cwd);
     }
 
     // -----------------------------------------------------------------------
