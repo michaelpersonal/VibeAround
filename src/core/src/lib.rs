@@ -3,6 +3,7 @@
 pub mod acp;
 pub mod acp_hub;
 pub mod agent_factory;
+pub mod agent_integrations;
 pub mod channel_manager;
 pub mod config;
 pub mod env;

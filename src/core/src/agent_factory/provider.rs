@@ -129,7 +129,7 @@ impl AgentProvider for StdioAcpProvider {
             // Auto-install if not present (first use after upgrade or fresh install)
             if crate::env::resolve_acp_agent_bin(bin_name).is_err() {
                 eprintln!("[{}-acp] auto-installing {} ...", self.agent_kind, npm_pkg);
-                auto_install_npm_agent(npm_pkg).await?;
+                crate::agent_integrations::auto_install_npm_agent(npm_pkg).await?;
             }
             let entry = crate::env::resolve_acp_agent_bin(bin_name)
                 .with_context(|| format!("Resolving ACP agent '{}' (npm: {})", self.agent_kind, npm_pkg))?;
@@ -148,37 +148,6 @@ impl AgentProvider for StdioAcpProvider {
             worker_thread: None,
         })
     }
-}
-
-/// Auto-install an npm ACP agent package into `~/.vibearound/plugins/`.
-async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
-    let agents_dir = crate::env::acp_agents_dir();
-    std::fs::create_dir_all(&agents_dir)
-        .with_context(|| format!("creating {:?}", agents_dir))?;
-
-    // Ensure package.json exists
-    let pkg_json = agents_dir.join("package.json");
-    if !pkg_json.exists() {
-        let init = serde_json::json!({ "name": "vibearound-plugins", "private": true });
-        std::fs::write(&pkg_json, serde_json::to_string_pretty(&init).unwrap())
-            .context("writing package.json")?;
-    }
-
-    let output = crate::env::command("npm")
-        .args(["install", npm_package])
-        .current_dir(&agents_dir)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .with_context(|| format!("running npm install {}", npm_package))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("npm install {} failed: {}", npm_package, stderr.trim());
-    }
-    eprintln!("[acp] installed {}", npm_package);
-    Ok(())
 }
 
 /// Spawn a CLI that speaks ACP over stdio, return duplex streams.

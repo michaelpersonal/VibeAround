@@ -170,7 +170,9 @@ fn main() {
                 // Sync agent integrations on every startup: reinstall skills + MCP
                 // config for enabled agents, remove for disabled ones. This ensures
                 // the SKILL.md and MCP config stay up-to-date after app upgrades.
-                onboarding::sync_agent_integrations();
+                common::agent_integrations::sync_integrations(
+                    &onboarding::get_settings_value(),
+                );
             });
 
             Ok(())
