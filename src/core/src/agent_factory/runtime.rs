@@ -11,6 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use anyhow::{anyhow, Context};
 use tokio::sync::{mpsc, Mutex};
 
 use super::provider::{AgentKind, AgentProvider};
@@ -68,10 +69,10 @@ impl AcpBridge {
         workspace: &Path,
         resume_session_id: Option<String>,
         client_handler: Arc<dyn BridgeClientHandler>,
-    ) -> Result<BridgeReady, String> {
+    ) -> anyhow::Result<BridgeReady> {
         let cwd = workspace.to_path_buf();
         let (ready_tx, ready_rx) =
-            tokio::sync::oneshot::channel::<Result<BridgeReady, String>>();
+            tokio::sync::oneshot::channel::<anyhow::Result<BridgeReady>>();
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
 
         std::thread::Builder::new()
@@ -88,11 +89,11 @@ impl AcpBridge {
                     cancel_rx,
                 );
             })
-            .map_err(|e| format!("Failed to spawn bridge thread: {}", e))?;
+            .with_context(|| format!("Failed to spawn bridge thread for {}", kind))?;
 
         ready_rx
             .await
-            .map_err(|_| "Bridge thread died during init".to_string())?
+            .map_err(|_| anyhow!("Bridge thread for {} died during init", kind))?
     }
 
     pub fn kind(&self) -> AgentKind {
@@ -197,7 +198,7 @@ fn run_bridge_thread(
     provider: Arc<dyn AgentProvider>,
     kind: AgentKind,
     cwd: PathBuf,
-    ready_tx: tokio::sync::oneshot::Sender<Result<BridgeReady, String>>,
+    ready_tx: tokio::sync::oneshot::Sender<anyhow::Result<BridgeReady>>,
     resume_session_id: Option<String>,
     client_handler: Arc<dyn BridgeClientHandler>,
     cancel_tx: tokio::sync::watch::Sender<bool>,
@@ -209,7 +210,7 @@ fn run_bridge_thread(
     {
         Ok(rt) => rt,
         Err(e) => {
-            let _ = ready_tx.send(Err(format!("Failed to build runtime: {}", e)));
+            let _ = ready_tx.send(Err(anyhow!("Failed to build bridge runtime: {}", e)));
             return;
         }
     };
@@ -245,7 +246,7 @@ async fn init_bridge(
     resume_session_id: Option<String>,
     client_handler: Arc<dyn BridgeClientHandler>,
     cancel_tx: tokio::sync::watch::Sender<bool>,
-) -> Result<BridgeReady, String> {
+) -> anyhow::Result<BridgeReady> {
     use acp::Agent as _;
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
@@ -275,7 +276,7 @@ async fn init_bridge(
     let initialize = conn
         .initialize(init_req)
         .await
-        .map_err(|e| format!("ACP initialize failed: {}", e))?;
+        .with_context(|| format!("ACP initialize failed for {}", kind))?;
 
     let startup_session_id = if let Some(resume_session_id) = resume_session_id.clone() {
         match conn

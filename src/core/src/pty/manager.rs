@@ -3,6 +3,8 @@
 use std::io::Write;
 use std::sync::Arc;
 
+use anyhow::Context;
+
 use bytes::Bytes;
 use serde::Serialize;
 use tokio::sync::broadcast;
@@ -89,7 +91,7 @@ impl PtySessionManager {
         tmux_session: Option<String>,
         theme: Option<String>,
         initial_size: Option<(u16, u16)>,
-    ) -> Result<PtySessionCreated, String> {
+    ) -> anyhow::Result<PtySessionCreated> {
         let cwd = project_path.as_ref().map(std::path::PathBuf::from);
         let (bridge, mut pty_rx, resize_tx, mut state_rx) = spawn_pty(
             tool,
@@ -98,7 +100,7 @@ impl PtySessionManager {
             theme,
             initial_size,
         )
-        .map_err(|e| format!("Failed to spawn PTY: {}", e))?;
+        .context("Failed to spawn PTY")?;
 
         let session_id = SessionId::new();
         let metadata = SessionMetadata {

@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
+
 pub mod agents;
 pub mod provider;
 pub mod runtime;
@@ -22,9 +24,9 @@ pub async fn spawn_bridge(
     workspace: &std::path::Path,
     resume_session_id: Option<String>,
     client_handler: Arc<dyn BridgeClientHandler>,
-) -> Result<BridgeReady, String> {
+) -> anyhow::Result<BridgeReady> {
     std::fs::create_dir_all(workspace)
-        .map_err(|e| format!("Failed to create workspace {:?}: {}", workspace, e))?;
+        .with_context(|| format!("Failed to create workspace {:?}", workspace))?;
 
     let kind = AgentKind::from_str_loose(cli_kind).unwrap_or(AgentKind::Claude);
     let provider = provider_for_kind(kind);

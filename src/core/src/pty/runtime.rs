@@ -1,6 +1,7 @@
 //! Portable PTY runtime: spawn a shell or tool and bridge stdin/stdout for terminal clients.
 //! Child is wrapped in Mutex so we can poll try_wait() from a thread and send run state to the frontend.
 
+use anyhow::Context;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -193,7 +194,7 @@ pub fn spawn_pty(
     tmux_session: Option<String>,
     theme: Option<String>,
     initial_size: Option<(u16, u16)>,
-) -> Result<(PtyBridge, mpsc::Receiver<Vec<u8>>, ResizeSender, mpsc::Receiver<PtyRunState>), Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<(PtyBridge, mpsc::Receiver<Vec<u8>>, ResizeSender, mpsc::Receiver<PtyRunState>)> {
     let pty_system = native_pty_system();
     let (cols, rows) = initial_size.unwrap_or((80, 24));
     let pair = pty_system.openpty(PtySize {
@@ -201,7 +202,7 @@ pub fn spawn_pty(
         cols,
         pixel_width: 0,
         pixel_height: 0,
-    })?;
+    }).context("Failed to open PTY")?;
 
     let cmd = command_for_tool(
         tool,
@@ -209,10 +210,10 @@ pub fn spawn_pty(
         tmux_session.as_deref(),
         theme.as_deref(),
     );
-    let child = pair.slave.spawn_command(cmd)?;
+    let child = pair.slave.spawn_command(cmd).context("Failed to spawn PTY child process")?;
 
-    let mut reader = pair.master.try_clone_reader()?;
-    let writer = pair.master.take_writer()?;
+    let mut reader = pair.master.try_clone_reader().context("Failed to clone PTY reader")?;
+    let writer = pair.master.take_writer().context("Failed to take PTY writer")?;
     let master = pair.master;
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
@@ -226,63 +227,72 @@ pub fn spawn_pty(
         .as_deref()
         .and_then(|t| OscColorResponder::new(t, Arc::clone(&writer)));
 
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let chunk = &buf[..n];
-                    if let Some(ref resp) = osc_responder {
-                        resp.intercept(chunk);
+    std::thread::Builder::new()
+        .name(format!("pty-{:?}-reader", tool))
+        .spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let chunk = &buf[..n];
+                        if let Some(ref resp) = osc_responder {
+                            resp.intercept(chunk);
+                        }
+                        if tx.blocking_send(chunk.to_vec()).is_err() {
+                            break;
+                        }
                     }
-                    if tx.blocking_send(chunk.to_vec()).is_err() {
-                        break;
-                    }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
-        }
-    });
+        })
+        .expect("failed to spawn PTY reader thread");
 
-    std::thread::spawn(move || {
-        while let Ok((cols, rows)) = resize_rx.recv() {
-            let size = PtySize {
-                cols,
-                rows,
-                pixel_width: 0,
-                pixel_height: 0,
-            };
-            let _ = master.resize(size);
-        }
-    });
+    std::thread::Builder::new()
+        .name(format!("pty-{:?}-resize", tool))
+        .spawn(move || {
+            while let Ok((cols, rows)) = resize_rx.recv() {
+                let size = PtySize {
+                    cols,
+                    rows,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                };
+                let _ = master.resize(size);
+            }
+        })
+        .expect("failed to spawn PTY resize thread");
 
     let child_poll = Arc::clone(&child);
-    std::thread::spawn(move || {
-        let mut sent_running = false;
-        loop {
-            let exit_status = {
-                let mut guard = match child_poll.lock() {
-                    Ok(g) => g,
-                    Err(_) => break,
+    std::thread::Builder::new()
+        .name(format!("pty-{:?}-poll", tool))
+        .spawn(move || {
+            let mut sent_running = false;
+            loop {
+                let exit_status = {
+                    let mut guard = match child_poll.lock() {
+                        Ok(g) => g,
+                        Err(_) => break,
+                    };
+                    match guard.try_wait() {
+                        Ok(None) => None,
+                        Ok(Some(s)) => Some(s.exit_code()),
+                        Err(_) => break,
+                    }
                 };
-                match guard.try_wait() {
-                    Ok(None) => None,
-                    Ok(Some(s)) => Some(s.exit_code()),
-                    Err(_) => break,
+                if let Some(code) = exit_status {
+                    let _ = state_tx.blocking_send(PtyRunState::Exited { tool, exit_code: code });
+                    break;
                 }
-            };
-            if let Some(code) = exit_status {
-                let _ = state_tx.blocking_send(PtyRunState::Exited { tool, exit_code: code });
-                break;
+                if !sent_running {
+                    sent_running = true;
+                    let _ = state_tx.blocking_send(PtyRunState::Running { tool });
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
-            if !sent_running {
-                sent_running = true;
-                let _ = state_tx.blocking_send(PtyRunState::Running { tool });
-            }
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-    });
+        })
+        .expect("failed to spawn PTY poll thread");
 
     let bridge = PtyBridge { writer, child };
     Ok((bridge, rx, resize_tx, state_rx))

@@ -7,6 +7,7 @@ pub use web_server::run_web_server;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use anyhow::{anyhow, Context};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
@@ -65,9 +66,9 @@ impl ServerDaemon {
         Arc::clone(&self.services)
     }
 
-    pub async fn start_background(&self, dist_path: PathBuf) -> Result<RunningDaemon, String> {
+    pub async fn start_background(&self, dist_path: PathBuf) -> anyhow::Result<RunningDaemon> {
         if tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await.is_ok() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Port {} is already in use — another VibeAround instance may be running",
                 self.port
             ));
@@ -114,7 +115,7 @@ impl ServerDaemon {
         };
 
         // Start channel input processing loop on a dedicated thread with LocalSet.
-        let mut input_rx = channel_hub.take_input_rx().expect("input_rx already taken");
+        let mut input_rx = channel_hub.take_input_rx().context("input_rx already taken")?;
         let acp_hub_for_input = Arc::clone(&acp_hub);
         let plugin_host_for_input = channel_hub.plugin_host();
         std::thread::Builder::new()
@@ -202,7 +203,7 @@ impl ServerDaemon {
         })
     }
 
-    pub async fn start(&self, dist_path: PathBuf) -> Result<(), String> {
+    pub async fn start(&self, dist_path: PathBuf) -> anyhow::Result<()> {
         let mut running = self.start_background(dist_path).await?;
 
         tokio::select! {

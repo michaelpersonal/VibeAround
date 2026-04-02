@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use tokio::io::DuplexStream;
 use tokio::sync::mpsc;
@@ -89,7 +90,7 @@ pub trait AgentProvider: Send + Sync {
     async fn connect(
         &self,
         workspace: &Path,
-    ) -> Result<ProviderConnection, String>;
+    ) -> anyhow::Result<ProviderConnection>;
 }
 
 pub fn provider_for_kind(kind: AgentKind) -> Arc<dyn AgentProvider> {
@@ -117,9 +118,9 @@ impl AgentProvider for StdioAcpProvider {
     async fn connect(
         &self,
         workspace: &Path,
-    ) -> Result<ProviderConnection, String> {
+    ) -> anyhow::Result<ProviderConnection> {
         let agent_def = crate::resources::agent_by_id(&self.agent_kind.to_string())
-            .ok_or_else(|| format!("No resource definition for agent '{}'", self.agent_kind))?;
+            .ok_or_else(|| anyhow!("No resource definition for agent '{}'", self.agent_kind))?;
         let args: Vec<&str> = agent_def.acp.args.iter().map(|s| s.as_str()).collect();
         let (read_stream, write_stream) =
             spawn_stdio_acp(self.agent_kind, &agent_def.acp.program, &args, workspace)?;
@@ -138,7 +139,7 @@ fn spawn_stdio_acp(
     program: &str,
     args: &[&str],
     cwd: &Path,
-) -> Result<(DuplexStream, DuplexStream), String> {
+) -> anyhow::Result<(DuplexStream, DuplexStream)> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     eprintln!("[{}-acp] spawning {} {} in {:?}", kind, program, args.join(" "), cwd);
@@ -150,11 +151,11 @@ fn spawn_stdio_acp(
         .stderr(std::process::Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("Failed to spawn {} {}: {}. Is it installed?", program, args.join(" "), e))?;
+        .with_context(|| format!("Failed to spawn {} {}. Is it installed?", program, args.join(" ")))?;
     eprintln!("[{}-acp] process spawned pid={:?}", kind, child.id());
 
-    let child_stdout = child.stdout.take().ok_or("No stdout")?;
-    let child_stdin = child.stdin.take().ok_or("No stdin")?;
+    let child_stdout = child.stdout.take().context("Process has no stdout")?;
+    let child_stdin = child.stdin.take().context("Process has no stdin")?;
 
     // stdout → client_read
     let (client_read, mut bridge_write) = tokio::io::duplex(64 * 1024);

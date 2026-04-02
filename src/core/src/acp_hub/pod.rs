@@ -3,12 +3,11 @@
 //! Owns the agent bridge directly (no external cache). Calls acp::Agent
 //! methods on the bridge without command enum intermediaries.
 
-use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
-use tokio::sync::{broadcast, Mutex, Notify};
+use tokio::sync::{broadcast, Mutex};
 
 use crate::acp::routing::RouteKey;
 use crate::agent_factory::runtime::{AcpBridge, BridgeClientHandler};
@@ -67,9 +66,9 @@ pub struct ACPPod {
     failed: Mutex<Option<String>>,
     started_at: u64,
     event_tx: broadcast::Sender<SystemEvent>,
-    // Prompt queue — serialize concurrent prompts on the same route
-    in_flight: Mutex<bool>,
-    pending: Mutex<VecDeque<Arc<Notify>>>,
+    /// Serializes concurrent prompts on the same route.
+    /// Tokio's Mutex is fair (FIFO), so callers are served in arrival order.
+    prompt_lock: Mutex<()>,
     /// Cached available commands from the agent's `available_commands_update` notification.
     agent_commands: Mutex<serde_json::Value>,
     // --- Handover state (consumed once on next prompt) ---
@@ -92,8 +91,7 @@ impl ACPPod {
             failed: Mutex::new(None),
             started_at: unix_now_secs(),
             event_tx,
-            in_flight: Mutex::new(false),
-            pending: Mutex::new(VecDeque::new()),
+            prompt_lock: Mutex::new(()),
             agent_commands: Mutex::new(serde_json::Value::Array(vec![])),
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
@@ -121,21 +119,9 @@ impl ACPPod {
         content_blocks: Vec<acp::ContentBlock>,
         downstream_handler: Arc<dyn BridgeClientHandler>,
     ) -> acp::Result<acp::PromptResponse> {
-        // Acquire turn slot — wait if another prompt is in-flight
-        let wait_turn = {
-            let mut in_flight = self.in_flight.lock().await;
-            if !*in_flight {
-                *in_flight = true;
-                None
-            } else {
-                let notify = Arc::new(Notify::new());
-                self.pending.lock().await.push_back(Arc::clone(&notify));
-                Some(notify)
-            }
-        };
-        if let Some(notify) = wait_turn {
-            notify.notified().await;
-        }
+        // Serialize prompts — Tokio Mutex is fair (FIFO), callers served in arrival order.
+        // Held for the duration of the prompt; dropping _turn releases the next waiter.
+        let _turn = self.prompt_lock.lock().await;
 
         eprintln!(
             "[ACPPod] prompt route={} cli_kind={:?} blocks={}",
@@ -144,7 +130,6 @@ impl ACPPod {
             content_blocks.len()
         );
 
-        // Mark busy
         *self.busy.lock().await = true;
         *self.failed.lock().await = None;
         self.emit_snapshot().await;
@@ -179,22 +164,14 @@ impl ACPPod {
         }
         .await;
 
-        // Mark idle
         *self.busy.lock().await = false;
         if let Err(error) = &result {
             *self.failed.lock().await = Some(error.message.to_string());
         }
         self.emit_snapshot().await;
 
-        // Advance queue — let next pending prompt proceed
-        let next = self.pending.lock().await.pop_front();
-        if let Some(next) = next {
-            next.notify_one();
-        } else {
-            *self.in_flight.lock().await = false;
-        }
-
         result
+        // _turn drops here, releasing prompt_lock and allowing the next queued prompt
     }
 
     /// Cancel the active turn.
@@ -283,7 +260,7 @@ impl ACPPod {
         resume_session_id: Option<String>,
         resume_cwd: Option<String>,
         downstream_handler: Arc<dyn BridgeClientHandler>,
-    ) -> Result<Arc<AcpBridge>, String> {
+    ) -> anyhow::Result<Arc<AcpBridge>> {
         // Resolve which agent kind to use
         let stored_cli_kind = self.cli_kind.lock().await.clone();
         let resolved_cli_kind = stored_cli_kind
@@ -359,11 +336,12 @@ impl ACPPod {
         {
             Ok(ready) => ready,
             Err(error) => {
-                *self.failed.lock().await = Some(error.clone());
+                let msg = error.to_string();
+                *self.failed.lock().await = Some(msg.clone());
                 self.emit(SystemEvent::AgentInitializeFailed {
                     route: self.route.clone(),
                     cli_kind: Some(cli_kind),
-                    error: error.clone(),
+                    error: msg,
                 });
                 self.emit_snapshot().await;
                 return Err(error);
@@ -428,21 +406,17 @@ impl ACPPod {
         Ok(session_id)
     }
 
-    /// Full reset: kill bridge, drain queue, clear all state.
+    /// Full reset: kill bridge and clear all state.
+    ///
+    /// Does not wait for any in-flight prompt — the bridge shutdown signal is
+    /// sent immediately. Any prompt currently holding `prompt_lock` will receive
+    /// an ACP error and release the lock; subsequent queued prompts will then
+    /// acquire it and re-spawn a fresh bridge via `ensure_bridge`.
     async fn full_reset(&self) {
-        // Kill bridge
         if let Some(bridge) = self.bridge.lock().await.take() {
             bridge.shutdown().await;
             eprintln!("[ACPPod] full_reset killed bridge route={}", self.route);
         }
-        // Drain queue — wake all pending prompts (they'll fail on missing bridge)
-        {
-            let mut pending = self.pending.lock().await;
-            while let Some(notify) = pending.pop_front() {
-                notify.notify_one();
-            }
-        }
-        *self.in_flight.lock().await = false;
         *self.session_id.lock().await = None;
         *self.initialize.lock().await = None;
         *self.failed.lock().await = None;

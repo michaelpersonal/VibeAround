@@ -42,7 +42,8 @@ impl DaemonController {
         let daemon = self
             .daemon
             .start_background(self.dist_path.clone())
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         *running = Some(daemon);
         Ok(())
     }

@@ -111,7 +111,7 @@ pub async fn create_session_handler(
             body.theme.clone(),
             initial_size,
         )
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(serde_json::json!({
         "session_id": created.session_id,
