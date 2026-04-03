@@ -138,14 +138,30 @@ fn main() {
         .setup(move |app| {
             tray::setup(app)?;
 
-            // Show the main window on startup
-            if let Some(w) = app.get_webview_window("main") {
-                if onboarding_needed {
-                    // Navigate to onboarding page
-                    let _ = w.eval("window.location.replace('/onboarding')");
-                }
-                let _ = w.show();
-                let _ = w.set_focus();
+            // Show the main window once the web UI is reachable.
+            // In dev mode Vite may still be starting; in prod the daemon serves the UI.
+            // Window starts hidden (visible: false in tauri.conf.json).
+            {
+                let app_handle = app.handle().clone();
+                let needs_onboarding = onboarding_needed;
+                // Detect the dev server port from Tauri's devUrl config
+                let dev_port: u16 = if cfg!(debug_assertions) { 5181 } else { port };
+                tauri::async_runtime::spawn(async move {
+                    // Poll TCP until the web server is accepting connections
+                    for _ in 0..30 {
+                        if std::net::TcpStream::connect(("127.0.0.1", dev_port)).is_ok() {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        if needs_onboarding {
+                            let _ = w.eval("window.location.replace('/onboarding')");
+                        }
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                });
             }
 
             // Start the daemon — immediately if no onboarding needed,
