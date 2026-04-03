@@ -75,6 +75,10 @@ pub struct ACPPod {
     // --- Handover state (consumed once on next prompt) ---
     handover_resume_session_id: Mutex<Option<String>>,
     handover_cwd: Mutex<Option<String>>,
+    /// Suppresses session_notification replay during handover load_session.
+    /// Released just before the first prompt is sent (not when bridge is ready),
+    /// because some agents (Gemini) continue replaying after load_session returns.
+    suppress_replay: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl ACPPod {
@@ -96,6 +100,7 @@ impl ACPPod {
             agent_commands: Mutex::new(serde_json::Value::Array(vec![])),
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
+            suppress_replay: Mutex::new(None),
         }
     }
 
@@ -160,6 +165,12 @@ impl ACPPod {
                 &session_id.to_string(),
             )
             .await;
+
+            // Release suppress_replay now — any lingering history replay from
+            // load_session has been swallowed, and the real prompt is about to start.
+            if let Some(flag) = self.suppress_replay.lock().await.take() {
+                flag.store(false, Ordering::Release);
+            }
 
             let request = acp::PromptRequest::new(session_id, content_blocks);
             acp::Agent::prompt(&*bridge, request).await
@@ -357,8 +368,11 @@ impl ACPPod {
             }
         };
 
-        // Bridge is ready — load_session has completed, stop suppressing replay
-        suppress_replay.store(false, Ordering::Release);
+        // Store suppress_replay on the pod — released before the first prompt,
+        // not here, because some agents (Gemini) continue replaying after load_session.
+        if is_handover {
+            *self.suppress_replay.lock().await = Some(suppress_replay);
+        }
 
         // Store bridge and metadata
         eprintln!(
@@ -432,6 +446,7 @@ impl ACPPod {
         *self.busy.lock().await = false;
         *self.handover_resume_session_id.lock().await = None;
         *self.handover_cwd.lock().await = None;
+        *self.suppress_replay.lock().await = None;
         eprintln!("[ACPPod] full_reset done route={}", self.route);
     }
 
