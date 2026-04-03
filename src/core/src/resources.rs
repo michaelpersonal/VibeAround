@@ -59,6 +59,12 @@ pub struct AgentPtyConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentGlobalConfig {
     pub settings_path: String,
+    /// Legacy config path — also written to for backward compat (e.g. older Claude Code).
+    #[serde(default)]
+    pub settings_path_legacy: Option<String>,
+    /// Config file format: "json" (default) or "toml".
+    #[serde(default)]
+    pub settings_format: Option<String>,
     pub mcp_key: String,
     pub mcp_entry: serde_json::Value,
     #[serde(default)]

@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use anyhow::anyhow;
 
 use serde::Serialize;
 use tokio::sync::{broadcast, Mutex};
@@ -98,13 +99,14 @@ impl ACPPod {
         }
     }
 
-    /// Prepare this pod for a session pickup. Sets cli_kind and resume_session_id
-    /// so the next prompt spawns a bridge that resumes the given session.
-    /// The workspace is resolved from the agent's default config.
-    pub async fn set_handover(&self, cli_kind: String, resume_session_id: String) {
+    /// Prepare this pod for a session pickup. Sets cli_kind, resume_session_id,
+    /// and optionally cwd so the next prompt spawns a bridge that resumes the
+    /// given session in the correct workspace.
+    pub async fn set_handover(&self, cli_kind: String, resume_session_id: String, cwd: Option<String>) {
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(cli_kind);
         *self.handover_resume_session_id.lock().await = Some(resume_session_id);
+        *self.handover_cwd.lock().await = cwd;
     }
 
     // -----------------------------------------------------------------------
@@ -144,7 +146,7 @@ impl ACPPod {
                 .await
                 .map_err(|error| {
                     eprintln!("[ACPPod] ensure_bridge failed route={}: {:#}", self.route, error);
-                    acp::Error::internal_error()
+                    acp::Error::new(-32603, error.to_string())
                 })?;
 
             let session_id = self.ensure_session(&bridge).await?;
@@ -306,9 +308,16 @@ impl ACPPod {
             .clone()
             .unwrap_or_else(|| "default".to_string());
 
-        // Resolve workspace — handover cwd overrides default
+        // Resolve workspace — handover must include cwd, normal prompt uses default
+        let is_handover = resume_session_id.is_some();
         let workspace = match resume_cwd {
             Some(cwd) => std::path::PathBuf::from(cwd),
+            None if is_handover => {
+                return Err(anyhow!(
+                    "Session pickup is missing the working directory. \
+                     Please re-run the handover to get an updated /pickup command that includes the cwd."
+                ));
+            }
             None => config::ensure_loaded().resolve_workspace(&cli_kind),
         };
 

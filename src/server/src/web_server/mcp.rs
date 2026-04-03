@@ -9,6 +9,7 @@
 
 use axum::{
     extract::State,
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -60,17 +61,21 @@ fn mcp_error_text(id: Option<serde_json::Value>, text: &str) -> Json<serde_json:
 pub async fn mcp_handler(
     State(state): State<AppState>,
     Json(req): Json<JsonRpcRequest>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     if req.jsonrpc != "2.0" {
-        return jsonrpc_err(req.id, -32600, "Invalid JSON-RPC version");
+        return jsonrpc_err(req.id, -32600, "Invalid JSON-RPC version").into_response();
+    }
+
+    // Notifications (no id) must return 202 Accepted with no body per MCP spec.
+    if req.method.starts_with("notifications/") {
+        return StatusCode::ACCEPTED.into_response();
     }
 
     match req.method.as_str() {
-        "initialize" => mcp_initialize(req.id),
-        "notifications/initialized" => jsonrpc_ok(req.id, serde_json::json!({})),
-        "tools/list" => mcp_tools_list(req.id),
-        "tools/call" => mcp_tools_call(req.id, req.params, &state).await,
-        _ => jsonrpc_err(req.id, -32601, &format!("Method not found: {}", req.method)),
+        "initialize" => mcp_initialize(req.id).into_response(),
+        "tools/list" => mcp_tools_list(req.id).into_response(),
+        "tools/call" => mcp_tools_call(req.id, req.params, &state).await.into_response(),
+        _ => jsonrpc_err(req.id, -32601, &format!("Method not found: {}", req.method)).into_response(),
     }
 }
 
@@ -155,21 +160,32 @@ async fn mcp_prepare_handover(
             match find_latest_session(agent_kind_str, &cwd_path) {
                 Some(sid) => sid,
                 None => {
-                    return mcp_error_text(id,
-                        "Could not auto-discover session ID. Please provide your session_id explicitly.\n\
-                         In Claude Code, you can find it by running /status."
-                    );
+                    let hint = match agent_kind_str {
+                        "claude" => "In Claude Code, you can find it by running /status.",
+                        "gemini" => "In Gemini CLI, run /resume to browse recent sessions.",
+                        "codex" => "In Codex CLI, run `codex resume` to see recent sessions.",
+                        _ => "Check your agent's session history.",
+                    };
+                    return mcp_error_text(id, &format!(
+                        "Could not auto-discover session ID. Please provide your session_id explicitly.\n{}",
+                        hint
+                    ));
                 }
             }
         }
     };
 
-    let pickup_cmd = format!("/pickup {} {}", agent_kind_str, session_id);
+    let code = common::pickup_codes::store(
+        agent_kind_str.to_string(),
+        session_id,
+        cwd.to_string(),
+    );
+    let pickup_cmd = format!("/pickup {}", code);
     mcp_text(id, &format!(
         "Handover prepared.\n\n\
          Tell the user to send this command in any IM chat connected to VibeAround:\n\
          {}\n\n\
-         After sending the command, the user's next message will resume this session.",
+         The code expires in 2 minutes. After sending the command, the user's next message will resume this session.",
         pickup_cmd
     ))
 }
@@ -269,11 +285,11 @@ async fn mcp_dispatch_task(
 // ---------------------------------------------------------------------------
 
 /// Find the most recent session ID for a given agent kind and workspace.
-/// Claude stores sessions at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
 fn find_latest_session(agent_kind: &str, cwd: &std::path::Path) -> Option<String> {
     match agent_kind {
         "claude" => find_latest_claude_session(cwd),
-        // TODO: add session discovery for gemini, opencode, codex
+        "gemini" => find_latest_gemini_session(cwd),
+        "codex" => find_latest_codex_session(cwd),
         _ => None,
     }
 }
@@ -321,5 +337,127 @@ fn find_latest_claude_session(cwd: &std::path::Path) -> Option<String> {
         }
     }
 
+    best.map(|(_, session_id)| session_id)
+}
+
+/// Find the most recent Gemini session for a given cwd.
+/// Gemini maps cwd → slug via `~/.gemini/projects.json`, then stores
+/// session files at `~/.gemini/tmp/<slug>/chats/session-*.json`.
+fn find_latest_gemini_session(cwd: &std::path::Path) -> Option<String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    let gemini_dir = std::path::PathBuf::from(&home).join(".gemini");
+
+    // Read projects.json to map cwd → slug
+    let projects_path = gemini_dir.join("projects.json");
+    let projects_data = std::fs::read_to_string(&projects_path).ok()?;
+    let projects_json: serde_json::Value = serde_json::from_str(&projects_data).ok()?;
+    let projects_map = projects_json.get("projects")?.as_object()?;
+
+    let cwd_str = cwd.to_string_lossy();
+    let slug = projects_map.get(cwd_str.as_ref())?.as_str()?;
+
+    let chats_dir = gemini_dir.join("tmp").join(slug).join("chats");
+    if !chats_dir.is_dir() {
+        return None;
+    }
+
+    // Find the most recent session-*.json file
+    let mut best: Option<(std::time::SystemTime, String)> = None;
+    if let Ok(entries) = std::fs::read_dir(&chats_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !fname.starts_with("session-") || path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(meta) = path.metadata() else { continue };
+            let Ok(modified) = meta.modified() else { continue };
+
+            match &best {
+                Some((best_time, _)) if modified <= *best_time => {}
+                _ => {
+                    // Parse JSON to extract sessionId
+                    if let Ok(data) = std::fs::read_to_string(&path) {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
+                            if let Some(sid) = json.get("sessionId").and_then(|v| v.as_str()) {
+                                best = Some((modified, sid.to_string()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(_, session_id)| session_id)
+}
+
+/// Find the most recent Codex session for a given cwd.
+/// Codex stores sessions at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`.
+/// The first line of each file contains `payload.cwd` and `payload.id`.
+fn find_latest_codex_session(cwd: &std::path::Path) -> Option<String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    let sessions_dir = std::path::PathBuf::from(&home).join(".codex").join("sessions");
+    if !sessions_dir.is_dir() {
+        return None;
+    }
+
+    let cwd_str = cwd.to_string_lossy();
+    let mut best: Option<(std::time::SystemTime, String)> = None;
+
+    // Walk the sessions directory recursively
+    fn walk_codex_sessions(
+        dir: &std::path::Path,
+        cwd_str: &str,
+        best: &mut Option<(std::time::SystemTime, String)>,
+    ) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_codex_sessions(&path, cwd_str, best);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Ok(meta) = path.metadata() else { continue };
+            let Ok(modified) = meta.modified() else { continue };
+
+            // Skip if older than current best
+            if let Some((best_time, _)) = best {
+                if modified <= *best_time {
+                    continue;
+                }
+            }
+
+            // Read first line and check cwd match
+            let Ok(file) = std::fs::File::open(&path) else { continue };
+            let reader = std::io::BufRead::lines(std::io::BufReader::new(file));
+            let Some(Ok(first_line)) = reader.into_iter().next() else { continue };
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(&first_line) else { continue };
+
+            let payload = match json.get("payload") {
+                Some(p) => p,
+                None => continue,
+            };
+            let session_cwd = match payload.get("cwd").and_then(|v| v.as_str()) {
+                Some(c) => c,
+                None => continue,
+            };
+            if session_cwd != cwd_str {
+                continue;
+            }
+            if let Some(sid) = payload.get("id").and_then(|v| v.as_str()) {
+                *best = Some((modified, sid.to_string()));
+            }
+        }
+    }
+
+    walk_codex_sessions(&sessions_dir, &cwd_str, &mut best);
     best.map(|(_, session_id)| session_id)
 }

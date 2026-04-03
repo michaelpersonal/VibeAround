@@ -306,16 +306,37 @@ enum SlashAction {
     Close,
     /// /help or /commands — list available agent commands
     ListAgentCommands,
-    /// /pickup <agent_kind> <session_id> — import a session from a coding agent (Direction 1)
-    Pickup { agent_kind: String, session_id: String },
+    /// /pickup <agent_kind> <session_id> [cwd] — import a session from a coding agent (Direction 1)
+    Pickup { agent_kind: String, session_id: String, cwd: Option<String> },
+    /// /pickup <CODE> — short code lookup
+    PickupCode(String),
     /// /handover — export current session to a coding agent (Direction 2)
     Handover,
     /// Unknown slash command
     Unknown(String),
 }
 
+/// Strip IM line-wrapping: remove \r\n / \n / \r and any trailing spaces after them.
+fn strip_line_wraps(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' || c == '\n' {
+            if c == '\r' && chars.peek() == Some(&'\n') { chars.next(); }
+            while chars.peek().map_or(false, |c| *c == ' ') { chars.next(); }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn parse_slash_command(text: &str) -> Option<SlashAction> {
-    let trimmed = text.trim();
+    // Pre-process: strip IM line-wraps, then collapse runs of spaces into one.
+    // IM clients may convert line breaks to spaces or insert extra whitespace.
+    let cleaned = strip_line_wraps(text);
+    let collapsed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim();
     if !trimmed.starts_with('/') {
         return None;
     }
@@ -359,14 +380,22 @@ fn parse_slash_command(text: &str) -> Option<SlashAction> {
         "/close" => Some(SlashAction::Close),
         "/help" | "/commands" | "/list_agent_commands" => Some(SlashAction::ListAgentCommands),
         "/pickup" => {
-            // /pickup <agent_kind> <session_id>
+            // /pickup <CODE>  — short code (looked up server-side)
+            // /pickup <agent_kind> <session_id> [cwd]  — legacy full command
             match arg {
                 Some(rest) if !rest.is_empty() => {
-                    let parts: Vec<&str> = rest.splitn(2, ' ').collect();
-                    if parts.len() == 2 && !parts[1].is_empty() {
+                    let parts: Vec<&str> = rest.splitn(3, ' ').collect();
+                    if parts.len() == 1 {
+                        // Short code — resolve via pickup code store
+                        Some(SlashAction::PickupCode(parts[0].to_string()))
+                    } else if parts.len() >= 2 && !parts[1].is_empty() {
+                        let cwd = parts.get(2)
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
                         Some(SlashAction::Pickup {
                             agent_kind: parts[0].to_string(),
                             session_id: parts[1].to_string(),
+                            cwd,
                         })
                     } else {
                         Some(SlashAction::Unknown(trimmed.to_string()))
@@ -414,6 +443,7 @@ pub async fn handle_channel_input(
                 }
                 Err(e) => {
                     eprintln!("[ChannelManager] prompt ERR route={} error={}", route, e);
+                    send_system_text(plugin_host, &route, &format!("❌ {}", e)).await;
                 }
             }
         }
@@ -509,13 +539,44 @@ pub(crate) async fn handle_prompt(
                 send_system_text(plugin_host, &route, &text).await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
-            SlashAction::Pickup { agent_kind, session_id } => {
-                // Direction 1: Agent → IM. User sends /pickup <agent_kind> <session_id>
-                // to import a session from a coding agent.
+            SlashAction::PickupCode(code) => {
+                // Short code — resolve via pickup code store
+                match crate::pickup_codes::consume(&code) {
+                    Some((agent_kind, session_id, cwd)) => {
+                        acp_hub.prepare_pickup(
+                            route.clone(),
+                            agent_kind.clone(),
+                            session_id.clone(),
+                            Some(cwd),
+                        ).await;
+                        send_system_text(
+                            plugin_host,
+                            &route,
+                            &format!(
+                                "Session pickup ready (agent={}, session={}).\nSend your next message to continue.",
+                                agent_kind, session_id
+                            ),
+                        )
+                        .await;
+                    }
+                    None => {
+                        send_system_text(
+                            plugin_host,
+                            &route,
+                            "❌ Invalid or expired pickup code. Please re-run the handover to get a new code.",
+                        )
+                        .await;
+                    }
+                }
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+            SlashAction::Pickup { agent_kind, session_id, cwd } => {
+                // Legacy: /pickup <agent_kind> <session_id> [cwd]
                 acp_hub.prepare_pickup(
                     route.clone(),
                     agent_kind.clone(),
                     session_id.clone(),
+                    cwd.clone(),
                 ).await;
                 send_system_text(
                     plugin_host,

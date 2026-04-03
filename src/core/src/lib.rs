@@ -7,6 +7,7 @@ pub mod agent_integrations;
 pub mod channel_manager;
 pub mod config;
 pub mod env;
+pub mod pickup_codes;
 pub mod plugins;
 pub mod pty;
 pub mod resources;

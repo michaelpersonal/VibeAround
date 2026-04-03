@@ -14,9 +14,10 @@
     },
     "resume_template": "cd {cwd} && claude --resume {session_id}",
     "global_config": {
-      "settings_path": ".claude/settings.json",
+      "settings_path": ".claude.json",
+      "settings_path_legacy": ".claude/settings.json",
       "mcp_key": "mcpServers",
-      "mcp_entry": { "url": "{mcp_url}", "metadata": "vibearound", "version": "{version}" },
+      "mcp_entry": { "type": "http", "url": "{mcp_url}" },
       "skill_dir": ".claude/skills/vibearound"
     }
   },
@@ -32,11 +33,12 @@
     "pty": {
       "command": "gemini"
     },
-    "resume_template": "cd {cwd} && gemini",
+    "resume_template": "cd {cwd} && gemini --resume {session_id}",
     "global_config": {
       "settings_path": ".gemini/settings.json",
       "mcp_key": "mcpServers",
-      "mcp_entry": { "httpUrl": "{mcp_url}", "metadata": "vibearound", "version": "{version}" }
+      "mcp_entry": { "httpUrl": "{mcp_url}" },
+      "skill_dir": ".gemini/skills/vibearound"
     }
   },
   {
@@ -64,6 +66,14 @@
     },
     "pty": {
       "command": "codex"
+    },
+    "resume_template": "cd {cwd} && codex resume {session_id}",
+    "global_config": {
+      "settings_path": ".codex/config.toml",
+      "settings_format": "toml",
+      "mcp_key": "mcp_servers",
+      "mcp_entry": { "url": "{mcp_url}" },
+      "skill_dir": ".codex/skills/vibearound"
     }
   }
 ]
