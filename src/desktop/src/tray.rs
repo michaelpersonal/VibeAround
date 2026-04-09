@@ -54,8 +54,17 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
     let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
     let menu = Menu::with_items(app, &[&show_item, &open_local_item, &open_tunnel_item, &quit_item])?;
 
-    let icon_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/32x32.png");
-    let icon = Image::from_path(icon_path)?;
+    // Embed the tray icon bytes at compile time so the shipped binary
+    // doesn't depend on any filesystem path being present at runtime.
+    //
+    // Using `env!("CARGO_MANIFEST_DIR")` + `Image::from_path` as we did
+    // previously bakes the *build machine's* absolute source path into
+    // the binary. On every other machine `Image::from_path` returns
+    // `Err`, `tray::setup` returns that error, Tauri treats setup failure
+    // as fatal, and the app crashes at launch with an "application quit
+    // unexpectedly" dialog.
+    const TRAY_ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
+    let icon = Image::from_bytes(TRAY_ICON_PNG)?;
 
     // Clone items for the async watchers
     let tunnel_item_clone = open_tunnel_item.clone();

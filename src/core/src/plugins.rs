@@ -128,11 +128,9 @@ impl From<&DiscoveredPlugin> for DiscoveredPluginSummary {
 pub fn discover_plugins() -> HashMap<String, DiscoveredPlugin> {
     let mut discovered = HashMap::new();
 
-    load_plugins_from_dir(
-        &project_plugins_dir(),
-        PluginSource::Project,
-        &mut discovered,
-    );
+    if let Some(project_dir) = project_plugins_dir() {
+        load_plugins_from_dir(&project_dir, PluginSource::Project, &mut discovered);
+    }
     load_plugins_from_dir(&user_plugins_dir(), PluginSource::User, &mut discovered);
 
     discovered
@@ -162,11 +160,28 @@ pub fn user_plugins_dir() -> PathBuf {
     config::data_dir().join(PROJECT_PLUGINS_DIR)
 }
 
-pub fn project_plugins_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join(PROJECT_PLUGINS_DIR)
+/// Return the in-tree plugins directory used during development.
+///
+/// Only meaningful in debug builds: the path is derived from
+/// `CARGO_MANIFEST_DIR`, which is the *build machine's* absolute source
+/// path. Baking that into a release binary would both leak local paths
+/// into the shipped artifact and point at a directory that doesn't
+/// exist on end-user machines. Release builds return `None` and rely
+/// exclusively on `user_plugins_dir()`.
+pub fn project_plugins_dir() -> Option<PathBuf> {
+    #[cfg(debug_assertions)]
+    {
+        Some(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join(PROJECT_PLUGINS_DIR),
+        )
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        None
+    }
 }
 
 fn load_plugins_from_dir(

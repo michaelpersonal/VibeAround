@@ -158,7 +158,6 @@ fn main() {
         );
     }
     let gate = Arc::new(Notify::new());
-    let dist_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -172,7 +171,6 @@ fn main() {
             }
         }))
         .manage(AppServiceManager(services))
-        .manage(DaemonController::new(Arc::clone(&daemon), dist_path.clone()))
         .manage(OnboardingGate { notify: Arc::clone(&gate) })
         .manage(OnboardingSessions {
             plugin_sessions: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -198,7 +196,39 @@ fn main() {
             onboarding::start_onboarding_install,
             onboarding::cancel_onboarding_install,
         ])
-        .setup(move |app| {
+        .setup({
+            let daemon = Arc::clone(&daemon);
+            move |app| {
+            // Resolve the web dashboard `dist/` directory.
+            //
+            // - **Dev** (`cargo tauri dev`): read from the source tree so hot
+            //   edits to `src/web/dist` are picked up without rebundling.
+            // - **Release**: read from the Tauri bundle's resource dir. The
+            //   resources glob `../web/dist/**/*` in `tauri.conf.json` copies
+            //   files under `<resource_dir>/_up_/web/dist/`.
+            //
+            // Using `env!("CARGO_MANIFEST_DIR")` unconditionally would bake
+            // the *build machine's* absolute source path into the release
+            // binary — on every other machine that path doesn't exist, the
+            // daemon fails to locate the dashboard, and users hit a broken
+            // install.
+            let dist_path: PathBuf = {
+                #[cfg(debug_assertions)]
+                {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist")
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    app.path()
+                        .resource_dir()
+                        .map_err(|e| format!("failed to resolve resource_dir: {e}"))?
+                        .join("_up_")
+                        .join("web")
+                        .join("dist")
+                }
+            };
+            app.manage(DaemonController::new(Arc::clone(&daemon), dist_path));
+
             tray::setup(app)?;
 
             // Show the window immediately — the splash screen in index.html
@@ -243,7 +273,7 @@ fn main() {
             });
 
             Ok(())
-        })
+        }})
         .run(tauri::generate_context!())
         .expect("error while running VibeAround");
 }

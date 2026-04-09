@@ -67,3 +67,4 @@ wiki/
 # key & build
 apple-sign.config
 build.sh
+.build-env
