@@ -36,6 +36,7 @@ A Tauri-packaged desktop app walks you through setup with a one-click wizard. Ea
 - **Agent switching** — `/switch claude`, `/switch codex`, `/switch cursor` mid-conversation from any channel
 - **IM channels** — Telegram, Feishu, Discord, Slack, WeChat, DingTalk, WeCom, QQ Bot — each a standalone plugin
 - **Native IM experience** — Feishu interactive cards, Slack Block Kit, Discord embeds, WeCom markdown streaming — each channel uses the richest native formatting it supports
+- **Live preview** — agents can share a live preview URL for dev servers (iframe + reverse proxy) or markdown files (GitHub-style rendering), viewable on phone or browser with a 5-minute expiring link
 - **Skills + MCP auto-integration** — on every startup VibeAround syncs its skill set and an MCP server endpoint into each enabled coding agent (Claude Code, Codex, Gemini, Cursor, Kiro, Qwen) so they discover VibeAround as a tool with zero manual config
 - **Loopback bearer-token auth** — daemon HTTP, WebSocket, and MCP endpoints are gated by a session token at `~/.vibearound/auth.json` (0600, rotated on every daemon start)
 - **Web terminal** — full PTY-based terminal in the browser with tmux integration, run shell sessions alongside agent chat
@@ -228,10 +229,10 @@ See the [SDK README](https://github.com/jazzenchen/vibearound-plugin-channel-sdk
 | LINE | Planned |
 | Microsoft Teams | Planned |
 
-### Live preview
+### Live preview (next)
 
-- Preview files, screenshots, and artifacts your agent just created directly inside the IM chat
-- No need to switch back to your desktop to inspect what the agent produced
+- Preview files, screenshots, and artifacts directly inside the IM chat (currently available via tunnel URL)
+- IM-native inline previews (image cards, embedded iframes where supported)
 
 ### More IM native features
 
