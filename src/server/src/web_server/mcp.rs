@@ -111,6 +111,7 @@ async fn mcp_tools_call(
         "prepare_handover" => mcp_prepare_handover(id, arguments).await,
         "register_workspace" => mcp_register_workspace(id, arguments).await,
         "preview_start" => mcp_preview_start(id, arguments, state).await,
+        "md_preview" => mcp_md_preview(id, arguments, state).await,
         "dispatch_task" => mcp_dispatch_task(id, arguments, state).await,
         _ => jsonrpc_err(id, -32602, &format!("Unknown tool: {}", tool_name)),
     }
@@ -268,26 +269,113 @@ async fn mcp_preview_start(
         None => return jsonrpc_err(id, -32602, "Missing required argument: cwd"),
     };
 
-    // Validate cwd is a known workspace (same logic as prepare_handover).
-    let config = common::config::ensure_loaded();
     let cwd_path = std::path::PathBuf::from(cwd);
-    let builtin_dir = common::config::builtin_workspaces_dir();
-    let is_builtin = cwd_path.starts_with(&builtin_dir);
-    let is_registered = config
-        .all_workspaces()
-        .iter()
-        .any(|ws| ws == &cwd_path);
-
-    if !is_builtin && !is_registered {
-        return mcp_error_text(id, &format!(
-            "Workspace {} is not registered in VibeAround.\n\
-             Use the `register_workspace` tool to add it first, then retry.",
-            cwd
-        ));
+    if let Err(resp) = validate_workspace(&cwd_path, id.clone()) {
+        return resp;
     }
 
-    // Title: use provided value, or derive from workspace directory name.
+    let title = derive_title(arguments, &cwd_path);
+    let slug = common::preview_entries::store_server(port, cwd_path, title);
+    let preview_url = build_preview_url(state, "preview", &slug);
+
+    mcp_text(id, &format!(
+        "Preview ready.\n\n\
+         URL: {}\n\n\
+         The link expires in 5 minutes. Share it with the user so they can see the live preview.",
+        preview_url
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// md_preview — render a markdown file with styled preview
+// ---------------------------------------------------------------------------
+
+async fn mcp_md_preview(
+    id: Option<serde_json::Value>,
+    arguments: &serde_json::Value,
+    state: &AppState,
+) -> Json<serde_json::Value> {
+    let file_str = match arguments.get("file").and_then(|v| v.as_str()) {
+        Some(f) => f,
+        None => return jsonrpc_err(id, -32602, "Missing required argument: file"),
+    };
+    let cwd = match arguments.get("cwd").and_then(|v| v.as_str()) {
+        Some(c) => c,
+        None => return jsonrpc_err(id, -32602, "Missing required argument: cwd"),
+    };
+
+    let cwd_path = std::path::PathBuf::from(cwd);
+    if let Err(resp) = validate_workspace(&cwd_path, id.clone()) {
+        return resp;
+    }
+
+    // Resolve relative paths against cwd.
+    let file_path = {
+        let p = std::path::PathBuf::from(file_str);
+        if p.is_relative() { cwd_path.join(&p) } else { p }
+    };
+    if !file_path.is_file() {
+        return mcp_error_text(id, &format!("File not found: {}", file_path.display()));
+    }
+
+    // Security: file must be inside the workspace.
+    if let (Ok(canon_file), Ok(canon_ws)) = (file_path.canonicalize(), cwd_path.canonicalize()) {
+        if !canon_file.starts_with(&canon_ws) {
+            return mcp_error_text(id, "File must be inside the workspace directory.");
+        }
+    }
+
     let title = arguments
+        .get("title")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| {
+            file_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Preview")
+                .to_string()
+        });
+
+    let slug = common::preview_entries::store_file(file_path, cwd_path, title);
+    let preview_url = build_preview_url(state, "md-preview", &slug);
+
+    mcp_text(id, &format!(
+        "Markdown preview ready.\n\n\
+         URL: {}\n\n\
+         The link expires in 5 minutes. Share it with the user so they can see the rendered document.",
+        preview_url
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+/// Validate that cwd is a registered workspace. Returns Err with a JSON-RPC
+/// error response on failure.
+fn validate_workspace(
+    cwd_path: &std::path::Path,
+    id: Option<serde_json::Value>,
+) -> Result<(), Json<serde_json::Value>> {
+    let config = common::config::ensure_loaded();
+    let builtin_dir = common::config::builtin_workspaces_dir();
+    let is_builtin = cwd_path.starts_with(&builtin_dir);
+    let is_registered = config.all_workspaces().iter().any(|ws| ws == cwd_path);
+
+    if !is_builtin && !is_registered {
+        return Err(mcp_error_text(id, &format!(
+            "Workspace {} is not registered in VibeAround.\n\
+             Use the `register_workspace` tool to add it first, then retry.",
+            cwd_path.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Derive a title from the MCP arguments or the workspace directory name.
+fn derive_title(arguments: &serde_json::Value, cwd_path: &std::path::Path) -> String {
+    arguments
         .get("title")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
@@ -298,24 +386,16 @@ async fn mcp_preview_start(
                 .and_then(|n| n.to_str())
                 .unwrap_or("Preview")
                 .to_string()
-        });
+        })
+}
 
-    let slug = common::preview_entries::store(port, cwd_path, title);
-
-    // Build the full preview URL using the tunnel URL if available.
-    let base_url = state
+/// Build a full preview URL from the tunnel (or localhost fallback).
+fn build_preview_url(state: &AppState, route: &str, slug: &str) -> String {
+    let base = state
         .services
         .get_tunnel_url()
         .unwrap_or_else(|| format!("http://127.0.0.1:{}", state.services.port));
-
-    let preview_url = format!("{}/preview/{}", base_url.trim_end_matches('/'), slug);
-
-    mcp_text(id, &format!(
-        "Preview ready.\n\n\
-         URL: {}\n\n\
-         The link expires in 5 minutes. Share it with the user so they can see the live preview.",
-        preview_url
-    ))
+    format!("{}/{}/{}", base.trim_end_matches('/'), route, slug)
 }
 
 // ---------------------------------------------------------------------------

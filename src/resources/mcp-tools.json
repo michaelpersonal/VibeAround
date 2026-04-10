@@ -41,7 +41,7 @@
   },
   {
     "name": "preview_start",
-    "description": "Start a live preview for a running local server or static site. Returns a shareable URL that displays the app in an iframe wrapper. The URL expires in 5 minutes.",
+    "description": "Start a live preview for a running local server. Returns a shareable URL that displays the app in an iframe wrapper. The URL expires in 5 minutes.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -59,6 +59,28 @@
         }
       },
       "required": ["port", "cwd"]
+    }
+  },
+  {
+    "name": "md_preview",
+    "description": "Preview a markdown file with beautiful GitHub-style rendering. Returns a shareable URL. The URL expires in 5 minutes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Path to the markdown file (absolute, or relative to cwd)."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Absolute path to the project workspace directory."
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional title shown in the preview toolbar. Defaults to the filename."
+        }
+      },
+      "required": ["file", "cwd"]
     }
   },
   {

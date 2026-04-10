@@ -455,30 +455,37 @@ fn agent_skills(agent: &str) -> Vec<(&'static str, &'static str)> {
         "claude" => vec![
             ("vibearound", include_str!("../../skills/claude/vibearound/SKILL.md")),
             ("va-preview", include_str!("../../skills/claude/va-preview/SKILL.md")),
+            ("va-md-preview", include_str!("../../skills/claude/va-md-preview/SKILL.md")),
         ],
         "gemini" => vec![
             ("vibearound", include_str!("../../skills/gemini/vibearound/SKILL.md")),
             ("va-preview", include_str!("../../skills/gemini/va-preview/SKILL.md")),
+            ("va-md-preview", include_str!("../../skills/gemini/va-md-preview/SKILL.md")),
         ],
         "codex" => vec![
             ("vibearound", include_str!("../../skills/codex/vibearound/SKILL.md")),
             ("va-preview", include_str!("../../skills/codex/va-preview/SKILL.md")),
+            ("va-md-preview", include_str!("../../skills/codex/va-md-preview/SKILL.md")),
         ],
         "cursor" => vec![
             ("vibearound", include_str!("../../skills/cursor/vibearound/SKILL.md")),
             ("va-preview", include_str!("../../skills/cursor/va-preview/SKILL.md")),
+            ("va-md-preview", include_str!("../../skills/cursor/va-md-preview/SKILL.md")),
         ],
         "kiro" => vec![
             ("vibearound", include_str!("../../skills/kiro/vibearound/SKILL.md")),
             ("va-preview", include_str!("../../skills/kiro/va-preview/SKILL.md")),
+            ("va-md-preview", include_str!("../../skills/kiro/va-md-preview/SKILL.md")),
         ],
         "qwen-code" => vec![
             ("vibearound", include_str!("../../skills/qwen-code/vibearound/SKILL.md")),
             ("va-preview", include_str!("../../skills/qwen-code/va-preview/SKILL.md")),
+            ("va-md-preview", include_str!("../../skills/qwen-code/va-md-preview/SKILL.md")),
         ],
         _ => vec![
             ("vibearound", include_str!("../../skills/vibearound/SKILL.md")),
             ("va-preview", include_str!("../../skills/va-preview/SKILL.md")),
+            ("va-md-preview", include_str!("../../skills/va-md-preview/SKILL.md")),
         ],
     }
 }

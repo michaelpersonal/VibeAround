@@ -1,13 +1,14 @@
 //! Short-lived preview entries for live preview URLs.
 //!
-//! `store()` generates an 8-char slug mapping to (port, workspace, title).
-//! The user opens `https://<tunnel>/preview/<SLUG>` to view the iframe wrapper,
-//! which proxies requests to `http://127.0.0.1:<port>/`.
+//! Two modes:
+//! - **Server mode**: `store_server(port, workspace, title)` — proxies to `localhost:{port}`
+//! - **File mode**: `store_file(file, workspace, title)` — serves a file directly
+//!   (markdown files get rendered client-side with marked.js + GitHub CSS)
 //!
 //! Entries expire after 5 minutes. Unlike pickup codes, lookups are multi-use —
 //! the same slug can be accessed repeatedly within the TTL window.
 //!
-//! Cleanup: expired entries are purged on each `store()` and `lookup()` call.
+//! Cleanup: expired entries are purged on each `store*()` and `lookup()` call.
 //! No background loop — stale entries are tiny and cleared on next access.
 
 use std::collections::HashMap;
@@ -19,10 +20,19 @@ use parking_lot::Mutex;
 use rand::rngs::OsRng;
 use rand::Rng;
 
+/// What the preview serves.
+#[derive(Debug, Clone)]
+pub enum PreviewKind {
+    /// Reverse proxy to a running local server.
+    Server { port: u16 },
+    /// Serve a file directly (markdown rendered client-side).
+    File { path: PathBuf },
+}
+
 /// Data associated with a live preview slug.
 #[derive(Debug, Clone)]
 pub struct PreviewEntry {
-    pub port: u16,
+    pub kind: PreviewKind,
     pub workspace: PathBuf,
     pub title: String,
     pub created_at: Instant,
@@ -48,13 +58,23 @@ fn generate_slug() -> String {
         .collect()
 }
 
-/// Store a preview entry and return the 8-char slug.
+/// Store a server-mode preview and return the 8-char slug.
+pub fn store_server(port: u16, workspace: PathBuf, title: String) -> String {
+    store_entry(PreviewKind::Server { port }, workspace, title)
+}
+
+/// Store a file-mode preview and return the 8-char slug.
+pub fn store_file(path: PathBuf, workspace: PathBuf, title: String) -> String {
+    store_entry(PreviewKind::File { path }, workspace, title)
+}
+
+/// Internal: insert an entry with a fresh slug.
 ///
 /// Retries generation on the rare case of a collision with an already-live
 /// entry. The keyspace is ~31^8 ≈ 852 billion slugs against a handful of live
 /// entries, so the loop terminates in a single iteration with overwhelming
 /// probability.
-pub fn store(port: u16, workspace: PathBuf, title: String) -> String {
+fn store_entry(kind: PreviewKind, workspace: PathBuf, title: String) -> String {
     let mut map = PREVIEW_ENTRIES.lock();
     let now = Instant::now();
     map.retain(|_, e| e.expires_at > now);
@@ -68,7 +88,7 @@ pub fn store(port: u16, workspace: PathBuf, title: String) -> String {
     map.insert(
         slug.clone(),
         PreviewEntry {
-            port,
+            kind,
             workspace,
             title,
             created_at: now,
@@ -110,24 +130,38 @@ mod tests {
     }
 
     #[test]
-    fn store_and_lookup_roundtrip() {
-        let slug = store(3000, PathBuf::from("/tmp/project"), "My App".into());
+    fn store_server_and_lookup_roundtrip() {
+        let slug = store_server(3000, PathBuf::from("/tmp/project"), "My App".into());
         let entry = lookup(&slug).expect("slug should resolve");
-        assert_eq!(entry.port, 3000);
+        assert!(matches!(entry.kind, PreviewKind::Server { port: 3000 }));
         assert_eq!(entry.workspace, PathBuf::from("/tmp/project"));
         assert_eq!(entry.title, "My App");
     }
 
     #[test]
+    fn store_file_and_lookup_roundtrip() {
+        let slug = store_file(
+            PathBuf::from("/tmp/project/README.md"),
+            PathBuf::from("/tmp/project"),
+            "README".into(),
+        );
+        let entry = lookup(&slug).expect("slug should resolve");
+        match &entry.kind {
+            PreviewKind::File { path } => assert_eq!(path, &PathBuf::from("/tmp/project/README.md")),
+            _ => panic!("expected File kind"),
+        }
+    }
+
+    #[test]
     fn lookup_is_multi_use() {
-        let slug = store(8080, PathBuf::from("/home"), "Test".into());
+        let slug = store_server(8080, PathBuf::from("/home"), "Test".into());
         assert!(lookup(&slug).is_some());
         assert!(lookup(&slug).is_some(), "second lookup must also succeed");
     }
 
     #[test]
     fn lookup_is_case_insensitive() {
-        let slug = store(9090, PathBuf::from("/root"), "CI".into());
+        let slug = store_server(9090, PathBuf::from("/root"), "CI".into());
         assert!(lookup(&slug.to_lowercase()).is_some());
     }
 
@@ -138,7 +172,7 @@ mod tests {
 
     #[test]
     fn remove_deletes_entry() {
-        let slug = store(4000, PathBuf::from("/tmp"), "Remove Test".into());
+        let slug = store_server(4000, PathBuf::from("/tmp"), "Remove Test".into());
         assert!(remove(&slug));
         assert!(lookup(&slug).is_none());
     }

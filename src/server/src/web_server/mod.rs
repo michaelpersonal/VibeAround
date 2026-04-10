@@ -176,6 +176,7 @@ pub async fn run_web_server(
         .route("/preview/{slug}", get(preview::wrapper_handler))
         .route("/preview/{slug}/proxy/", get(preview::proxy_root_handler))
         .route("/preview/{slug}/proxy/{*path}", get(preview::proxy_handler))
+        .route("/md-preview/{slug}", get(preview::md_preview_handler))
         .nest_service("/assets", ServeDir::new(assets_dir))
         .fallback(any(spa_fallback_handler));
 
