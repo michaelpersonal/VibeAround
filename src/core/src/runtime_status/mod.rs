@@ -127,7 +127,7 @@ impl RuntimeStatusStore {
                 }
 
                 ServiceInfo {
-                    id: runtime.id.clone(),
+                    id: runtime.route_key.clone(),
                     name: format!(
                         "{} ({})",
                         runtime
@@ -180,4 +180,50 @@ fn now_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acp::routing::RouteKey;
+
+    /// Build a snapshot with profile + cli_kind to produce a 4-segment service_key.
+    fn snapshot_with_profile() -> PodSnapshot {
+        PodSnapshot {
+            route: RouteKey::new("telegram", "chat_42"),
+            bot_identity: None,
+            session_id: None,
+            cli_kind: Some("claude".into()),
+            profile: Some("work".into()),
+            workspace: None,
+            busy: false,
+            failed: None,
+            started_at: 100,
+            initialize: None,
+        }
+    }
+
+    #[test]
+    fn published_id_is_route_key_not_service_key() {
+        let (tx, _rx) = broadcast::channel(4);
+        let store = RuntimeStatusStore::new(tx);
+
+        let snap = snapshot_with_profile();
+        // service_key would be "telegram:chat_42:work:claude" (4 segments)
+        assert_eq!(snap.service_key(), "telegram:chat_42:work:claude");
+        // route_key should be "telegram:chat_42" (2 segments)
+        assert_eq!(snap.route.as_key(), "telegram:chat_42");
+
+        store.upsert(snap);
+        let agents = store.snapshot_agents();
+        assert_eq!(agents.len(), 1);
+
+        // The published id must be the route_key so RouteKey::from_key can parse it.
+        let id = &agents[0].id;
+        assert_eq!(id, "telegram:chat_42");
+        assert!(
+            RouteKey::from_key(id).is_some(),
+            "published id must be parseable as RouteKey"
+        );
+    }
 }

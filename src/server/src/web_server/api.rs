@@ -66,6 +66,17 @@ pub async fn kill_service_handler(
         return (StatusCode::NOT_FOUND, format!("Invalid agent route key: {}", id));
     }
 
+    // PTY kill must go through PtySessionManager to actually kill the child
+    // process, not just remove the registry entry.
+    if category == "pty" {
+        if let Ok(uuid) = uuid::Uuid::parse_str(&id) {
+            if state.pty_manager.delete_session(SessionId(uuid)) {
+                return (StatusCode::OK, format!("Killed {}/{}", category, id));
+            }
+        }
+        return (StatusCode::NOT_FOUND, format!("Service {}/{} not found", category, id));
+    }
+
     if state.services.kill_service(&category, &id) {
         (StatusCode::OK, format!("Killed {}/{}", category, id))
     } else {
