@@ -501,21 +501,6 @@ impl acp::Agent for PluginAgentHandler {
                     .map(String::from);
                 let _ = self.input_tx.send(ChannelInput::Close { route, reason });
             }
-            "channel/bot_identity" => {
-                let bot_id = params_obj
-                    .get("botId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let bot_name = params_obj
-                    .get("botName")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                eprintln!(
-                    "[{}] bot_identity: id={} name={}",
-                    self.channel_kind, bot_id, bot_name
-                );
-                // TODO: store bot_id on the plugin runtime so RouteKey can use it
-            }
             other => {
                 eprintln!(
                     "[{}] unhandled ext_notification: {}",

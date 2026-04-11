@@ -37,8 +37,9 @@ pub type TurnId = String;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RouteKey {
     pub channel_kind: ChannelKind,
-    /// Bot identity on the IM platform. Defaults to `channel_kind` until the
-    /// plugin reports its real identity via `channel/bot_identity`.
+    /// Bot identity on the IM platform. Defaults to `channel_kind`.
+    /// Each plugin process represents one bot; future multi-bot support
+    /// would use separate plugin processes with distinct bot_id values.
     #[serde(default)]
     pub bot_id: BotId,
     pub chat_id: ChatId,
