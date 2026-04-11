@@ -3,9 +3,15 @@
 //! Callers load a fresh Config when they need one.
 
 use std::path::PathBuf;
-use std::sync::Once;
+use std::sync::{Arc, Once};
+
+use parking_lot::RwLock;
 
 use crate::tunnels::TunnelProvider;
+
+/// Global config cache. Populated on first `ensure_loaded()` call, reloaded
+/// by `reload()` or automatically after `update_settings_json()`.
+static CONFIG_CACHE: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 
 /// Default server port for both standalone server and desktop-spawned server.
 pub const DEFAULT_PORT: u16 = 12358;
@@ -76,6 +82,7 @@ impl Default for ImVerboseConfig {
 }
 
 /// Cached config from settings.json.
+#[derive(Clone)]
 pub struct Config {
     // --- Tunnel ---
     pub tunnel_provider: TunnelProvider,
@@ -141,12 +148,31 @@ impl Config {
     }
 }
 
-/// Load config from disk.
-pub fn ensure_loaded() -> Config {
+/// Load config — returns cached version if available, otherwise reads from disk.
+/// Call `reload()` to force a fresh read (e.g. after settings change).
+pub fn ensure_loaded() -> Arc<Config> {
+    // Fast path: return cached config.
+    if let Some(cfg) = CONFIG_CACHE.read().as_ref() {
+        return Arc::clone(cfg);
+    }
+    // Slow path: first call — initialize data dir, read from disk, cache.
     ensure_rustls_provider();
     init_data_dir();
     let path = data_dir().join("settings.json");
-    load_settings_from(&path)
+    let cfg = Arc::new(load_settings_from(&path));
+    *CONFIG_CACHE.write() = Some(Arc::clone(&cfg));
+    cfg
+}
+
+/// Force re-read config from disk and update the cache.
+/// Called after `update_settings_json()` and on daemon restart.
+pub fn reload() -> Arc<Config> {
+    ensure_rustls_provider();
+    init_data_dir();
+    let path = data_dir().join("settings.json");
+    let cfg = Arc::new(load_settings_from(&path));
+    *CONFIG_CACHE.write() = Some(Arc::clone(&cfg));
+    cfg
 }
 
 fn load_settings_from(path: &std::path::Path) -> Config {
@@ -271,12 +297,10 @@ fn load_settings_from(path: &std::path::Path) -> Config {
     }
 }
 
-/// Base URL for preview links.
+/// Base URL for preview links. Reads from the config cache.
 pub fn preview_base_url() -> Option<String> {
     let cfg = ensure_loaded();
-    cfg.preview_base_url
-        .as_ref()
-        .map(|s| s.trim().to_string())
+    cfg.preview_base_url.clone()
         .filter(|s| !s.is_empty())
         .or_else(|| cfg.cloudflare_hostname.as_ref().map(|h| format!("https://{}", h.trim())))
         .or_else(|| cfg.ngrok_domain.as_ref().map(|d| format!("https://{}", d.trim())))
@@ -312,13 +336,17 @@ pub fn builtin_workspaces_dir() -> PathBuf {
 }
 
 /// Read + write settings.json atomically (for API-driven updates).
+/// Automatically reloads the in-memory config cache after writing.
 pub fn update_settings_json(mutator: impl FnOnce(&mut serde_json::Value)) -> Result<(), String> {
     let path = data_dir().join("settings.json");
     let data = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
     let mut root: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
     mutator(&mut root);
     let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty).map_err(|e| e.to_string())
+    std::fs::write(&path, pretty).map_err(|e| e.to_string())?;
+    // Invalidate cache so next ensure_loaded() picks up the change.
+    *CONFIG_CACHE.write() = None;
+    Ok(())
 }
 
 impl Default for Config {

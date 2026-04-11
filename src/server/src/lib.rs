@@ -112,7 +112,10 @@ impl ServerDaemon {
         // or auth sockets.
         child_registry::orphan_sweep();
 
-        let cfg = config::ensure_loaded();
+        // Force a fresh config read on every daemon start — ensures the
+        // in-memory cache reflects the latest settings.json (which may have
+        // been rewritten by onboarding or a manual edit since last start).
+        let cfg = config::reload();
         let services = Arc::clone(&self.services);
 
         // Persist the auth token so the Tauri side (tray, desktop-ui) can

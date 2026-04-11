@@ -453,41 +453,32 @@ fn uninstall_mcp_config_toml(
 
 /// All skills to deploy, per agent. Returns (skill_name, content) pairs.
 /// `skill_name` is used to derive both the target directory and filename.
+///
+/// Each agent gets the same set of skills; only the directory (and thus the
+/// embedded content) differs. The macro eliminates 7× repetition of the
+/// skill-name list.
 fn agent_skills(agent: &str) -> Vec<(&'static str, &'static str)> {
+    macro_rules! skills_for {
+        ($dir:literal) => {
+            vec![
+                ("vibearound",  include_str!(concat!("../../skills/", $dir, "/vibearound/SKILL.md"))),
+                ("va-preview",  include_str!(concat!("../../skills/", $dir, "/va-preview/SKILL.md"))),
+                ("va-md-preview", include_str!(concat!("../../skills/", $dir, "/va-md-preview/SKILL.md"))),
+            ]
+        };
+    }
+
     match agent {
-        "claude" => vec![
-            ("vibearound", include_str!("../../skills/claude/vibearound/SKILL.md")),
-            ("va-preview", include_str!("../../skills/claude/va-preview/SKILL.md")),
-            ("va-md-preview", include_str!("../../skills/claude/va-md-preview/SKILL.md")),
-        ],
-        "gemini" => vec![
-            ("vibearound", include_str!("../../skills/gemini/vibearound/SKILL.md")),
-            ("va-preview", include_str!("../../skills/gemini/va-preview/SKILL.md")),
-            ("va-md-preview", include_str!("../../skills/gemini/va-md-preview/SKILL.md")),
-        ],
-        "codex" => vec![
-            ("vibearound", include_str!("../../skills/codex/vibearound/SKILL.md")),
-            ("va-preview", include_str!("../../skills/codex/va-preview/SKILL.md")),
-            ("va-md-preview", include_str!("../../skills/codex/va-md-preview/SKILL.md")),
-        ],
-        "cursor" => vec![
-            ("vibearound", include_str!("../../skills/cursor/vibearound/SKILL.md")),
-            ("va-preview", include_str!("../../skills/cursor/va-preview/SKILL.md")),
-            ("va-md-preview", include_str!("../../skills/cursor/va-md-preview/SKILL.md")),
-        ],
-        "kiro" => vec![
-            ("vibearound", include_str!("../../skills/kiro/vibearound/SKILL.md")),
-            ("va-preview", include_str!("../../skills/kiro/va-preview/SKILL.md")),
-            ("va-md-preview", include_str!("../../skills/kiro/va-md-preview/SKILL.md")),
-        ],
-        "qwen-code" => vec![
-            ("vibearound", include_str!("../../skills/qwen-code/vibearound/SKILL.md")),
-            ("va-preview", include_str!("../../skills/qwen-code/va-preview/SKILL.md")),
-            ("va-md-preview", include_str!("../../skills/qwen-code/va-md-preview/SKILL.md")),
-        ],
+        "claude"    => skills_for!("claude"),
+        "gemini"    => skills_for!("gemini"),
+        "codex"     => skills_for!("codex"),
+        "cursor"    => skills_for!("cursor"),
+        "kiro"      => skills_for!("kiro"),
+        "qwen-code" => skills_for!("qwen-code"),
+        // Generic fallback — top-level skills dir (no agent subdirectory).
         _ => vec![
-            ("vibearound", include_str!("../../skills/vibearound/SKILL.md")),
-            ("va-preview", include_str!("../../skills/va-preview/SKILL.md")),
+            ("vibearound",    include_str!("../../skills/vibearound/SKILL.md")),
+            ("va-preview",    include_str!("../../skills/va-preview/SKILL.md")),
             ("va-md-preview", include_str!("../../skills/va-md-preview/SKILL.md")),
         ],
     }
