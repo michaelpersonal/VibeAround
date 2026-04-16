@@ -434,14 +434,29 @@ impl acp::Agent for PluginAgentHandler {
         // Call through to handle_prompt — blocks until the turn completes.
         // Session notifications stream to the plugin via ChannelBridgeHandler
         // → PluginHost → output_tx → output forwarder → conn.session_notification().
-        handle_prompt(
+        let result = handle_prompt(
             &self.acp_hub,
             &self.plugin_host,
-            route,
+            route.clone(),
             None, // cli_kind: plugin prompts don't specify
             content_blocks,
         )
-        .await
+        .await;
+
+        // Surface detailed error to the IM chat so the user sees more than
+        // the plugin's default "Internal error" rendering. The ACP Error's
+        // Display impl includes `data.details` when present.
+        if let Err(ref e) = result {
+            self.plugin_host
+                .send_output(crate::channel_manager::ChannelOutput::SystemText {
+                    route,
+                    text: format!("⚠️ {}", e),
+                    reply_to: None,
+                })
+                .await;
+        }
+
+        result
     }
 
     async fn cancel(&self, args: acp::CancelNotification) -> acp::Result<()> {

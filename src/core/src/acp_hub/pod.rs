@@ -67,9 +67,6 @@ pub struct ACPPod {
     failed: Mutex<Option<String>>,
     started_at: u64,
     event_tx: broadcast::Sender<SystemEvent>,
-    /// Serializes concurrent prompts on the same route.
-    /// Tokio's Mutex is fair (FIFO), so callers are served in arrival order.
-    prompt_lock: Mutex<()>,
     /// Cached available commands from the agent's `available_commands_update` notification.
     agent_commands: Mutex<serde_json::Value>,
     // --- Handover state (consumed once on next prompt) ---
@@ -96,7 +93,6 @@ impl ACPPod {
             failed: Mutex::new(None),
             started_at: unix_now_secs(),
             event_tx,
-            prompt_lock: Mutex::new(()),
             agent_commands: Mutex::new(serde_json::Value::Array(vec![])),
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
@@ -126,10 +122,10 @@ impl ACPPod {
         content_blocks: Vec<acp::ContentBlock>,
         downstream_handler: Arc<dyn BridgeClientHandler>,
     ) -> acp::Result<acp::PromptResponse> {
-        // Serialize prompts — Tokio Mutex is fair (FIFO), callers served in arrival order.
-        // Held for the duration of the prompt; dropping _turn releases the next waiter.
-        let _turn = self.prompt_lock.lock().await;
-
+        // No prompt_lock — prompts are forwarded to the agent immediately.
+        // CLI agents (Claude Code, Codex, Gemini CLI) accept input at any
+        // time and queue/interrupt internally via ACP. Blocking here caused
+        // user-visible hangs when a turn didn't end (e.g. background tasks).
         eprintln!(
             "[ACPPod] prompt route={} cli_kind={:?} blocks={}",
             self.route,
@@ -172,8 +168,18 @@ impl ACPPod {
                 flag.store(false, Ordering::Release);
             }
 
+            eprintln!(
+                "[ACPPod] prompt SENDING route={} session={}",
+                self.route, session_id
+            );
             let request = acp::PromptRequest::new(session_id, content_blocks);
-            acp::Agent::prompt(&*bridge, request).await
+            let response = acp::Agent::prompt(&*bridge, request).await;
+            eprintln!(
+                "[ACPPod] prompt RETURNED route={} ok={}",
+                self.route,
+                response.is_ok()
+            );
+            response
         }
         .await;
 
@@ -184,7 +190,6 @@ impl ACPPod {
         self.emit_snapshot().await;
 
         result
-        // _turn drops here, releasing prompt_lock and allowing the next queued prompt
     }
 
     /// Cancel the active turn.
@@ -430,9 +435,9 @@ impl ACPPod {
     /// Full reset: kill bridge and clear all state.
     ///
     /// Does not wait for any in-flight prompt — the bridge shutdown signal is
-    /// sent immediately. Any prompt currently holding `prompt_lock` will receive
-    /// an ACP error and release the lock; subsequent queued prompts will then
-    /// acquire it and re-spawn a fresh bridge via `ensure_bridge`.
+    /// sent immediately. Any concurrent `acp::Agent::prompt` future will
+    /// receive an ACP error. Subsequent prompts will re-spawn a fresh bridge
+    /// via `ensure_bridge`.
     async fn full_reset(&self) {
         if let Some(bridge) = self.bridge.lock().await.take() {
             bridge.shutdown().await;
