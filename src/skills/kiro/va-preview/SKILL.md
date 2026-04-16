@@ -6,6 +6,32 @@ description: Start a live preview so the user can see your work in their browser
 
 # VibeAround Live Preview
 
+Start a live preview so the user can see your work via a shareable URL.
+
+## Steps
+
+### 1. Start the server (if not already running)
+
+### 2. Get your session ID
+
+Use the `/va-session` skill to resolve your current session ID.
+
+### 3. Call preview
+
+```
+Tool: preview
+Server: vibearound
+Arguments:
+  port: <port>
+  cwd: "<current working directory>"
+  session_id: "<session_id from step 2>"  (pass if available)
+  title: "<description>"  (optional)
+```
+
+### 4. Share the returned URLs with the user.
+
+# VibeAround Live Preview
+
 After you finish building a web application, HTML page, or any browsable artifact, start a live preview so the user can see the result immediately via a shareable URL.
 
 ## When to Use

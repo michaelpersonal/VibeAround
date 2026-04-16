@@ -19,24 +19,17 @@ The VibeAround MCP server must be connected (server name: `vibearound`). If not 
 
 ## Handover Steps
 
-### 1. Call prepare_handover
+### 1. Get your session ID
 
-Call the `prepare_handover` tool on the `vibearound` MCP server.
+Use the `/va-session` skill to resolve your current session ID.
+
+### 2. Call prepare_handover
 
 ```
 Tool: prepare_handover
 Server: vibearound
 Arguments:
-  cwd: "<current working directory>"
-  agent_kind: "kiro"
-```
-
-If you know the current session ID, you can provide it explicitly:
-```
-Tool: prepare_handover
-Server: vibearound
-Arguments:
-  session_id: "<sessionId>"
+  session_id: "<session_id from step 1>"  (pass if available)
   cwd: "<current working directory>"
   agent_kind: "kiro"
 ```

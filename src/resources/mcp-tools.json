@@ -41,7 +41,7 @@
   },
   {
     "name": "preview",
-    "description": "Start a live preview for a running local server. Returns a shareable URL that displays the app in an iframe wrapper. The URL expires in 5 minutes.",
+    "description": "Start a live preview for a running local server. Returns owner and share URLs. Pass session_id (use /va-session skill) for proper lifecycle management.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -52,6 +52,10 @@
         "cwd": {
           "type": "string",
           "description": "Absolute path to the project workspace directory."
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Your agent session ID (use /va-session skill to resolve). Enables automatic dev-server cleanup when the session ends."
         },
         "title": {
           "type": "string",

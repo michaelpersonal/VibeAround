@@ -18,18 +18,9 @@ The VibeAround MCP server must be connected (server name: `vibearound`). If not 
 
 ## Handover Steps
 
-### 1. Resolve the session ID
+### 1. Get your session ID
 
-Qwen Code persists every chat under `~/.qwen/projects/<encoded-cwd>/chats/<session-id>.jsonl`, where `<encoded-cwd>` is the absolute working directory with `/` replaced by `-` (e.g. `/Users/jazzen/Development/foo` → `-Users-jazzen-Development-foo`). The filename stem **is** the session ID.
-
-To find the current session ID:
-
-1. Compute `<encoded-cwd>` from the current working directory.
-2. List `~/.qwen/projects/<encoded-cwd>/chats/*.jsonl`.
-3. For each file, scan for the newest line with `"type":"user"` and read its `timestamp` (or fall back to the file mtime).
-4. Pick the file with the most recent user-prompt timestamp — its filename (without `.jsonl`) is the session ID. You can also cross-check the `sessionId` field inside any record in that file.
-
-If no match is found, inform the user that no session was found for this project.
+Use the `/va-session` skill to resolve your current session ID.
 
 ### 2. Call prepare_handover
 
@@ -37,9 +28,9 @@ If no match is found, inform the user that no session was found for this project
 Tool: prepare_handover
 Server: vibearound
 Arguments:
-  session_id: "<sessionId>"
+  session_id: "<session_id from step 1>"  (pass if available)
   cwd: "<current working directory>"
-  agent_kind: "qwen-code"
+  agent_kind: "<your agent type>"
 ```
 
 If the tool says the workspace is not registered, ask the user for confirmation, then call `register_workspace` with the `cwd`, and retry.
@@ -52,4 +43,4 @@ Copy the `/pickup` command to the user's clipboard, then show it. The user can p
 
 - **MCP server not available**: Start the VibeAround desktop app.
 - **Workspace not registered**: Offer to register it (needs user confirmation).
-- **Session ID not found**: Ask the user to provide the session ID manually, or check `~/.qwen/projects/<encoded-cwd>/chats/` for recent `.jsonl` files.
+- **Session ID not found**: The server can auto-discover in most cases. If that fails, tell the user.

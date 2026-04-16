@@ -18,11 +18,9 @@ The VibeAround MCP server must be connected (server name: `vibearound`). If not 
 
 ## Handover Steps
 
-### 1. Resolve the session ID
+### 1. Get your session ID
 
-Read `~/.claude/history.jsonl` (one JSON object per line). Find the last entry whose `project` field matches the current working directory, and extract its `sessionId` value.
-
-If no match is found, inform the user that no session was found for this project.
+Use the `/va-session` skill to resolve your current session ID.
 
 ### 2. Call prepare_handover
 
@@ -30,9 +28,9 @@ If no match is found, inform the user that no session was found for this project
 Tool: prepare_handover
 Server: vibearound
 Arguments:
-  session_id: "<sessionId>"
+  session_id: "<session_id from step 1>"  (pass if available)
   cwd: "<current working directory>"
-  agent_kind: "claude"
+  agent_kind: "<your agent type>"
 ```
 
 If the tool says the workspace is not registered, ask the user for confirmation, then call `register_workspace` with the `cwd`, and retry.
@@ -45,4 +43,4 @@ Copy the `/pickup` command to the user's clipboard, then show it. The user can p
 
 - **MCP server not available**: Start the VibeAround desktop app.
 - **Workspace not registered**: Offer to register it (needs user confirmation).
-- **Session ID not found**: Session metadata file may not exist.
+- **Session ID not found**: The server can auto-discover in most cases. If that fails, tell the user.

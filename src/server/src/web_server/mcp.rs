@@ -284,17 +284,28 @@ async fn mcp_preview_start(
     }
 
     let title = derive_title(arguments, &cwd_path);
+    let session_id = arguments
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
     let (owner_slug, share_slug) =
-        common::preview_entries::ensure_server(port, cwd_path, title);
+        common::preview_entries::ensure_server(port, cwd_path, title, session_id.clone());
     let owner_url = build_preview_url(state, "preview/u", &owner_slug);
     let share_url = build_preview_url(state, "preview/s", &share_slug);
+
+    let session_hint = if session_id.is_none() {
+        "\n\n\u{26a0}\u{fe0f} No session_id provided. Use /va-session skill to resolve it and pass session_id for automatic dev-server cleanup."
+    } else {
+        ""
+    };
 
     mcp_text(id, &format!(
         "Preview ready.\n\n\
          Owner preview: `{}`\n\
          Share preview: `{}`\n\n\
-         The owner link is stable for this workspace. The share link expires in 10 minutes.",
-        owner_url, share_url
+         The owner link is stable for this workspace. The share link expires in 10 minutes.{}",
+        owner_url, share_url, session_hint
     ))
 }
 

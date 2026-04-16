@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>VibeAround Enterprise Architecture</title>
+<style>
+  :root{
+    --bg:#f6f2ea; --card:#ffffff; --ink:#1a2b42; --ink-2:#4a5868; --ink-3:#8a94a3;
+    --line:#d8d2c4; --line-soft:#ece7db; --accent:#8b2635; --gold:#a07a3c;
+    --navy:#1a2b42; --steel:#5d6b7d; --bronze:#8b7355; --forest:#2d5a3d;
+
+    --gap:16px;
+    --pad:18px;
+    --sec-gap:32px;
+  }
+  @page{size:297mm 540mm;margin:18mm 22mm;}
+  .section{page-break-inside:avoid;break-inside:avoid;}
+  .puzzle-wrap,.cycle-wrap,.gw-grid,.h-grid,.ai-row,.im-row{page-break-inside:avoid;break-inside:avoid;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--ink);padding:44px 56px;
+       font-family:-apple-system,"Helvetica Neue","PingFang SC",sans-serif;font-size:13px;line-height:1.6;}
+
+  h1{font-family:Georgia,"Songti SC",serif;font-size:28px;font-weight:400;letter-spacing:0.5px;
+     border-bottom:2px solid var(--navy);padding-bottom:10px;}
+  .subtitle{color:var(--ink-2);font-size:11px;margin:8px 0 var(--sec-gap);letter-spacing:2px;text-transform:uppercase;}
+
+  .section{margin-bottom:var(--sec-gap);}
+  .section-title{font-family:Georgia,"Songti SC",serif;font-size:17px;color:var(--navy);
+                 margin-bottom:var(--gap);font-weight:500;border-bottom:1px solid var(--line);padding-bottom:8px;
+                 display:flex;align-items:baseline;}
+  .section-num{color:var(--accent);font-weight:500;margin-right:12px;font-size:15px;}
+  .sub-title{font-family:Georgia,"Songti SC",serif;font-size:14px;color:var(--ink-2);
+             margin:var(--gap) 0 10px;font-weight:500;letter-spacing:0.3px;}
+  .sub-title .n{color:var(--accent);margin-right:8px;font-size:13px;}
+
+  /* Shared card */
+  .card{background:var(--card);border:1px solid var(--line);padding:var(--pad);}
+
+  /* IM Row */
+  .im-row{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap);}
+  .im-card h4{font-size:12.5px;color:var(--navy);margin-bottom:12px;
+              display:flex;justify-content:space-between;font-weight:600;letter-spacing:0.3px;}
+  .im-card h4 .tag{font-size:10px;font-weight:500;letter-spacing:1.5px;}
+  .im-card.p0 h4 .tag{color:var(--accent);}
+  .im-card.std h4 .tag{color:var(--gold);}
+  .im-card.sec h4 .tag{color:var(--ink-3);}
+  .pills{display:flex;gap:6px;flex-wrap:wrap;}
+  .pill{font-size:11px;padding:4px 10px;border:1px solid var(--line);background:#fcfaf5;color:var(--ink);}
+  .pill.p{border-color:var(--navy);background:var(--navy);color:#ffffff;font-weight:500;}
+
+  /* Gateway 6 blocks */
+  .gw-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:var(--gap);}
+  .gw-cell{background:var(--card);border:1px solid var(--line);padding:16px 14px 14px;
+           position:relative;display:flex;flex-direction:column;min-height:112px;}
+  .gw-cell .n{font-family:Georgia,serif;font-size:10px;color:var(--ink-3);letter-spacing:1.5px;}
+  .gw-cell .t{font-size:13px;color:var(--navy);font-weight:600;margin:6px 0 5px;}
+  .gw-cell .d{font-size:11px;color:var(--ink-2);line-height:1.5;flex:1;}
+  .gw-cell::before{content:"";position:absolute;top:0;left:0;width:3px;height:100%;background:var(--navy);}
+  .gw-cell.expand::before{background:var(--gold);}
+  .gw-cell .more{font-size:10px;color:var(--gold);letter-spacing:1.5px;margin-top:6px;}
+
+  /* Puzzle — II.A */
+  .puzzle-wrap{display:grid;grid-template-columns:1fr 1.15fr;gap:28px;align-items:stretch;}
+  .puzzle-card{background:var(--card);border:1px solid var(--line);padding:24px;
+               display:flex;align-items:center;justify-content:center;}
+  .puzzle-svg{width:100%;height:auto;max-height:280px;}
+  .puzzle-legend{background:var(--card);border:1px solid var(--line);padding:var(--pad) 22px;
+                 display:flex;flex-direction:column;justify-content:center;}
+  .puzzle-legend .row{padding:12px 0;border-bottom:1px solid var(--line-soft);}
+  .puzzle-legend .row:first-child{padding-top:4px;}
+  .puzzle-legend .row:last-child{border-bottom:none;padding-bottom:4px;}
+  .puzzle-legend .lv{font-family:Georgia,serif;font-size:14px;color:var(--navy);margin-bottom:5px;
+                     display:flex;align-items:center;}
+  .puzzle-legend .marker{display:inline-block;width:12px;height:12px;margin-right:10px;}
+  .puzzle-legend .desc{font-size:11.5px;color:var(--ink-2);margin-left:22px;line-height:1.55;}
+  .puzzle-legend .scope{font-size:10.5px;color:var(--ink-3);margin-left:22px;margin-top:3px;letter-spacing:0.3px;}
+
+  .flow-box{margin-top:var(--gap);padding:14px 18px;background:var(--card);
+            border:1px solid var(--line);border-left:3px solid var(--gold);}
+  .flow-box .ft{font-family:Georgia,serif;font-size:10.5px;color:var(--gold);
+                letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;}
+  .flow-box .fl{font-size:12px;color:var(--ink);line-height:1.9;}
+  .flow-box .step{display:inline-block;padding:2px 8px;background:#f3efe5;
+                  border:1px solid var(--line);font-size:11px;margin:2px 3px;}
+  .flow-box .ar{color:var(--ink-3);margin:0 2px;}
+
+  /* Cycle — II.B */
+  .cycle-wrap{display:grid;grid-template-columns:1fr 1.15fr;gap:28px;align-items:stretch;}
+  .cycle-card{background:var(--card);border:1px solid var(--line);padding:24px;
+              display:flex;align-items:center;justify-content:center;}
+  .cycle-svg{width:100%;height:auto;max-height:280px;}
+  .cycle-out{background:var(--card);border:1px solid var(--line);padding:var(--pad) 22px;
+             display:flex;flex-direction:column;justify-content:center;}
+  .cycle-out .row{padding:12px 0;border-bottom:1px solid var(--line-soft);}
+  .cycle-out .row:first-child{padding-top:4px;}
+  .cycle-out .row:last-child{border-bottom:none;padding-bottom:4px;}
+  .cycle-out .pt{font-family:Georgia,serif;font-size:13.5px;color:var(--navy);margin-bottom:4px;
+                 display:flex;align-items:center;}
+  .cycle-out .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:10px;}
+  .cycle-out .pd{font-size:11.5px;color:var(--ink-2);margin-left:20px;line-height:1.55;}
+
+  /* Harness */
+  .h-card{background:var(--card);border:1px solid var(--line);padding:var(--pad) 22px;}
+  .h-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--gap);}
+  .h-item{padding:14px;border:1px solid var(--line);border-left:3px solid var(--forest);
+          background:#fcfaf5;}
+  .h-item b{color:var(--navy);display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;}
+  .h-item small{color:var(--ink-2);font-size:11px;line-height:1.55;}
+
+  /* AI */
+  .ai-row{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap);}
+  .ai-cell{background:var(--card);border:1px solid var(--line);padding:16px 18px;position:relative;
+           min-height:72px;}
+  .ai-cell::before{content:"";position:absolute;top:0;left:0;width:3px;height:100%;background:var(--bronze);}
+  .ai-cell .t{font-size:12.5px;color:var(--navy);font-weight:600;margin-bottom:5px;}
+  .ai-cell .d{font-size:11px;color:var(--ink-2);line-height:1.5;}
+
+  .footer{font-size:10.5px;color:var(--ink-3);letter-spacing:2px;text-align:center;
+          margin-top:40px;padding-top:18px;border-top:1px solid var(--line);}
+</style>
+</head>
+<body>
+
+<h1>VibeAround · 企业架构白皮书 v5</h1>
+<div class="subtitle">Enterprise Architecture Overview &nbsp;·&nbsp; Confidential Working Draft</div>
+
+<!-- ==================== I. IM ==================== -->
+<div class="section">
+  <div class="section-title"><span class="section-num">I.</span>接入层 · 用户入口</div>
+  <div class="im-row">
+    <div class="im-card card p0">
+      <h4>企业办公<span class="tag">PRIORITY</span></h4>
+      <div class="pills">
+        <span class="pill p">Microsoft Teams</span>
+        <span class="pill p">Slack</span>
+        <span class="pill p">企业微信 WeCom</span>
+        <span class="pill p">钉钉 DingTalk</span>
+      </div>
+    </div>
+    <div class="im-card card std">
+      <h4>国内消费<span class="tag">STANDARD</span></h4>
+      <div class="pills">
+        <span class="pill">飞书 Lark</span>
+        <span class="pill">微信</span>
+        <span class="pill">QQ Bot</span>
+      </div>
+    </div>
+    <div class="im-card card sec">
+      <h4>开发者社区<span class="tag">SECONDARY</span></h4>
+      <div class="pills">
+        <span class="pill">Telegram</span>
+        <span class="pill">Discord</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== II. Gateway ==================== -->
+<div class="section">
+  <div class="section-title"><span class="section-num">II.</span>编排层 · 企业 IT Gateway</div>
+
+  <div class="gw-grid">
+    <div class="gw-cell"><div class="n">01</div><div class="t">身份解析</div><div class="d">对接 AD / OIDC / SSO，解析员工身份令牌</div></div>
+    <div class="gw-cell"><div class="n">02</div><div class="t">消息路由</div><div class="d">按员工路由至其专属 Harness Agent</div></div>
+    <div class="gw-cell expand"><div class="n">03</div><div class="t">Skill 注入</div><div class="d">按身份拼装企业·部门·团队三级 Skill</div><div class="more">详见 II.A ↓</div></div>
+    <div class="gw-cell"><div class="n">04</div><div class="t">策略执行</div><div class="d">合规规则与工具白名单实时下发</div></div>
+    <div class="gw-cell"><div class="n">05</div><div class="t">审计留痕</div><div class="d">全量 Tool Call 与 Session 可追溯</div></div>
+    <div class="gw-cell expand"><div class="n">06</div><div class="t">回流调度</div><div class="d">回收日志与产物驱动 Skill 迭代</div><div class="more">详见 II.B ↓</div></div>
+  </div>
+
+  <!-- II.A Puzzle -->
+  <div class="sub-title"><span class="n">II.A</span>Skill 注入 · 三级拼图式组装</div>
+  <div class="puzzle-wrap">
+    <div class="puzzle-card">
+      <svg class="puzzle-svg" viewBox="0 0 400 280" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 30 25 L 370 25 L 370 95 L 230 95 Q 230 115 215 115 Q 200 115 200 95 L 30 95 Z"
+              fill="#1a2b42" stroke="#0f1c2e" stroke-width="1"/>
+        <path d="M 30 95 L 200 95 Q 200 115 215 115 Q 230 115 230 95 L 370 95 L 370 170 L 230 170 Q 230 190 215 190 Q 200 190 200 170 L 30 170 Z"
+              fill="#5d6b7d" stroke="#3d4b5d" stroke-width="1"/>
+        <path d="M 30 170 L 200 170 Q 200 190 215 190 Q 230 190 230 170 L 370 170 L 370 255 L 30 255 Z"
+              fill="#8b7355" stroke="#6b5635" stroke-width="1"/>
+
+        <text x="52" y="62" font-family="Georgia, serif" font-size="18" fill="#ffffff">企业级</text>
+        <text x="52" y="80" font-size="10.5" fill="#c4cdd8" letter-spacing="1">ENTERPRISE</text>
+
+        <text x="52" y="136" font-family="Georgia, serif" font-size="17" fill="#ffffff">部门级</text>
+        <text x="52" y="153" font-size="10.5" fill="#dde2e8" letter-spacing="1">DEPARTMENT</text>
+
+        <text x="52" y="210" font-family="Georgia, serif" font-size="16" fill="#ffffff">团队级</text>
+        <text x="52" y="226" font-size="10.5" fill="#e8dfd0" letter-spacing="1">TEAM</text>
+      </svg>
+    </div>
+    <div class="puzzle-legend">
+      <div class="row">
+        <div class="lv"><span class="marker" style="background:#1a2b42;"></span>企业级</div>
+        <div class="desc">安全合规 · 数据脱敏 · 审计规范 · 公司品牌口径 · 通用 SOP</div>
+        <div class="scope">维护方：安全与合规部门</div>
+      </div>
+      <div class="row">
+        <div class="lv"><span class="marker" style="background:#5d6b7d;"></span>部门级</div>
+        <div class="desc">销售话术 · HR 流程 · 财务审批 · 法务模板 · IT 运维手册</div>
+        <div class="scope">维护方：部门负责人</div>
+      </div>
+      <div class="row">
+        <div class="lv"><span class="marker" style="background:#8b7355;"></span>团队级</div>
+        <div class="desc">项目上下文 · 客户资料 · 团队私有知识 · 个人偏好</div>
+        <div class="scope">维护方：团队自行管理</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-box">
+    <div class="ft">Injection Data Flow · 注入数据流</div>
+    <div class="fl">
+      <span class="step">IM 消息</span><span class="ar">→</span>
+      <span class="step">Gateway 解析身份令牌</span><span class="ar">→</span>
+      <span class="step">查询目录服务</span><span class="ar">→</span>
+      <span class="step">拼装 企业 + 部门 + 团队</span><span class="ar">→</span>
+      <span class="step">Harness Agent 加载</span><span class="ar">→</span>
+      <span class="step">三层 Skill 共同约束行为</span>
+    </div>
+  </div>
+
+  <!-- II.B Cycle -->
+  <div class="sub-title"><span class="n">II.B</span>回流调度 · 数据回流环</div>
+  <div class="cycle-wrap">
+    <div class="cycle-card">
+      <svg class="cycle-svg" viewBox="0 0 360 300" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrh" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" fill="#4a5868"/>
+          </marker>
+        </defs>
+
+        <circle cx="180" cy="150" r="46" fill="#ffffff" stroke="#1a2b42" stroke-width="1.5"/>
+        <text x="180" y="146" text-anchor="middle" fill="#1a2b42" font-family="Georgia, serif" font-size="13">Harness</text>
+        <text x="180" y="164" text-anchor="middle" fill="#5a6b7d" font-size="10">Agent Log</text>
+
+        <circle cx="180" cy="35" r="28" fill="#1a2b42"/>
+        <text x="180" y="34" text-anchor="middle" fill="#ffffff" font-size="11">行为</text>
+        <text x="180" y="48" text-anchor="middle" fill="#ffffff" font-size="11">采集</text>
+
+        <circle cx="285" cy="113" r="28" fill="#5d6b7d"/>
+        <text x="285" y="112" text-anchor="middle" fill="#ffffff" font-size="11">合规</text>
+        <text x="285" y="126" text-anchor="middle" fill="#ffffff" font-size="11">分析</text>
+
+        <circle cx="245" cy="244" r="28" fill="#8b2635"/>
+        <text x="245" y="243" text-anchor="middle" fill="#ffffff" font-size="11">产物</text>
+        <text x="245" y="257" text-anchor="middle" fill="#ffffff" font-size="11">生成</text>
+
+        <circle cx="115" cy="244" r="28" fill="#a07a3c"/>
+        <text x="115" y="243" text-anchor="middle" fill="#ffffff" font-size="11">Skill</text>
+        <text x="115" y="257" text-anchor="middle" fill="#ffffff" font-size="11">优化</text>
+
+        <circle cx="75" cy="113" r="28" fill="#2d5a3d"/>
+        <text x="75" y="112" text-anchor="middle" fill="#ffffff" font-size="10">Gateway</text>
+        <text x="75" y="126" text-anchor="middle" fill="#ffffff" font-size="11">回流</text>
+
+        <path d="M 203 48 A 115 115 0 0 1 273 92" fill="none" stroke="#4a5868" stroke-width="1.3" marker-end="url(#arrh)"/>
+        <path d="M 290 138 A 115 115 0 0 1 258 221" fill="none" stroke="#4a5868" stroke-width="1.3" marker-end="url(#arrh)"/>
+        <path d="M 222 257 A 115 115 0 0 1 138 257" fill="none" stroke="#4a5868" stroke-width="1.3" marker-end="url(#arrh)"/>
+        <path d="M 102 221 A 115 115 0 0 1 70 138" fill="none" stroke="#4a5868" stroke-width="1.3" marker-end="url(#arrh)"/>
+        <path d="M 87 92 A 115 115 0 0 1 157 48" fill="none" stroke="#4a5868" stroke-width="1.3" marker-end="url(#arrh)"/>
+      </svg>
+    </div>
+
+    <div class="cycle-out">
+      <div class="row">
+        <div class="pt"><span class="dot" style="background:#1a2b42;"></span>合规 Report</div>
+        <div class="pd">DLP 告警 · 违规事件 · 审计周报 → 提交合规部门</div>
+      </div>
+      <div class="row">
+        <div class="pt"><span class="dot" style="background:#a07a3c;"></span>优化后的 Skill</div>
+        <div class="pd">Pattern 提取 → 新 Skill 入库 → 经 Gateway 回注 Harness</div>
+      </div>
+      <div class="row">
+        <div class="pt"><span class="dot" style="background:#2d5a3d;"></span>员工培训文档</div>
+        <div class="pd">最佳实践沉淀 → 下发员工，形成 AI 与员工双轨进化</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== III. Harness ==================== -->
+<div class="section">
+  <div class="section-title"><span class="section-num">III.</span>执行层 · 分布式 Harness</div>
+  <div class="h-grid">
+    <div class="h-item"><b>Per-Person Agent Pod</b><small>每员工一个 VM / VPS / 容器实例</small></div>
+    <div class="h-item"><b>员工身份即权限</b><small>以员工账号访问 CRM / ERP / OA / 文件 / 内部 API</small></div>
+    <div class="h-item"><b>可选 Agent 核心</b><small>Claude Code · Codex · Cursor · Gemini · 企业自研 Harness</small></div>
+    <div class="h-item"><b>Sandbox 边界</b><small>由 Gateway 注入的三级 Skill 实时约束</small></div>
+    <div class="h-item"><b>内网资源访问</b><small>CRM · ERP · OA · 文件系统 · 数据库</small></div>
+  </div>
+</div>
+
+<!-- ==================== IV. AI ==================== -->
+<div class="section">
+  <div class="section-title"><span class="section-num">IV.</span>AI 计算层 · 企业按需自选</div>
+  <div class="ai-row">
+    <div class="ai-cell"><div class="t">Coding Plan 订阅</div><div class="d">Claude / ChatGPT / Cursor 企业订阅方案</div></div>
+    <div class="ai-cell"><div class="t">在线 API</div><div class="d">Azure OpenAI · Anthropic · Gemini · 通义</div></div>
+    <div class="ai-cell"><div class="t">企业自建算力</div><div class="d">DeepSeek · Qwen · 国产信创 · 私有 GPU 集群</div></div>
+  </div>
+</div>
+
+<div class="footer">VIBEAROUND · ENTERPRISE ARCHITECTURE · INTERNAL DISCUSSION DRAFT</div>
+
+</body>
+</html>

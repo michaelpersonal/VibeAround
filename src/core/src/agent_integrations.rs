@@ -462,6 +462,7 @@ fn agent_skills(agent: &str) -> Vec<(&'static str, &'static str)> {
         ($dir:literal) => {
             vec![
                 ("vibearound",  include_str!(concat!("../../skills/", $dir, "/vibearound/SKILL.md"))),
+                ("va-session",  include_str!(concat!("../../skills/", $dir, "/va-session/SKILL.md"))),
                 ("va-preview",  include_str!(concat!("../../skills/", $dir, "/va-preview/SKILL.md"))),
                 ("va-md-preview", include_str!(concat!("../../skills/", $dir, "/va-md-preview/SKILL.md"))),
             ]
@@ -478,6 +479,7 @@ fn agent_skills(agent: &str) -> Vec<(&'static str, &'static str)> {
         // Generic fallback — top-level skills dir (no agent subdirectory).
         _ => vec![
             ("vibearound",    include_str!("../../skills/vibearound/SKILL.md")),
+            ("va-session",    include_str!("../../skills/va-session/SKILL.md")),
             ("va-preview",    include_str!("../../skills/va-preview/SKILL.md")),
             ("va-md-preview", include_str!("../../skills/va-md-preview/SKILL.md")),
         ],

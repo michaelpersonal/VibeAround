@@ -210,7 +210,12 @@ impl ACPPod {
     }
 
     /// Close this route — kill bridge, drain queue, clear all state.
+    /// Also kills any preview dev-servers registered with this session's ID.
     pub async fn close(&self, reason: Option<String>) {
+        // Kill preview sessions owned by this agent session before resetting.
+        if let Some(sid) = self.session_id.lock().await.clone() {
+            crate::preview_entries::kill_by_session(&sid.to_string());
+        }
         self.full_reset().await;
         self.emit(SystemEvent::RouteClosed {
             route: self.route.clone(),

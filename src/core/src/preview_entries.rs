@@ -80,6 +80,9 @@ struct PreviewSession {
     slug: String,
     share_key: Option<String>,
     share_expires_at: Option<Instant>,
+    /// Agent session ID that registered this preview. Used for cleanup
+    /// when the session closes. `None` if the agent didn't provide it.
+    owner_session: Option<String>,
     created_at: Instant,
 }
 
@@ -143,9 +146,14 @@ fn slug_from_path(path: &Path) -> String {
 /// Ensure a Server preview session exists for `workspace`. Returns
 /// `(owner_slug, share_key)`. Calling twice for the same workspace
 /// reuses the owner slug; the share key is refreshed if expired.
-pub fn ensure_server(port: u16, workspace: PathBuf, title: String) -> (String, String) {
+pub fn ensure_server(
+    port: u16,
+    workspace: PathBuf,
+    title: String,
+    owner_session: Option<String>,
+) -> (String, String) {
     let workspace = canonical(&workspace);
-    ensure_session(workspace.clone(), workspace, title, PreviewTarget::Server { port })
+    ensure_session(workspace.clone(), workspace, title, PreviewTarget::Server { port }, owner_session)
 }
 
 /// Ensure a File preview session exists for `file`. Returns
@@ -153,7 +161,7 @@ pub fn ensure_server(port: u16, workspace: PathBuf, title: String) -> (String, S
 pub fn ensure_file(file: PathBuf, workspace: PathBuf, title: String) -> (String, String) {
     let file = canonical(&file);
     let workspace = canonical(&workspace);
-    ensure_session(file, workspace, title, PreviewTarget::File)
+    ensure_session(file, workspace, title, PreviewTarget::File, None)
 }
 
 fn canonical(p: &Path) -> PathBuf {
@@ -165,6 +173,7 @@ fn ensure_session(
     workspace: PathBuf,
     title: String,
     target: PreviewTarget,
+    owner_session: Option<String>,
 ) -> (String, String) {
     let slug = slug_from_path(&id);
     let now = Instant::now();
@@ -180,6 +189,7 @@ fn ensure_session(
             slug: slug.clone(),
             share_key: None,
             share_expires_at: None,
+            owner_session: owner_session.clone(),
             created_at: now,
         });
 
@@ -187,6 +197,9 @@ fn ensure_session(
     session.workspace = workspace;
     session.title = title;
     session.target = target;
+    if owner_session.is_some() {
+        session.owner_session = owner_session;
+    }
 
     // Reuse share key if still valid; otherwise rotate.
     let share_key = match (&session.share_key, session.share_expires_at) {
@@ -321,6 +334,55 @@ fn instant_to_unix_ms(
         unix_now_ms + (point - now_inst).as_millis() as u64
     } else {
         unix_now_ms.saturating_sub((now_inst - point).as_millis() as u64)
+    }
+}
+
+/// Kill all preview sessions owned by a specific agent session.
+/// Called from pod.close() when a route is shut down. Kills Server
+/// ports (if not shared) and removes matching sessions.
+pub fn kill_by_session(session_id: &str) {
+    let to_remove: Vec<(PathBuf, Option<u16>)> = {
+        let sessions = SESSIONS.lock();
+        sessions
+            .iter()
+            .filter(|(_, s)| s.owner_session.as_deref() == Some(session_id))
+            .map(|(k, s)| {
+                let port = match s.target {
+                    PreviewTarget::Server { port } => Some(port),
+                    PreviewTarget::File => None,
+                };
+                (k.clone(), port)
+            })
+            .collect()
+    };
+
+    if to_remove.is_empty() {
+        return;
+    }
+
+    eprintln!(
+        "[preview] kill_by_session session={} count={}",
+        session_id,
+        to_remove.len()
+    );
+
+    let mut sessions = SESSIONS.lock();
+    for (key, _port) in &to_remove {
+        sessions.remove(key);
+    }
+    drop(sessions); // release lock before killing
+
+    for (_, port) in to_remove {
+        if let Some(p) = port {
+            // Only kill if no remaining session uses this port.
+            let still_used = SESSIONS
+                .lock()
+                .values()
+                .any(|s| matches!(s.target, PreviewTarget::Server { port: pp } if pp == p));
+            if !still_used {
+                kill_port(p);
+            }
+        }
     }
 }
 

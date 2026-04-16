@@ -14,6 +14,45 @@ After you finish building a web application, HTML page, or any browsable artifac
 - The user asked to "show me", "preview", or "let me see it"
 - Only when the VibeAround MCP server is connected
 
+**Proactive behavior**: After starting a dev server or creating a web artifact, proactively ask the user if they'd like a preview link. Do NOT call the tool without asking first.
+
+## Steps
+
+### 1. Start the server (if not already running)
+
+Make sure the port is free and the server is listening.
+
+### 2. Get your session ID
+
+Use the `/va-session` skill to resolve your current session ID.
+
+### 3. Call preview
+
+```
+Tool: preview
+Server: vibearound
+Arguments:
+  port: <port>
+  cwd: "<current working directory>"
+  session_id: "<session_id from step 2>"  (pass if available)
+  title: "<description>"  (optional)
+```
+
+### 4. Share the URL
+
+Include the returned URLs in your reply.
+
+# VibeAround Live Preview
+
+After you finish building a web application, HTML page, or any browsable artifact, start a live preview so the user can see the result immediately via a shareable URL.
+
+## When to Use
+
+- You just started a dev server (next dev, vite, python -m http.server, etc.)
+- You created HTML/CSS/JS files the user should see
+- The user asked to "show me", "preview", or "let me see it"
+- Only when the VibeAround MCP server is connected
+
 **Proactive behavior**: After starting a dev server or creating a web artifact, proactively ask the user if they'd like a preview link (e.g. "Want me to generate a preview link so you can see it on your phone?"). If the user confirms, call `preview`. Do NOT call the tool without asking first.
 
 ## Prerequisites

@@ -18,31 +18,24 @@ The VibeAround MCP server must be connected (server name: `vibearound`). If not 
 
 ## Handover Steps
 
-### 1. Call prepare_handover
+### 1. Get your session ID
 
-Call the `prepare_handover` tool on the `vibearound` MCP server. The server will auto-discover the session ID from Gemini's local session files.
+Use the `/va-session` skill to resolve your current session ID. The server can also auto-discover Gemini sessions, so this is optional but recommended.
+
+### 2. Call prepare_handover
 
 ```
 Tool: prepare_handover
 Server: vibearound
 Arguments:
-  cwd: "<current working directory>"
-  agent_kind: "gemini"
-```
-
-If you know the current session ID, you can provide it explicitly:
-```
-Tool: prepare_handover
-Server: vibearound
-Arguments:
-  session_id: "<sessionId>"
+  session_id: "<session_id from step 1>"  (optional — server can auto-discover)
   cwd: "<current working directory>"
   agent_kind: "gemini"
 ```
 
 If the tool says the workspace is not registered, ask the user for confirmation, then call `register_workspace` with the `cwd`, and retry.
 
-### 2. Copy to clipboard and present the result
+### 3. Copy to clipboard and present the result
 
 Copy the `/pickup` command to the user's clipboard, then show it. The user can paste it in any IM chat connected to VibeAround to resume the session there with the same agent.
 

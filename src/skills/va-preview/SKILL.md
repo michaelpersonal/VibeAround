@@ -29,7 +29,11 @@ Before calling preview, make sure:
 - The server is actually listening (wait for "Listening on..." or similar in the output)
 - Use `--host 0.0.0.0` when available for broader compatibility
 
-### 2. Call preview
+### 2. Get your session ID
+
+Use the `/va-session` skill to resolve your current session ID.
+
+### 3. Call preview
 
 ```
 Tool: preview
@@ -37,14 +41,15 @@ Server: vibearound
 Arguments:
   port: <the port your server is running on>
   cwd: "<current working directory>"
+  session_id: "<session_id from step 2>"  (pass if available)
   title: "<short description of what you built>"  (optional)
 ```
 
 If the tool says the workspace is not registered, call `register_workspace` with the `cwd` first, then retry.
 
-### 3. Share the URL
+### 4. Share the URL
 
-Include the returned URL in your reply. The user can tap it to see the live preview in their browser or phone. The link expires in 5 minutes.
+Include the returned URLs in your reply. The owner link is permanent for this workspace; the share link expires in 10 minutes.
 
 ## Error Handling
 
