@@ -198,6 +198,7 @@ async fn run_acp_plugin_bridge(
     plugin_host: Arc<PluginHost>,
 ) {
     let local = tokio::task::LocalSet::new();
+    let fwd_plugin_host = Arc::clone(&plugin_host);
     local
         .run_until(async move {
             // Create ACP AgentSideConnection
@@ -222,7 +223,7 @@ async fn run_acp_plugin_bridge(
             let forwarder = tokio::task::spawn_local(async move {
                 eprintln!("[{}] output forwarder started", fwd_channel);
                 while let Some(output) = output_rx.recv().await {
-                    forward_output_to_plugin(&conn, &fwd_channel, output).await;
+                    forward_output_to_plugin(&conn, &fwd_channel, &fwd_plugin_host, output).await;
                 }
                 eprintln!("[{}] output forwarder ended", fwd_channel);
             });
@@ -243,6 +244,7 @@ async fn run_acp_plugin_bridge(
 async fn forward_output_to_plugin(
     conn: &acp::AgentSideConnection,
     channel_kind: &str,
+    plugin_host: &Arc<PluginHost>,
     output: ChannelOutput,
 ) {
     match output {
@@ -318,6 +320,49 @@ async fn forward_output_to_plugin(
                 }),
             )
             .await;
+        }
+        ChannelOutput::PermissionRequest { route, request_id, payload } => {
+            // Deserialize back to a typed ACP request, then forward as a real
+            // ACP `requestPermission` call. The plugin's client-side handler
+            // (channel-sdk/plugin.ts → renderer.requestPermission) replies,
+            // and we push the response onto the waiting oneshot.
+            let request: acp::RequestPermissionRequest = match serde_json::from_value(payload) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!(
+                        "[{}] failed to parse PermissionRequest payload route={} request_id={}: {}",
+                        channel_kind, route, request_id, e
+                    );
+                    if let Some((_, tx)) = plugin_host.pending_permissions.remove(&request_id) {
+                        let _ = tx.send(acp::RequestPermissionResponse::new(
+                            acp::RequestPermissionOutcome::Cancelled,
+                        ));
+                    }
+                    return;
+                }
+            };
+            let response = acp::Client::request_permission(&*conn, request).await;
+            let Some((_, tx)) = plugin_host.pending_permissions.remove(&request_id) else {
+                eprintln!(
+                    "[{}] PermissionRequest response dropped — no pending route={} request_id={}",
+                    channel_kind, route, request_id
+                );
+                return;
+            };
+            match response {
+                Ok(resp) => {
+                    let _ = tx.send(resp);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[{}] plugin requestPermission failed route={} request_id={}: {}",
+                        channel_kind, route, request_id, e
+                    );
+                    let _ = tx.send(acp::RequestPermissionResponse::new(
+                        acp::RequestPermissionOutcome::Cancelled,
+                    ));
+                }
+            }
         }
     }
 }

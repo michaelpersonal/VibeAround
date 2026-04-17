@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use agent_client_protocol as acp;
 use dashmap::DashMap;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
 
 use crate::acp::routing::ChannelKind;
@@ -16,6 +17,10 @@ use super::{ChannelInput, ChannelOutput};
 pub struct PluginHost {
     runtimes: DashMap<ChannelKind, PluginRuntime>,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
+    /// Pending `requestPermission` replies keyed by a fresh request_id.
+    /// The sender is consumed by the plugin-bridge forwarder task once the
+    /// plugin's ACP response arrives. See `channel_manager::request_permission`.
+    pub pending_permissions: DashMap<String, oneshot::Sender<acp::RequestPermissionResponse>>,
 }
 
 impl PluginHost {
@@ -23,6 +28,7 @@ impl PluginHost {
         Self {
             runtimes: DashMap::new(),
             input_tx,
+            pending_permissions: DashMap::new(),
         }
     }
 

@@ -209,6 +209,27 @@ impl ACPPod {
         acp::Agent::cancel(&*bridge, acp::CancelNotification::new(session_id)).await
     }
 
+    /// Switch the current session's permission mode. Requires an active
+    /// bridge + session (caller should ensure this — no auto-spawn because
+    /// the mode is a session property that only exists after initialization).
+    pub async fn set_session_mode(&self, mode_id: String) -> acp::Result<()> {
+        let bridge = self
+            .bridge
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(acp::Error::method_not_found)?;
+        let session_id = self
+            .session_id
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(acp::Error::method_not_found)?;
+        let request = acp::SetSessionModeRequest::new(session_id, mode_id);
+        acp::Agent::set_session_mode(&*bridge, request).await?;
+        Ok(())
+    }
+
     /// Close this route — kill bridge, drain queue, clear all state.
     /// Also kills any preview dev-servers registered with this session's ID.
     pub async fn close(&self, reason: Option<String>) {

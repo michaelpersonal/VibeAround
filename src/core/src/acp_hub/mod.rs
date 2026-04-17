@@ -90,6 +90,19 @@ impl ACPHub {
         }
     }
 
+    /// Set the permission mode of the current session on a route.
+    /// Returns an error if there is no active session yet.
+    pub async fn set_session_mode(
+        &self,
+        route: &RouteKey,
+        mode_id: String,
+    ) -> acp::Result<()> {
+        let pod = self
+            .get_pod(route)
+            .ok_or_else(acp::Error::method_not_found)?;
+        pod.set_session_mode(mode_id).await
+    }
+
     /// Get a snapshot of a route's pod state.
     pub async fn snapshot(&self, route: &RouteKey) -> Option<PodSnapshot> {
         let pod = self.get_pod(route)?;

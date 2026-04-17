@@ -127,6 +127,18 @@ pub enum ChannelOutput {
         system_commands: serde_json::Value,
         agent_commands: serde_json::Value,
     },
+    /// Forward a `requestPermission` ACP call from the upstream agent down to
+    /// the plugin. The plugin answers via its `client.requestPermission`
+    /// handler (standard ACP), and the forwarder task sends the response back
+    /// via the oneshot registered in `PluginHost::pending_permissions`.
+    ///
+    /// `request_id` matches the entry in `pending_permissions`.
+    /// `payload` is a JSON-serialized `acp::RequestPermissionRequest`.
+    PermissionRequest {
+        route: RouteKey,
+        request_id: String,
+        payload: serde_json::Value,
+    },
 }
 
 impl ChannelOutput {
@@ -136,7 +148,8 @@ impl ChannelOutput {
             | Self::SystemText { route, .. }
             | Self::AgentReady { route, .. }
             | Self::SessionReady { route, .. }
-            | Self::CommandMenu { route, .. } => route,
+            | Self::CommandMenu { route, .. }
+            | Self::PermissionRequest { route, .. } => route,
         }
     }
 }
@@ -322,6 +335,12 @@ enum SlashAction {
     Pair(String),
     /// /handover — export current session to a coding agent (Direction 2)
     Handover,
+    /// /plan — switch the current session to plan mode (no tool execution).
+    /// Equivalent to `/mode plan`, kept as a shorthand.
+    PlanMode,
+    /// /mode <modeId> — switch session permission mode.
+    /// Supported: default, plan, acceptEdits, bypassPermissions, dontAsk.
+    SetMode(String),
     /// Unknown slash command
     Unknown(String),
 }
@@ -435,6 +454,11 @@ fn parse_slash_command(text: &str) -> Option<SlashAction> {
             }
         }
         "/handover" => Some(SlashAction::Handover),
+        "/plan" => Some(SlashAction::PlanMode),
+        "/mode" => match arg {
+            Some(mode) if !mode.is_empty() => Some(SlashAction::SetMode(mode)),
+            _ => Some(SlashAction::Unknown(trimmed.to_string())),
+        },
         "/pair" => match arg {
             Some(code) if !code.is_empty() => Some(SlashAction::Pair(code)),
             _ => Some(SlashAction::Unknown(trimmed.to_string())),
@@ -695,6 +719,41 @@ pub(crate) async fn handle_prompt(
                 }
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
+            SlashAction::PlanMode => {
+                set_session_mode_and_reply(acp_hub, plugin_host, &route, "plan").await;
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+            SlashAction::SetMode(mode_id) => {
+                const VALID: &[&str] = &[
+                    "default",
+                    "plan",
+                    "acceptEdits",
+                    "bypassPermissions",
+                    "dontAsk",
+                ];
+                // Normalize a few aliases users are likely to type.
+                let canonical = match mode_id.as_str() {
+                    "accept_edits" | "accept-edits" | "accept" => "acceptEdits",
+                    "bypass_permissions" | "bypass-permissions" | "bypass" => "bypassPermissions",
+                    "dont_ask" | "dont-ask" | "dontask" => "dontAsk",
+                    other => other,
+                };
+                if !VALID.contains(&canonical) {
+                    send_system_text(
+                        plugin_host,
+                        &route,
+                        &format!(
+                            "Unknown mode `{}`. Valid: {}.",
+                            mode_id,
+                            VALID.join(", ")
+                        ),
+                    )
+                    .await;
+                } else {
+                    set_session_mode_and_reply(acp_hub, plugin_host, &route, canonical).await;
+                }
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
             SlashAction::Unknown(cmd) => {
                 send_system_text(
                     plugin_host,
@@ -737,6 +796,39 @@ async fn send_system_text(plugin_host: &Arc<PluginHost>, route: &RouteKey, text:
             reply_to: None,
         })
         .await;
+}
+
+/// Call `set_session_mode` on the current pod and report the outcome via
+/// system text. Relies on the agent to emit `current_mode_update` which the
+/// plugin SDK renders as a mode badge — we only send a confirmation line here
+/// so the user sees their command was accepted even before the agent replies.
+async fn set_session_mode_and_reply(
+    acp_hub: &Arc<ACPHub>,
+    plugin_host: &Arc<PluginHost>,
+    route: &RouteKey,
+    mode_id: &str,
+) {
+    match acp_hub.set_session_mode(route, mode_id.to_string()).await {
+        Ok(()) => {
+            send_system_text(
+                plugin_host,
+                route,
+                &format!("✅ Mode switched to `{}`.", mode_id),
+            )
+            .await;
+        }
+        Err(error) => {
+            send_system_text(
+                plugin_host,
+                route,
+                &format!(
+                    "❌ Could not switch mode to `{}`: {}. Start a conversation first, then try `/mode {}`.",
+                    mode_id, error, mode_id,
+                ),
+            )
+            .await;
+        }
+    }
 }
 
 struct ChannelBridgeHandler {
@@ -795,14 +887,62 @@ impl BridgeClientHandler for ChannelBridgeHandler {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> acp::Result<acp::RequestPermissionResponse> {
-        if let Some(first) = args.options.first() {
-            Ok(acp::RequestPermissionResponse::new(
-                acp::RequestPermissionOutcome::Selected(
-                    acp::SelectedPermissionOutcome::new(first.option_id.clone()),
-                ),
-            ))
-        } else {
-            Err(acp::Error::method_not_found())
+        if args.options.is_empty() {
+            return Err(acp::Error::method_not_found());
+        }
+
+        // Rewrite the upstream session_id → plugin-facing chat_id before
+        // forwarding. Plugins see chat_id as their ACP session id.
+        let mut forwarded = args;
+        forwarded.session_id = self.route.chat_id.clone().into();
+
+        // Register a oneshot keyed by a fresh request_id. The plugin-bridge
+        // forwarder task consumes it once the plugin's ACP response arrives.
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel::<acp::RequestPermissionResponse>();
+        self.plugin_host.pending_permissions.insert(request_id.clone(), tx);
+
+        let payload = match serde_json::to_value(&forwarded) {
+            Ok(v) => v,
+            Err(e) => {
+                self.plugin_host.pending_permissions.remove(&request_id);
+                return Err(acp::Error::new(
+                    -32603,
+                    format!("serialize requestPermission: {}", e),
+                ));
+            }
+        };
+
+        eprintln!(
+            "[ChannelBridgeHandler] request_permission forwarding route={} request_id={} options={}",
+            self.route,
+            request_id,
+            forwarded.options.len()
+        );
+
+        self.plugin_host
+            .send_output(ChannelOutput::PermissionRequest {
+                route: self.route.clone(),
+                request_id: request_id.clone(),
+                payload,
+            })
+            .await;
+
+        // Wait for plugin response — no timeout by design. If the plugin
+        // crashes, `tx` is dropped and `rx.await` errors, which we treat as
+        // cancelled so the upstream agent turn gracefully ends.
+        match rx.await {
+            Ok(response) => Ok(response),
+            Err(_) => {
+                self.plugin_host.pending_permissions.remove(&request_id);
+                eprintln!(
+                    "[ChannelBridgeHandler] request_permission dropped (plugin gone?) route={} request_id={}",
+                    self.route, request_id
+                );
+                Ok(acp::RequestPermissionResponse::new(
+                    acp::RequestPermissionOutcome::Cancelled,
+                ))
+            }
         }
     }
 }

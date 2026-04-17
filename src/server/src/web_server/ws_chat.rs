@@ -193,6 +193,20 @@ fn output_to_client_json(output: ChannelOutput, verbose: &common::config::ImVerb
                 "agentCommands": agent_commands,
             })
         }
+        ChannelOutput::PermissionRequest {
+            request_id, payload, ..
+        } => {
+            // Forward to web client so it can render an approval UI. Client is
+            // expected to post `request_id` + selected `optionId` back via the
+            // websocket. If the client doesn't implement it yet, the
+            // corresponding pending oneshot in PluginHost will wait forever —
+            // which matches the "no timeout" UX for IM channels.
+            serde_json::json!({
+                "kind": "permission_request",
+                "requestId": request_id,
+                "request": payload,
+            })
+        }
     }
 }
 
