@@ -51,6 +51,51 @@ pub async fn list_services_handler(State(state): State<AppState>) -> Json<common
     Json(state.services.snapshot())
 }
 
+/// POST /api/services/channels/:kind/stop — user-initiated stop of a channel
+/// plugin (no auto-respawn).
+pub async fn stop_channel_handler(
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+) -> impl IntoResponse {
+    let Some(monitor) = state.services.channel_monitor() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "monitor not available".to_string());
+    };
+    match monitor.force_stop(&kind).await {
+        Ok(()) => (StatusCode::OK, format!("Stopped {}", kind)),
+        Err(e) => (StatusCode::NOT_FOUND, e),
+    }
+}
+
+/// POST /api/services/channels/:kind/restart — user-initiated restart (kill +
+/// immediate respawn, no 15s backoff).
+pub async fn restart_channel_handler(
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+) -> impl IntoResponse {
+    let Some(monitor) = state.services.channel_monitor() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "monitor not available".to_string());
+    };
+    match monitor.force_restart(&kind).await {
+        Ok(()) => (StatusCode::OK, format!("Restarting {}", kind)),
+        Err(e) => (StatusCode::NOT_FOUND, e),
+    }
+}
+
+/// POST /api/services/channels/:kind/start — transition a Stopped channel
+/// back to Crashed(restart_at=now) so the next monitor tick respawns it.
+pub async fn start_channel_handler(
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+) -> impl IntoResponse {
+    let Some(monitor) = state.services.channel_monitor() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "monitor not available".to_string());
+    };
+    match monitor.force_start(&kind) {
+        Ok(()) => (StatusCode::OK, format!("Starting {}", kind)),
+        Err(e) => (StatusCode::NOT_FOUND, e),
+    }
+}
+
 /// DELETE /api/services/:category/:id — kill a specific service.
 pub async fn kill_service_handler(
     State(state): State<AppState>,

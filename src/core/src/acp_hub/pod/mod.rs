@@ -1,53 +1,39 @@
-//! ACPPod: per-route conversation state.
+//! `ACPPod` — per-route conversation state.
 //!
-//! Owns the agent bridge directly (no external cache). Calls acp::Agent
+//! Owns the agent bridge directly (no external cache). Calls `acp::Agent`
 //! methods on the bridge without command enum intermediaries.
+//!
+//! ## Module layout
+//!
+//! - [`snapshot`]        — `PodSnapshot` (serialized view of pod state).
+//! - [`media`]           — relocate cached media from staging to the
+//!                         session-scoped workspace path before each prompt.
+//! - [`bridge_handler`]  — `SessionBridgeHandler` wrapper that suppresses
+//!                         session-notification replay during handover
+//!                         `load_session` to keep history out of the IM feed.
 
-use std::sync::Arc;
+mod bridge_handler;
+mod media;
+mod snapshot;
+
 use std::sync::atomic::{AtomicBool, Ordering};
-use anyhow::anyhow;
+use std::sync::Arc;
 
-use serde::Serialize;
+use anyhow::anyhow;
 use tokio::sync::{broadcast, Mutex};
+
+use agent_client_protocol as acp;
 
 use crate::acp::routing::RouteKey;
 use crate::agent_factory::runtime::{AcpBridge, BridgeClientHandler};
 use crate::config;
 
-use agent_client_protocol as acp;
-
 use super::event::SystemEvent;
 
-// ---------------------------------------------------------------------------
-// PodSnapshot — serializable view of pod state
-// ---------------------------------------------------------------------------
+use bridge_handler::SessionBridgeHandler;
+use media::relocate_cached_media;
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PodSnapshot {
-    pub route: RouteKey,
-    pub bot_identity: Option<String>,
-    pub session_id: Option<String>,
-    pub cli_kind: Option<String>,
-    pub profile: Option<String>,
-    pub workspace: Option<String>,
-    pub busy: bool,
-    pub failed: Option<String>,
-    pub started_at: u64,
-    pub initialize: Option<acp::InitializeResponse>,
-}
-
-impl PodSnapshot {
-    pub fn service_key(&self) -> String {
-        format!(
-            "{}:{}:{}:{}",
-            self.route.channel_kind,
-            self.route.chat_id,
-            self.profile.clone().unwrap_or_else(|| "default".to_string()),
-            self.cli_kind.clone().unwrap_or_else(|| "unknown".to_string())
-        )
-    }
-}
+pub use snapshot::PodSnapshot;
 
 // ---------------------------------------------------------------------------
 // ACPPod
@@ -103,7 +89,12 @@ impl ACPPod {
     /// Prepare this pod for a session pickup. Sets cli_kind, resume_session_id,
     /// and optionally cwd so the next prompt spawns a bridge that resumes the
     /// given session in the correct workspace.
-    pub async fn set_handover(&self, cli_kind: String, resume_session_id: String, cwd: Option<String>) {
+    pub async fn set_handover(
+        &self,
+        cli_kind: String,
+        resume_session_id: String,
+        cwd: Option<String>,
+    ) {
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(cli_kind);
         *self.handover_resume_session_id.lock().await = Some(resume_session_id);
@@ -146,14 +137,22 @@ impl ACPPod {
                 .ensure_bridge(cli_kind, resume_sid, resume_cwd, downstream_handler)
                 .await
                 .map_err(|error| {
-                    eprintln!("[ACPPod] ensure_bridge failed route={}: {:#}", self.route, error);
+                    eprintln!(
+                        "[ACPPod] ensure_bridge failed route={}: {:#}",
+                        self.route, error
+                    );
                     acp::Error::new(-32603, error.to_string())
                 })?;
 
             let session_id = self.ensure_session(&bridge).await?;
 
             // Move cached media files to session-scoped workspace path and update URIs
-            let agent_kind = self.cli_kind.lock().await.clone().unwrap_or_else(|| "default".to_string());
+            let agent_kind = self
+                .cli_kind
+                .lock()
+                .await
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
             let content_blocks = relocate_cached_media(
                 content_blocks,
                 &self.route,
@@ -246,16 +245,25 @@ impl ACPPod {
 
     /// Switch agent kind — kill current bridge, drain queue, next prompt spawns new one.
     pub async fn switch_agent(&self, agent_kind: String) {
-        eprintln!("[ACPPod] switch_agent route={} new_kind={}", self.route, agent_kind);
+        eprintln!(
+            "[ACPPod] switch_agent route={} new_kind={}",
+            self.route, agent_kind
+        );
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(agent_kind.clone());
         self.emit_snapshot().await;
-        eprintln!("[ACPPod] switch_agent done route={} cli_kind={:?}", self.route, agent_kind);
+        eprintln!(
+            "[ACPPod] switch_agent done route={} cli_kind={:?}",
+            self.route, agent_kind
+        );
     }
 
     /// Switch profile — kill current bridge, drain queue, next prompt spawns new one.
     pub async fn switch_profile(&self, profile: String) {
-        eprintln!("[ACPPod] switch_profile route={} new_profile={}", self.route, profile);
+        eprintln!(
+            "[ACPPod] switch_profile route={} new_profile={}",
+            self.route, profile
+        );
         self.full_reset().await;
         *self.profile.lock().await = Some(profile);
         self.emit_snapshot().await;
@@ -334,15 +342,25 @@ impl ACPPod {
                 *self.cli_kind.lock().await = Some(new_kind.clone());
                 // Fall through to spawn new bridge below
             } else {
-                eprintln!("[ACPPod] ensure_bridge reusing existing bridge route={}", self.route);
+                eprintln!(
+                    "[ACPPod] ensure_bridge reusing existing bridge route={}",
+                    self.route
+                );
                 return Ok(existing);
             }
         }
 
         // Resolve again after potential switch
-        let cli_kind = self.cli_kind.lock().await.clone()
+        let cli_kind = self
+            .cli_kind
+            .lock()
+            .await
+            .clone()
             .unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
-        eprintln!("[ACPPod] ensure_bridge spawning new bridge route={} kind={}", self.route, cli_kind);
+        eprintln!(
+            "[ACPPod] ensure_bridge spawning new bridge route={} kind={}",
+            self.route, cli_kind
+        );
         let profile = self
             .profile
             .lock()
@@ -407,9 +425,7 @@ impl ACPPod {
         // Store bridge and metadata
         eprintln!(
             "[ACPPod] bridge ready route={} kind={} agent_info={:?}",
-            self.route,
-            cli_kind,
-            ready.initialize.agent_info
+            self.route, cli_kind, ready.initialize.agent_info
         );
         *self.bridge.lock().await = Some(Arc::clone(&ready.bridge));
         *self.cli_kind.lock().await = Some(cli_kind.clone());
@@ -443,7 +459,12 @@ impl ACPPod {
             return Ok(session_id);
         }
 
-        let agent_kind = self.cli_kind.lock().await.clone().unwrap_or_else(|| "claude".to_string());
+        let agent_kind = self
+            .cli_kind
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| "claude".to_string());
         let workspace = config::ensure_loaded().resolve_workspace(&agent_kind);
         let response =
             acp::Agent::new_session(&**bridge, acp::NewSessionRequest::new(workspace)).await?;
@@ -509,113 +530,6 @@ impl ACPPod {
             route: self.route.clone(),
             snapshot: self.snapshot().await,
         });
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Media relocation — move cached files from staging to session-scoped path
-// ---------------------------------------------------------------------------
-
-/// Scan content blocks for `resource_link` with `file://` URIs under the
-/// global `.cache/` staging dir. Move each file to the workspace session path
-/// and update the URI.
-async fn relocate_cached_media(
-    mut blocks: Vec<acp::ContentBlock>,
-    route: &RouteKey,
-    agent_kind: &str,
-    session_id: &str,
-) -> Vec<acp::ContentBlock> {
-    let cache_dir = config::data_dir().join(".cache");
-    let cache_prefix = format!("file://{}/", cache_dir.to_string_lossy());
-
-    let workspace_cache = config::data_dir()
-        .join("workspaces")
-        .join(".cache")
-        .join(&*route.channel_kind)
-        .join(&*route.chat_id)
-        .join(agent_kind)
-        .join(session_id);
-
-    for block in blocks.iter_mut() {
-        if let acp::ContentBlock::ResourceLink(ref mut rl) = block {
-            let uri = rl.uri.to_string();
-            if !uri.starts_with(&cache_prefix) {
-                continue;
-            }
-            let src_path = uri.strip_prefix("file://").unwrap_or(&uri);
-            let src = std::path::Path::new(src_path);
-            if !src.exists() {
-                eprintln!("[ACPPod] relocate: source not found {}", src.display());
-                continue;
-            }
-            let file_name = src
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let dest = workspace_cache.join(&file_name);
-
-            if let Err(e) = tokio::fs::create_dir_all(&workspace_cache).await {
-                eprintln!(
-                    "[ACPPod] relocate: mkdir failed {}: {}",
-                    workspace_cache.display(),
-                    e
-                );
-                continue;
-            }
-            if let Err(e) = tokio::fs::rename(src, &dest).await {
-                // rename may fail across filesystems; fall back to copy+remove
-                if let Err(e2) = tokio::fs::copy(src, &dest).await {
-                    eprintln!(
-                        "[ACPPod] relocate: move failed {} -> {}: rename={}, copy={}",
-                        src.display(),
-                        dest.display(),
-                        e,
-                        e2
-                    );
-                    continue;
-                }
-                let _ = tokio::fs::remove_file(src).await;
-            }
-
-            let new_uri = format!("file://{}", dest.to_string_lossy());
-            eprintln!("[ACPPod] relocate: {} -> {}", src.display(), dest.display());
-            rl.uri = new_uri.into();
-        }
-    }
-
-    blocks
-}
-
-// ---------------------------------------------------------------------------
-// SessionBridgeHandler — ACPHub's observation hook on the bridge
-// ---------------------------------------------------------------------------
-
-struct SessionBridgeHandler {
-    downstream: Arc<dyn BridgeClientHandler>,
-    /// When true, session_notification events are swallowed (not forwarded to IM).
-    /// Used during handover load_session to suppress history replay.
-    suppress_replay: Arc<AtomicBool>,
-}
-
-#[async_trait::async_trait(?Send)]
-impl BridgeClientHandler for SessionBridgeHandler {
-    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
-        // During handover load_session, suppress replay notifications
-        // so history doesn't flood the IM channel.
-        if self.suppress_replay.load(Ordering::Acquire) {
-            return Ok(());
-        }
-
-        // Forward to channel handler
-        self.downstream.session_notification(args).await
-    }
-
-    async fn request_permission(
-        &self,
-        args: acp::RequestPermissionRequest,
-    ) -> acp::Result<acp::RequestPermissionResponse> {
-        self.downstream.request_permission(args).await
     }
 }
 

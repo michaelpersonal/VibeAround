@@ -154,6 +154,18 @@ pub async fn run_web_server(
             "/api/services/{category}/{id}",
             delete(api::kill_service_handler),
         )
+        .route(
+            "/api/services/channels/{kind}/stop",
+            post(api::stop_channel_handler),
+        )
+        .route(
+            "/api/services/channels/{kind}/restart",
+            post(api::restart_channel_handler),
+        )
+        .route(
+            "/api/services/channels/{kind}/start",
+            post(api::start_channel_handler),
+        )
         .route("/api/previews", get(api::list_previews_handler))
         .route("/api/previews/{slug}", delete(api::delete_preview_handler))
         .route(

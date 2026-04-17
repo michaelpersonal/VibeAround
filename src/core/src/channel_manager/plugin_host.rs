@@ -1,14 +1,13 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use agent_client_protocol as acp;
 use dashmap::DashMap;
+use parking_lot::RwLock;
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::AbortHandle;
 
 use crate::acp::routing::ChannelKind;
-use crate::acp_hub::ACPHub;
 
-use super::manifest::ChannelPluginManifest;
+use super::monitor::ChannelMonitor;
 use super::plugin_runtime::PluginRuntime;
 use super::transport_stdio::StdioPluginRuntime;
 use super::transport_websocket::WebSocketPluginRuntime;
@@ -21,6 +20,10 @@ pub struct PluginHost {
     /// The sender is consumed by the plugin-bridge forwarder task once the
     /// plugin's ACP response arrives. See `channel_manager::request_permission`.
     pub pending_permissions: DashMap<String, oneshot::Sender<acp::RequestPermissionResponse>>,
+    /// Back-pointer to the ChannelMonitor. Weak to avoid a reference cycle
+    /// (ChannelMonitor holds `Arc<PluginHost>`). Used by bridge threads to
+    /// call `mark_crashed` on plugin exit and `touch` on `_va/heartbeat`.
+    monitor: RwLock<Weak<ChannelMonitor>>,
 }
 
 impl PluginHost {
@@ -29,24 +32,35 @@ impl PluginHost {
             runtimes: DashMap::new(),
             input_tx,
             pending_permissions: DashMap::new(),
+            monitor: RwLock::new(Weak::new()),
         }
     }
 
-    pub async fn register_stdio_plugin(
+    /// Called once at daemon boot after both `PluginHost` and `ChannelMonitor`
+    /// exist. Establishes the back-pointer so bridge threads can signal the
+    /// monitor.
+    pub fn set_monitor(&self, monitor: Weak<ChannelMonitor>) {
+        *self.monitor.write() = monitor;
+    }
+
+    pub fn monitor_weak(&self) -> Weak<ChannelMonitor> {
+        self.monitor.read().clone()
+    }
+
+    pub fn input_tx(&self) -> mpsc::UnboundedSender<ChannelInput> {
+        self.input_tx.clone()
+    }
+
+    /// Insert or replace the stdio runtime for a channel kind. Called by the
+    /// monitor on initial spawn and on every respawn so `send_output` always
+    /// routes to the live process.
+    pub async fn replace_stdio_runtime(
         &self,
-        manifest: ChannelPluginManifest,
-        acp_hub: Arc<ACPHub>,
-        plugin_host: Arc<PluginHost>,
-    ) -> Result<AbortHandle, String> {
-        let channel_kind = manifest.channel_kind.clone();
-        let runtime = Arc::new(
-            StdioPluginRuntime::spawn(manifest, self.input_tx.clone(), acp_hub, plugin_host)
-                .await?,
-        );
-        let abort_handle = runtime.abort_handle();
+        channel_kind: &str,
+        runtime: Arc<StdioPluginRuntime>,
+    ) {
         self.runtimes
-            .insert(channel_kind, PluginRuntime::Stdio(runtime));
-        Ok(abort_handle)
+            .insert(channel_kind.to_string(), PluginRuntime::Stdio(runtime));
     }
 
     pub fn register_websocket_plugin(

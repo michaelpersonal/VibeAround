@@ -1,21 +1,33 @@
 //! Service status manager: lightweight status registry for Dashboard display.
 //!
 //! This is a pure "status board" — it does NOT manage service lifecycles.
-//! Data is synced in by ServerDaemon via hub events.
+//! Data is synced in by `ServerDaemon` via hub events.
 //!
 //! Sub-registries:
 //! - `channels`: IM channel plugins (keyed by channel kind, e.g. "feishu")
-//! - `agents`: agent processes (keyed by hub agent key, e.g. "feishu:oc_001:default:claude")
+//! - `agents`: agent processes (keyed by hub agent key, e.g.
+//!   "feishu:oc_001:default:claude")
 //! - `tunnel`: tunnel process (at most one entry)
-//! - `pty`: PTY sessions (reuses existing SessionContext)
+//! - `pty`: PTY sessions (reuses existing `SessionContext`)
+//!
+//! ## Module layout
+//!
+//! - [`status`]   — `ServiceStatus`, `ServiceMeta`, `spawn_tracked`
+//! - [`entries`]  — per-kind entry structs (`ChannelEntry`, `TunnelEntry`, …)
+//! - [`snapshot`] — API-facing snapshot types + `status_string`
 
-use std::sync::Arc;
+mod entries;
+mod snapshot;
+mod status;
+
+use std::sync::{Arc, Weak};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use serde::Serialize;
 use tokio::sync::broadcast;
 use tokio::task::AbortHandle;
+
+use crate::channel_manager::monitor::{ChannelMonitor, ChannelRunStatus};
 
 // parking_lot locks used throughout this module are fast, uncontended, and
 // cover very short critical sections. They are _blocking_ locks, so the
@@ -27,102 +39,33 @@ use crate::pty::{unix_now_secs, Registry, SessionId};
 use crate::runtime_status::RuntimeStatusStore;
 use crate::tunnels::TunnelProvider;
 
-// ---------------------------------------------------------------------------
-// ServiceStatus + ServiceMeta
-// ---------------------------------------------------------------------------
+pub use entries::{AgentStatusEntry, ChannelEntry, TunnelEntry};
+pub use snapshot::{status_string, ServerMeta, ServiceInfo, StatusSnapshot};
+pub use status::{spawn_tracked, ServiceMeta, ServiceStatus};
 
-/// Runtime status of a managed service.
-#[derive(Debug, Clone)]
-pub enum ServiceStatus {
-    Running,
-    Stopped { reason: String },
-    Failed { error: String },
-}
-
-impl ServiceStatus {
-    pub fn is_running(&self) -> bool {
-        matches!(self, ServiceStatus::Running)
-    }
-}
-
-/// Common metadata shared by all service entry types.
-pub struct ServiceMeta {
-    pub status: Arc<RwLock<ServiceStatus>>,
-    pub started_at: u64,
-    /// Kill function — aborts the backing task.
-    kill_fn: Option<Box<dyn Fn() + Send + Sync>>,
-}
-
-impl ServiceMeta {
-    pub fn new(abort_handle: Option<AbortHandle>) -> Self {
-        let kill_fn: Option<Box<dyn Fn() + Send + Sync>> = abort_handle.map(|h| {
-            Box::new(move || h.abort()) as Box<dyn Fn() + Send + Sync>
-        });
-        Self {
-            status: Arc::new(RwLock::new(ServiceStatus::Running)),
-            started_at: unix_now_secs(),
-            kill_fn,
-        }
-    }
-
-    pub fn current_status(&self) -> ServiceStatus {
-        self.status.read().clone()
-    }
-
-    pub fn uptime_secs(&self) -> u64 {
-        unix_now_secs().saturating_sub(self.started_at)
-    }
-
-    pub fn kill(&self) {
-        if let Some(f) = &self.kill_fn {
-            f();
-        }
-        // Never hold this write guard across an .await — we drop it at end of scope.
-        let mut s = self.status.write();
-        *s = ServiceStatus::Stopped {
-            reason: "killed".into(),
-        };
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Lightweight status entries (no backend, no heavy state)
-// ---------------------------------------------------------------------------
-
-/// Agent status entry (lightweight, for Dashboard display only).
-#[derive(Debug, Clone, Serialize)]
-pub struct AgentStatusEntry {
-    pub key: String,
-    pub kind: String,
-    pub started_at: u64,
-}
-
-/// Channel plugin status entry.
-pub struct ChannelEntry {
-    pub meta: ServiceMeta,
-}
-
-/// Tunnel status entry.
-pub struct TunnelEntry {
-    pub meta: ServiceMeta,
-    pub provider: TunnelProvider,
-    pub url: Option<String>,
-}
+use snapshot::capitalize;
 
 // ---------------------------------------------------------------------------
 // ServiceStatusManager
 // ---------------------------------------------------------------------------
 
 /// Lightweight status registry for all running services.
-/// Data is synced by ServerDaemon via hub events.
+/// Data is synced by `ServerDaemon` via hub events.
 pub struct ServiceStatusManager {
-    /// Runtime status store (event-driven, from ACPHub HubEvent stream).
+    /// Runtime status store (event-driven, from `ACPHub` `HubEvent` stream).
     runtime_status: RwLock<Option<Arc<RuntimeStatusStore>>>,
-    /// Channel plugin status (keyed by channel kind).
+    /// Channel plugin status (keyed by channel kind). Legacy store — the
+    /// authoritative source once the monitor is installed is `channel_monitor`.
+    /// Kept as a no-op compat layer for the tiny window before the monitor is
+    /// registered.
     channels: DashMap<String, ChannelEntry>,
+    /// `ChannelMonitor` back-ref (Weak to avoid cycle with `ChannelManager`).
+    /// Set once at daemon boot via `set_channel_monitor`. When present,
+    /// `snapshot()` and `kill_service("channels", ...)` route through it.
+    channel_monitor: RwLock<Weak<ChannelMonitor>>,
     /// Tunnel status (at most one).
     tunnels: DashMap<String, TunnelEntry>,
-    /// PTY sessions (reuses existing Registry).
+    /// PTY sessions (reuses existing `Registry`).
     pub pty: Registry,
     /// Web server metadata.
     pub server_meta: ServerMeta,
@@ -130,13 +73,6 @@ pub struct ServiceStatusManager {
     pub port: u16,
     /// Broadcast channel for real-time service status changes.
     change_tx: broadcast::Sender<()>,
-}
-
-/// Web server metadata (read-only).
-#[derive(Debug, Clone, Serialize)]
-pub struct ServerMeta {
-    pub started_at: u64,
-    pub port: u16,
 }
 
 impl ServiceStatusManager {
@@ -148,6 +84,7 @@ impl ServiceStatusManager {
         Self {
             runtime_status: RwLock::new(None),
             channels: DashMap::new(),
+            channel_monitor: RwLock::new(Weak::new()),
             tunnels: DashMap::new(),
             pty: Arc::new(DashMap::new()),
             server_meta: ServerMeta {
@@ -157,6 +94,18 @@ impl ServiceStatusManager {
             port,
             change_tx,
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Channel monitor (set once at daemon boot)
+    // -----------------------------------------------------------------------
+
+    pub fn set_channel_monitor(&self, monitor: Weak<ChannelMonitor>) {
+        *self.channel_monitor.write() = monitor;
+    }
+
+    pub fn channel_monitor(&self) -> Option<Arc<ChannelMonitor>> {
+        self.channel_monitor.read().upgrade()
     }
 
     /// Clear all service entries. Called on daemon stop to prevent stale
@@ -181,7 +130,7 @@ impl ServiceStatusManager {
         let _ = self.change_tx.send(());
     }
 
-    /// Expose the change broadcast sender so RuntimeStatusStore can share it.
+    /// Expose the change broadcast sender so `RuntimeStatusStore` can share it.
     pub fn change_tx(&self) -> broadcast::Sender<()> {
         self.change_tx.clone()
     }
@@ -243,6 +192,19 @@ impl ServiceStatusManager {
     pub fn kill_service(&self, category: &str, key: &str) -> bool {
         match category {
             "channels" => {
+                // Prefer the monitor: it distinguishes user-initiated stops
+                // from involuntary crashes. Spawn an async task because
+                // force_stop is async (needs to await runtime.shutdown).
+                if let Some(monitor) = self.channel_monitor() {
+                    let key = key.to_string();
+                    tokio::spawn(async move {
+                        if let Err(e) = monitor.force_stop(&key).await {
+                            eprintln!("[ServiceStatus] force_stop({}) failed: {}", key, e);
+                        }
+                    });
+                    self.notify_change();
+                    return true;
+                }
                 if let Some(entry) = self.channels.get(key) {
                     entry.meta.kill();
                     self.notify_change();
@@ -284,25 +246,78 @@ impl ServiceStatusManager {
 
         StatusSnapshot {
             server: self.server_meta.clone(),
-            tunnels: self.tunnels.iter().map(|entry| {
-                let key = entry.key().clone();
-                ServiceInfo {
-                    id: key.clone(),
-                    name: format!("Tunnel ({})", entry.provider.as_str()),
-                    status: status_string(&entry.meta.current_status()),
-                    uptime_secs: entry.meta.uptime_secs(),
-                    extra: {
-                        let mut m = serde_json::Map::new();
-                        m.insert("provider".into(), entry.provider.as_str().into());
-                        if let Some(ref url) = entry.url {
-                            m.insert("url".into(), url.clone().into());
-                        }
-                        m
-                    },
-                }
-            }).collect(),
+            tunnels: self
+                .tunnels
+                .iter()
+                .map(|entry| {
+                    let key = entry.key().clone();
+                    ServiceInfo {
+                        id: key.clone(),
+                        name: format!("Tunnel ({})", entry.provider.as_str()),
+                        status: status_string(&entry.meta.current_status()),
+                        uptime_secs: entry.meta.uptime_secs(),
+                        extra: {
+                            let mut m = serde_json::Map::new();
+                            m.insert("provider".into(), entry.provider.as_str().into());
+                            if let Some(ref url) = entry.url {
+                                m.insert("url".into(), url.clone().into());
+                            }
+                            m
+                        },
+                    }
+                })
+                .collect(),
             agents,
-            channels: self.channels.iter().map(|entry| {
+            channels: self.channel_snapshot(),
+            pty_session_count: pty_count,
+        }
+    }
+
+    /// Build the per-channel `ServiceInfo` list. Prefers the `ChannelMonitor`
+    /// when registered (rich status: running / spawning / crashed / stopped
+    /// with reason + crash_count + last_seen_age + restart_in_secs). Falls
+    /// back to the legacy `channels` `DashMap` for the narrow window before
+    /// the monitor is installed.
+    fn channel_snapshot(&self) -> Vec<ServiceInfo> {
+        if let Some(monitor) = self.channel_monitor() {
+            return monitor
+                .snapshot()
+                .into_iter()
+                .map(|s| {
+                    let mut extra = serde_json::Map::new();
+                    extra.insert("reason".into(), s.reason.into());
+                    extra.insert(
+                        "crash_count".into(),
+                        serde_json::Value::from(s.crash_count),
+                    );
+                    extra.insert(
+                        "last_seen_age_secs".into(),
+                        serde_json::Value::from(s.last_seen_age_secs),
+                    );
+                    extra.insert(
+                        "restart_in_secs".into(),
+                        serde_json::Value::from(s.restart_in_secs),
+                    );
+                    let status_str = match s.status {
+                        ChannelRunStatus::Running => "running".to_string(),
+                        ChannelRunStatus::NotStarted => "not_started".to_string(),
+                        ChannelRunStatus::Spawning => "spawning".to_string(),
+                        ChannelRunStatus::Stopped => "stopped".to_string(),
+                        ChannelRunStatus::Crashed => "crashed".to_string(),
+                    };
+                    ServiceInfo {
+                        id: s.kind.clone(),
+                        name: capitalize(&s.kind),
+                        status: status_str,
+                        uptime_secs: s.last_seen_age_secs, // best-effort
+                        extra,
+                    }
+                })
+                .collect();
+        }
+        self.channels
+            .iter()
+            .map(|entry| {
                 let key = entry.key().clone();
                 ServiceInfo {
                     id: key.clone(),
@@ -311,69 +326,7 @@ impl ServiceStatusManager {
                     uptime_secs: entry.meta.uptime_secs(),
                     extra: serde_json::Map::new(),
                 }
-            }).collect(),
-            pty_session_count: pty_count,
-        }
+            })
+            .collect()
     }
-}
-
-// ---------------------------------------------------------------------------
-// Snapshot types
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize)]
-pub struct StatusSnapshot {
-    pub server: ServerMeta,
-    pub tunnels: Vec<ServiceInfo>,
-    pub agents: Vec<ServiceInfo>,
-    pub channels: Vec<ServiceInfo>,
-    pub pty_session_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ServiceInfo {
-    pub id: String,
-    pub name: String,
-    pub status: String,
-    pub uptime_secs: u64,
-    #[serde(flatten)]
-    pub extra: serde_json::Map<String, serde_json::Value>,
-}
-
-pub fn status_string(s: &ServiceStatus) -> String {
-    match s {
-        ServiceStatus::Running => "running".into(),
-        ServiceStatus::Stopped { reason } => format!("stopped: {}", reason),
-        ServiceStatus::Failed { error } => format!("failed: {}", error),
-    }
-}
-
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-    }
-}
-
-/// Spawn a task that auto-updates the ServiceMeta status on completion.
-pub fn spawn_tracked<F>(
-    meta_status: Arc<RwLock<ServiceStatus>>,
-    future: F,
-) -> tokio::task::JoinHandle<()>
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    let status = meta_status;
-    tokio::spawn(async move {
-        future.await;
-        // The future has finished — we're past the last await. Safe to take
-        // the blocking parking_lot write guard inside this async block.
-        let mut s = status.write();
-        if s.is_running() {
-            *s = ServiceStatus::Stopped {
-                reason: "completed".into(),
-            };
-        }
-    })
 }

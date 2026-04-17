@@ -195,16 +195,19 @@ impl ServerDaemon {
             })
             .expect("Failed to spawn channel input thread");
 
-        // 3. Channel plugins
+        // 3. Channel plugins — supervised by ChannelMonitor (respawn on
+        //    crash + heartbeat watchdog). Install the monitor back-ref into
+        //    ServiceStatusManager so the Dashboard snapshot + kill flow
+        //    route through it.
+        services.set_channel_monitor(Arc::downgrade(&channel_hub.monitor()));
+
         let discovered_plugins = plugins::discover_channel_plugins();
         for name in cfg.channel_names() {
             let Some(plugin) = discovered_plugins.get(&name) else {
                 eprintln!("[VibeAround][daemon] no plugin found for channel '{}', skipping", name);
                 continue;
             };
-            if let Some(abort_handle) = channel_hub.start_plugin(&name, plugin).await {
-                services.register_channel(&name, abort_handle);
-            }
+            channel_hub.register_plugin(&name, plugin);
         }
 
         // 4. Web server (Axum)
