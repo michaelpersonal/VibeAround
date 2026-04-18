@@ -4,13 +4,16 @@
 
 use serde::Serialize;
 
-use crate::agent_factory::provider::AgentKind;
-
 /// Per-agent display info returned by `GET /api/agents`.
+///
+/// `id` is the agent's identifier from `resources/agents.json`. It is
+/// emitted as `string` in the generated TS type; frontends that need the
+/// narrow literal union can import `AgentId` from
+/// `@va/generated/AgentId` and narrow on demand.
 #[derive(Debug, Clone, Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct AgentInfo {
-    pub id: AgentKind,
+    pub id: String,
     pub name: String,
     pub description: String,
 }
@@ -21,22 +24,21 @@ pub struct AgentInfo {
 pub struct AgentsConfig {
     pub agents: Vec<AgentInfo>,
     /// ID of the agent picked by default when the user hasn't selected one.
-    /// Typed as `String` (not `AgentKind`) because the server does not
-    /// validate this against the enabled set — the frontend should treat an
-    /// unrecognized value as "no default".
+    /// Not cross-validated against `enabled_agents` — frontends should
+    /// treat an unknown value as "no default".
     pub default_agent: String,
 }
 
 impl AgentInfo {
-    /// Build an `AgentInfo` for each of the given kinds by looking up the
-    /// corresponding entry in `agents.json`.
-    pub fn for_kinds(kinds: &[AgentKind]) -> Vec<Self> {
-        kinds
-            .iter()
-            .filter_map(|&kind| {
-                let def = crate::resources::agent_by_id(&kind.to_string())?;
+    /// Build an `AgentInfo` for each of the given agent IDs by looking up
+    /// the corresponding entry in `agents.json`. IDs with no matching
+    /// entry are silently dropped.
+    pub fn for_ids(ids: &[String]) -> Vec<Self> {
+        ids.iter()
+            .filter_map(|id| {
+                let def = crate::resources::agent_by_id(id)?;
                 Some(Self {
-                    id: kind,
+                    id: id.clone(),
                     name: def.display_name.clone(),
                     description: def.description.clone(),
                 })

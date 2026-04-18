@@ -34,7 +34,7 @@ pub async fn list_tmux_sessions_handler() -> Json<serde_json::Value> {
 pub async fn list_agents_handler() -> Json<common::api_types::AgentsConfig> {
     let cfg = config::ensure_loaded();
     Json(common::api_types::AgentsConfig {
-        agents: common::api_types::AgentInfo::for_kinds(&cfg.enabled_agents),
+        agents: common::api_types::AgentInfo::for_ids(&cfg.enabled_agents),
         default_agent: cfg.default_agent.clone(),
     })
 }

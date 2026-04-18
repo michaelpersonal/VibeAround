@@ -14,7 +14,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context};
 use tokio::sync::{mpsc, Mutex};
 
-use super::provider::{AgentKind, AgentProvider};
+use super::provider::AgentProvider;
 
 use agent_client_protocol as acp;
 
@@ -45,7 +45,7 @@ pub struct BridgeReady {
 pub struct AcpBridge {
     /// The southbound ACP connection to the real agent process.
     conn: acp::ClientSideConnection,
-    kind: AgentKind,
+    agent_id: String,
     /// ACP initialize response from first bridge startup.
     initialize: acp::InitializeResponse,
     /// ACP session ID obtained from new_session / load_session.
@@ -65,7 +65,7 @@ impl AcpBridge {
     /// The bridge is ready for ACP calls immediately after this returns.
     pub async fn spawn(
         provider: Arc<dyn AgentProvider>,
-        kind: AgentKind,
+        agent_id: String,
         workspace: &Path,
         resume_session_id: Option<String>,
         client_handler: Arc<dyn BridgeClientHandler>,
@@ -76,12 +76,14 @@ impl AcpBridge {
             tokio::sync::oneshot::channel::<anyhow::Result<BridgeReady>>();
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
 
+        let thread_name = format!("{}-bridge", agent_id);
+        let err_label = agent_id.clone();
         std::thread::Builder::new()
-            .name(format!("{}-bridge", kind))
+            .name(thread_name)
             .spawn(move || {
                 run_bridge_thread(
                     provider,
-                    kind,
+                    agent_id,
                     cwd,
                     ready_tx,
                     resume_session_id,
@@ -91,15 +93,15 @@ impl AcpBridge {
                     extra_env,
                 );
             })
-            .with_context(|| format!("Failed to spawn bridge thread for {}", kind))?;
+            .with_context(|| format!("Failed to spawn bridge thread for {}", err_label))?;
 
         ready_rx
             .await
-            .map_err(|_| anyhow!("Bridge thread for {} died during init", kind))?
+            .map_err(|_| anyhow!("Bridge thread for {} died during init", err_label))?
     }
 
-    pub fn kind(&self) -> AgentKind {
-        self.kind
+    pub fn id(&self) -> &str {
+        &self.agent_id
     }
 
     pub fn initialize_response(&self) -> acp::InitializeResponse {
@@ -116,7 +118,7 @@ impl AcpBridge {
     }
 
     pub async fn shutdown(&self) {
-        eprintln!("[{}-bridge] shutdown signaled", self.kind);
+        eprintln!("[{}-bridge] shutdown signaled", self.agent_id);
         let _ = self.cancel_tx.send(true);
     }
 }
@@ -198,7 +200,7 @@ impl acp::Client for BridgeClient {
 
 fn run_bridge_thread(
     provider: Arc<dyn AgentProvider>,
-    kind: AgentKind,
+    agent_id: String,
     cwd: PathBuf,
     ready_tx: tokio::sync::oneshot::Sender<anyhow::Result<BridgeReady>>,
     resume_session_id: Option<String>,
@@ -222,8 +224,9 @@ fn run_bridge_thread(
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async move {
+                let cancel_label = agent_id.clone();
                 match init_bridge(
-                    provider, kind, cwd, resume_session_id, client_handler, cancel_tx, extra_env,
+                    provider, agent_id, cwd, resume_session_id, client_handler, cancel_tx, extra_env,
                 )
                 .await
                 {
@@ -231,7 +234,7 @@ fn run_bridge_thread(
                         let _ = ready_tx.send(Ok(ready));
                         // Wait for cancellation signal
                         let _ = cancel_rx.wait_for(|v| *v).await;
-                        eprintln!("[{}-bridge] cancelled, exiting thread", kind);
+                        eprintln!("[{}-bridge] cancelled, exiting thread", cancel_label);
                     }
                     Err(e) => {
                         let _ = ready_tx.send(Err(e));
@@ -244,7 +247,7 @@ fn run_bridge_thread(
 
 async fn init_bridge(
     provider: Arc<dyn AgentProvider>,
-    kind: AgentKind,
+    agent_id: String,
     cwd: PathBuf,
     resume_session_id: Option<String>,
     client_handler: Arc<dyn BridgeClientHandler>,
@@ -269,9 +272,10 @@ async fn init_bridge(
             tokio::task::spawn_local(fut);
         },
     );
+    let io_label = agent_id.clone();
     tokio::task::spawn_local(async move {
         if let Err(error) = handle_io.await {
-            eprintln!("[{}-bridge] ACP IO terminated: {}", kind, error);
+            eprintln!("[{}-bridge] ACP IO terminated: {}", io_label, error);
         }
     });
 
@@ -281,7 +285,7 @@ async fn init_bridge(
     let initialize = conn
         .initialize(init_req)
         .await
-        .with_context(|| format!("ACP initialize failed for {}", kind))?;
+        .with_context(|| format!("ACP initialize failed for {}", agent_id))?;
 
     let startup_session_id = if let Some(resume_session_id) = resume_session_id.clone() {
         match conn
@@ -295,7 +299,7 @@ async fn init_bridge(
             Err(error) => {
                 eprintln!(
                     "[{}-bridge] failed to load session {}, bridge will start without session: {}",
-                    kind, resume_session_id, error
+                    agent_id, resume_session_id, error
                 );
                 None
             }
@@ -306,7 +310,7 @@ async fn init_bridge(
 
     let bridge = Arc::new(AcpBridge {
         conn,
-        kind,
+        agent_id,
         initialize: initialize.clone(),
         session_id: Mutex::new(startup_session_id.clone()),
         provider_session_id_rx: Mutex::new(provider_session_id_rx),

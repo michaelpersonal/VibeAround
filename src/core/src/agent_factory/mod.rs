@@ -10,13 +10,15 @@ use anyhow::Context;
 pub mod provider;
 pub mod runtime;
 
-use self::provider::{provider_for_kind, AgentKind};
+use self::provider::provider_for_id;
 use self::runtime::{AcpBridge, BridgeClientHandler, BridgeReady};
 
-/// Spawn a new AcpBridge for the given agent kind.
+/// Spawn a new AcpBridge for the given agent.
 ///
-/// This is a stateless factory function — it creates a bridge and returns it.
-/// The caller owns the bridge and is responsible for its lifecycle.
+/// Resolves `cli_kind` against `agents.json` (accepting primary IDs and
+/// aliases); falls back to `"claude"` if unrecognized. This is a stateless
+/// factory function — the caller owns the bridge and is responsible for
+/// its lifecycle.
 pub async fn spawn_bridge(
     channel_kind: &str,
     chat_id: &str,
@@ -28,19 +30,21 @@ pub async fn spawn_bridge(
     std::fs::create_dir_all(workspace)
         .with_context(|| format!("Failed to create workspace {:?}", workspace))?;
 
-    let kind = AgentKind::from_str_loose(cli_kind).unwrap_or(AgentKind::Claude);
-    let provider = provider_for_kind(kind);
+    let agent_id = crate::resources::agent_by_alias(cli_kind)
+        .map(|def| def.id.clone())
+        .unwrap_or_else(|| "claude".to_string());
+    let provider = provider_for_id(agent_id.clone());
 
     // VibeAround-specific env vars so skills can resolve session context.
     let env_vars = vec![
         ("VIBEAROUND_CHANNEL_KIND".to_string(), channel_kind.to_string()),
         ("VIBEAROUND_CHAT_ID".to_string(), chat_id.to_string()),
-        ("VIBEAROUND_AGENT_KIND".to_string(), cli_kind.to_string()),
+        ("VIBEAROUND_AGENT_KIND".to_string(), agent_id.clone()),
     ];
 
     let ready = AcpBridge::spawn(
         provider,
-        kind,
+        agent_id.clone(),
         workspace,
         resume_session_id,
         client_handler,
@@ -49,8 +53,8 @@ pub async fn spawn_bridge(
     .await?;
 
     eprintln!(
-        "[agent_factory] spawned bridge: kind={} channel={}",
-        cli_kind, channel_kind
+        "[agent_factory] spawned bridge: agent_id={} channel={}",
+        agent_id, channel_kind
     );
 
     Ok(ready)

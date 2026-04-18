@@ -47,17 +47,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
             v
         }
     };
-    let agents: Vec<serde_json::Value> = cfg
-        .enabled_agents
-        .iter()
-        .map(|kind| {
-            serde_json::json!({
-                "id": kind.to_string(),
-                "name": kind.display_name(),
-                "description": kind.description(),
-            })
-        })
-        .collect();
+    let agents = common::api_types::AgentInfo::for_ids(&cfg.enabled_agents);
     let config_msg = serde_json::json!({
         "type": "config",
         "channelId": channel_id,

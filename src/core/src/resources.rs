@@ -306,26 +306,31 @@ mod tests {
         assert!(agent_by_alias("nonexistent").is_none());
     }
 
+    /// Emits `AgentId.ts` from `agents.json` as a string literal union plus
+    /// a `AGENT_IDS` const array. Named with the `export_bindings_` prefix
+    /// so it picks up the same `cargo test` filter as ts-rs-generated
+    /// tests (see `scripts/gen-types.sh`).
+    ///
+    /// This is what makes agents.json the single source of truth: add an
+    /// entry there, regen, and the TS union automatically includes it —
+    /// no Rust enum to keep in sync.
     #[test]
-    fn agent_ids_match_agent_kind() {
-        // Ensure every agent in JSON has a matching AgentKind variant
-        use crate::agent_factory::provider::AgentKind;
-        for agent in AGENTS.iter() {
-            assert!(
-                AgentKind::from_str_loose(&agent.id).is_some(),
-                "Agent '{}' in agents.json has no matching AgentKind variant",
-                agent.id
-            );
-        }
-        // Ensure every AgentKind variant has an entry in agents.json
-        for kind in AgentKind::all() {
-            let id = kind.to_string();
-            assert!(
-                agent_by_id(&id).is_some(),
-                "AgentKind::{} has no entry in agents.json",
-                kind
-            );
-        }
+    fn export_bindings_agent_id() {
+        let Ok(dir) = std::env::var("TS_RS_EXPORT_DIR") else {
+            return;
+        };
+        let quoted: Vec<String> = AGENTS.iter().map(|a| format!("\"{}\"", a.id)).collect();
+        let union = quoted.join(" | ");
+        let list = quoted.join(", ");
+        let content = format!(
+            "// This file was generated from resources/agents.json by \
+             src/core/src/resources.rs::export_bindings_agent_id. Do not edit manually.\n\
+             export type AgentId = {union};\n\
+             export const AGENT_IDS: readonly AgentId[] = [{list}] as const;\n",
+        );
+        let path = std::path::Path::new(&dir).join("AgentId.ts");
+        std::fs::create_dir_all(&dir).expect("create TS_RS_EXPORT_DIR");
+        std::fs::write(&path, content).expect("write AgentId.ts");
     }
 
     #[test]

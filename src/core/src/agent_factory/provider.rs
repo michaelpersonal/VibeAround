@@ -17,87 +17,14 @@ pub struct ProviderConnection {
     pub worker_thread: Option<std::thread::JoinHandle<()>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, ts_rs::TS)]
-#[serde(rename_all = "kebab-case")]
-#[ts(export)]
-pub enum AgentKind {
-    Claude,
-    Gemini,
-    #[serde(rename = "opencode")]
-    OpenCode,
-    Codex,
-    Cursor,
-    Kiro,
-    QwenCode,
-}
-
-impl std::fmt::Display for AgentKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Claude => write!(f, "claude"),
-            Self::Gemini => write!(f, "gemini"),
-            Self::OpenCode => write!(f, "opencode"),
-            Self::Codex => write!(f, "codex"),
-            Self::Cursor => write!(f, "cursor"),
-            Self::Kiro => write!(f, "kiro"),
-            Self::QwenCode => write!(f, "qwen-code"),
-        }
-    }
-}
-
-impl AgentKind {
-    pub fn from_str_loose(s: &str) -> Option<Self> {
-        // Look up by alias in resources, then map the agent ID to the enum variant
-        let agent = crate::resources::agent_by_alias(s)?;
-        Self::from_id(&agent.id)
-    }
-
-    /// Map an agent ID string to the enum variant.
-    fn from_id(id: &str) -> Option<Self> {
-        match id {
-            "claude" => Some(Self::Claude),
-            "gemini" => Some(Self::Gemini),
-            "opencode" => Some(Self::OpenCode),
-            "codex" => Some(Self::Codex),
-            "cursor" => Some(Self::Cursor),
-            "kiro" => Some(Self::Kiro),
-            "qwen-code" => Some(Self::QwenCode),
-            _ => None,
-        }
-    }
-
-    pub fn all() -> &'static [AgentKind] {
-        &[Self::Claude, Self::Gemini, Self::OpenCode, Self::Codex, Self::Cursor, Self::Kiro, Self::QwenCode]
-    }
-
-    pub fn enabled() -> Vec<AgentKind> {
-        crate::config::ensure_loaded().enabled_agents.clone()
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        crate::config::ensure_loaded().enabled_agents.contains(self)
-    }
-
-    pub fn display_name(&self) -> &str {
-        crate::resources::agent_by_id(&self.to_string())
-            .expect("AgentKind variant missing from agents.json")
-            .display_name.as_str()
-    }
-
-    pub fn description(&self) -> &str {
-        crate::resources::agent_by_id(&self.to_string())
-            .expect("AgentKind variant missing from agents.json")
-            .description.as_str()
-    }
-}
-
 // ---------------------------------------------------------------------------
 // AgentProvider trait
 // ---------------------------------------------------------------------------
 
 #[async_trait]
 pub trait AgentProvider: Send + Sync {
-    fn kind(&self) -> AgentKind;
+    /// The agent's ID as defined in `resources/agents.json`.
+    fn id(&self) -> &str;
 
     async fn connect(
         &self,
@@ -106,8 +33,11 @@ pub trait AgentProvider: Send + Sync {
     ) -> anyhow::Result<ProviderConnection>;
 }
 
-pub fn provider_for_kind(kind: AgentKind) -> Arc<dyn AgentProvider> {
-    Arc::new(StdioAcpProvider::new(kind))
+/// Build a provider for the given agent ID. The ID must match an entry in
+/// `resources/agents.json` — validate with `resources::agent_by_id` at
+/// boundaries (config load, API request) if the source is untrusted.
+pub fn provider_for_id(id: impl Into<String>) -> Arc<dyn AgentProvider> {
+    Arc::new(StdioAcpProvider::new(id.into()))
 }
 
 // ---------------------------------------------------------------------------
@@ -115,26 +45,28 @@ pub fn provider_for_kind(kind: AgentKind) -> Arc<dyn AgentProvider> {
 // ---------------------------------------------------------------------------
 
 struct StdioAcpProvider {
-    agent_kind: AgentKind,
+    agent_id: String,
 }
 
 impl StdioAcpProvider {
-    fn new(kind: AgentKind) -> Self {
-        Self { agent_kind: kind }
+    fn new(agent_id: String) -> Self {
+        Self { agent_id }
     }
 }
 
 #[async_trait]
 impl AgentProvider for StdioAcpProvider {
-    fn kind(&self) -> AgentKind { self.agent_kind }
+    fn id(&self) -> &str {
+        &self.agent_id
+    }
 
     async fn connect(
         &self,
         workspace: &Path,
         extra_env: &[(&str, &str)],
     ) -> anyhow::Result<ProviderConnection> {
-        let agent_def = crate::resources::agent_by_id(&self.agent_kind.to_string())
-            .ok_or_else(|| anyhow!("No resource definition for agent '{}'", self.agent_kind))?;
+        let agent_def = crate::resources::agent_by_id(&self.agent_id)
+            .ok_or_else(|| anyhow!("No resource definition for agent '{}'", self.agent_id))?;
 
         // Resolve program + args based on install method:
         // 1. npm-based agents → `node <resolved_entry>` (Claude ACP, Codex ACP)
@@ -143,16 +75,16 @@ impl AgentProvider for StdioAcpProvider {
         let (program, resolved_args) = if let Some(npm_pkg) = &agent_def.acp.npm_package {
             let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
             if crate::env::resolve_acp_agent_bin(bin_name).is_err() {
-                eprintln!("[{}-acp] auto-installing {} ...", self.agent_kind, npm_pkg);
+                eprintln!("[{}-acp] auto-installing {} ...", self.agent_id, npm_pkg);
                 crate::agent_integrations::auto_install_npm_agent(npm_pkg).await?;
             }
             let entry = crate::env::resolve_acp_agent_bin(bin_name)
-                .with_context(|| format!("Resolving ACP agent '{}' (npm: {})", self.agent_kind, npm_pkg))?;
+                .with_context(|| format!("Resolving ACP agent '{}' (npm: {})", self.agent_id, npm_pkg))?;
             ("node".to_string(), vec![entry.to_string_lossy().to_string()])
         } else if let Some(install_cmd) = &agent_def.acp.install_cmd {
             if !crate::agent_integrations::is_program_available(&agent_def.acp.program) {
-                eprintln!("[{}-acp] auto-installing via install cmd ...", self.agent_kind);
-                crate::agent_integrations::auto_install_agent_cmd(install_cmd, &self.agent_kind.to_string()).await?;
+                eprintln!("[{}-acp] auto-installing via install cmd ...", self.agent_id);
+                crate::agent_integrations::auto_install_agent_cmd(install_cmd, &self.agent_id).await?;
             }
             (agent_def.acp.program.clone(), agent_def.acp.args.clone())
         } else {
@@ -161,7 +93,7 @@ impl AgentProvider for StdioAcpProvider {
 
         let args_refs: Vec<&str> = resolved_args.iter().map(|s| s.as_str()).collect();
         let (read_stream, write_stream) =
-            spawn_stdio_acp(self.agent_kind, &program, &args_refs, workspace, extra_env)?;
+            spawn_stdio_acp(&self.agent_id, &program, &args_refs, workspace, extra_env)?;
         Ok(ProviderConnection {
             read_stream,
             write_stream,
@@ -173,7 +105,7 @@ impl AgentProvider for StdioAcpProvider {
 
 /// Spawn a CLI that speaks ACP over stdio, return duplex streams.
 fn spawn_stdio_acp(
-    kind: AgentKind,
+    agent_id: &str,
     program: &str,
     args: &[&str],
     cwd: &Path,
@@ -181,7 +113,7 @@ fn spawn_stdio_acp(
 ) -> anyhow::Result<(DuplexStream, DuplexStream)> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    eprintln!("[{}-acp] spawning {} {} in {:?}", kind, program, args.join(" "), cwd);
+    eprintln!("[{}-acp] spawning {} {} in {:?}", agent_id, program, args.join(" "), cwd);
     let mut cmd = crate::env::command(program);
     cmd.args(args)
         .current_dir(cwd)
@@ -194,7 +126,7 @@ fn spawn_stdio_acp(
     }
     let mut child = cmd.spawn()
         .with_context(|| format!("Failed to spawn {} {}. Is it installed?", program, args.join(" ")))?;
-    eprintln!("[{}-acp] process spawned pid={:?}", kind, child.id());
+    eprintln!("[{}-acp] process spawned pid={:?}", agent_id, child.id());
 
     let child_stdout = child.stdout.take().context("Process has no stdout")?;
     let child_stdin = child.stdin.take().context("Process has no stdin")?;
@@ -207,13 +139,13 @@ fn spawn_stdio_acp(
     // daemon stop + Tauri Exit, regardless of task scheduler state.
     let registry_id = crate::child_registry::ChildRegistry::global().register(
         crate::child_registry::ChildKind::AgentAcp,
-        format!("{}-acp", kind),
+        format!("{}-acp", agent_id),
         child,
     );
 
     // stdout → client_read
     let (client_read, mut bridge_write) = tokio::io::duplex(64 * 1024);
-    let kind_label = kind.to_string();
+    let agent_id_owned = agent_id.to_string();
     tokio::task::spawn_local(async move {
         let mut stdout = child_stdout;
         let mut buf = [0u8; 8192];
@@ -229,7 +161,7 @@ fn spawn_stdio_acp(
         // Clean shutdown path: pull the child out of the registry and drop
         // it. kill_on_drop fires if the process is still alive.
         if let Some(_c) = crate::child_registry::ChildRegistry::global().remove(registry_id) {
-            eprintln!("[{}-acp] stdout EOF — dropping child via registry", kind_label);
+            eprintln!("[{}-acp] stdout EOF — dropping child via registry", agent_id_owned);
         }
     });
 

@@ -7,8 +7,7 @@ import type { AgentInfo } from "./AgentInfo";
 export type AgentsConfig = { agents: Array<AgentInfo>, 
 /**
  * ID of the agent picked by default when the user hasn't selected one.
- * Typed as `String` (not `AgentKind`) because the server does not
- * validate this against the enabled set — the frontend should treat an
- * unrecognized value as "no default".
+ * Not cross-validated against `enabled_agents` — frontends should
+ * treat an unknown value as "no default".
  */
 default_agent: string, };
