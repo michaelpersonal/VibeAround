@@ -4,6 +4,7 @@ pub mod acp;
 pub mod acp_hub;
 pub mod agent_factory;
 pub mod agent_integrations;
+pub mod api_types;
 pub mod auth;
 pub mod channel_manager;
 pub mod child_registry;

@@ -31,19 +31,12 @@ pub async fn list_tmux_sessions_handler() -> Json<serde_json::Value> {
 }
 
 /// GET /api/agents — list enabled agents and default agent for frontend agent selector.
-pub async fn list_agents_handler() -> Json<serde_json::Value> {
+pub async fn list_agents_handler() -> Json<common::api_types::AgentsConfig> {
     let cfg = config::ensure_loaded();
-    let agents: Vec<serde_json::Value> = cfg.enabled_agents.iter().map(|kind| {
-        serde_json::json!({
-            "id": kind.to_string(),
-            "name": kind.display_name(),
-            "description": kind.description(),
-        })
-    }).collect();
-    Json(serde_json::json!({
-        "agents": agents,
-        "default_agent": cfg.default_agent,
-    }))
+    Json(common::api_types::AgentsConfig {
+        agents: common::api_types::AgentInfo::for_kinds(&cfg.enabled_agents),
+        default_agent: cfg.default_agent.clone(),
+    })
 }
 
 /// GET /api/services — list all services grouped by category.
