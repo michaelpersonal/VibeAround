@@ -141,31 +141,11 @@ impl ServerDaemon {
         //    when building /api/services responses (no projection cache).
         services.set_acp_hub(Arc::downgrade(&acp_hub));
 
-        // 3. Bridge every manager's change-ping channel into
+        // 3. Bridge every kernel manager's change-ping channel into
         //    ServiceStatusManager's so /ws/services sees lifecycle
         //    changes without waiting for the 5s HTTP polling fallback.
-        {
-            use common::state::StateSource;
-            let mut rx_acp = acp_hub.subscribe_changes();
-            let mut rx_tunnels = services.tunnels().subscribe_changes();
-            let services_tx = services.change_tx();
-            tokio::spawn(async move {
-                loop {
-                    tokio::select! {
-                        res = rx_acp.recv() => match res {
-                            Ok(()) => { let _ = services_tx.send(()); }
-                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                            Err(broadcast::error::RecvError::Closed) => break,
-                        },
-                        res = rx_tunnels.recv() => match res {
-                            Ok(()) => { let _ = services_tx.send(()); }
-                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                            Err(broadcast::error::RecvError::Closed) => break,
-                        },
-                    }
-                }
-            });
-        }
+        //    Set up later, after the channel monitor has been
+        //    constructed — see the fan-in task below.
 
         // 4. ChannelManager subscribes to SystemEvent for agent info forwarding
         channel_hub.start_event_forwarder(acp_hub.subscribe());
@@ -214,22 +194,35 @@ impl ServerDaemon {
         //    route through it.
         services.set_channel_monitor(Arc::downgrade(&channel_hub.monitor()));
 
-        // Bridge ChannelMonitor's change broadcast → ServiceStatusManager's
-        // change broadcast. Without this, channel lifecycle transitions
-        // (spawning → running → crashed, heartbeat watchdog, user stop, etc.)
-        // only reach the Dashboard via the 5s HTTP polling fallback because
-        // the /ws/services subscriber only listens on `services.change_tx`.
-        if let Some(monitor_tx) = channel_hub.monitor_change_tx() {
-            let mut monitor_rx = monitor_tx.subscribe();
+        // Fan every kernel manager's `subscribe_changes()` ping into
+        // `services.change_tx` so the legacy `/ws/services` endpoint stays
+        // live without extra plumbing per manager. Once Phase 1g wraps up
+        // and per-domain WS endpoints take over, this fan-in goes away
+        // along with `ServiceStatusManager::change_tx`.
+        {
+            use common::state::StateSource;
+            let mut rx_channels = channel_hub.monitor().subscribe_changes();
+            let mut rx_acp = acp_hub.subscribe_changes();
+            let mut rx_tunnels = services.tunnels().subscribe_changes();
             let services_tx = services.change_tx();
             tokio::spawn(async move {
                 loop {
-                    match monitor_rx.recv().await {
-                        Ok(()) => {
-                            let _ = services_tx.send(());
-                        }
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => break,
+                    tokio::select! {
+                        res = rx_channels.recv() => match res {
+                            Ok(()) => { let _ = services_tx.send(()); }
+                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        },
+                        res = rx_acp.recv() => match res {
+                            Ok(()) => { let _ = services_tx.send(()); }
+                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        },
+                        res = rx_tunnels.recv() => match res {
+                            Ok(()) => { let _ = services_tx.send(()); }
+                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        },
                     }
                 }
             });
