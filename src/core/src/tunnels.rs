@@ -5,7 +5,10 @@ use async_trait::async_trait;
 
 mod cloudflare;
 mod localtunnel;
+pub mod manager;
 mod ngrok;
+
+pub use manager::{TunnelManager, TunnelStatus};
 
 /// Tunnel provider: localtunnel (default), ngrok, or cloudflare.
 #[derive(Debug, Clone, Copy, Default)]

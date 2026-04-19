@@ -37,9 +37,9 @@ use crate::channel_manager::monitor::{ChannelMonitor, ChannelRunStatus};
 
 use crate::acp_hub::ACPHub;
 use crate::pty::{unix_now_secs, Registry, SessionId};
-use crate::tunnels::TunnelProvider;
+use crate::tunnels::{TunnelManager, TunnelProvider};
 
-pub use entries::{AgentStatusEntry, ChannelEntry, TunnelEntry};
+pub use entries::{AgentStatusEntry, ChannelEntry};
 pub use snapshot::{ApiServiceStatus, ServerMeta, ServiceInfo, StatusSnapshot};
 pub use status::{spawn_tracked, ServiceMeta, ServiceStatus};
 
@@ -65,8 +65,10 @@ pub struct ServiceStatusManager {
     /// Set once at daemon boot via `set_channel_monitor`. When present,
     /// `snapshot()` and `kill_service("channels", ...)` route through it.
     channel_monitor: RwLock<Weak<ChannelMonitor>>,
-    /// Tunnel status (at most one).
-    tunnels: DashMap<String, TunnelEntry>,
+    /// Tunnel registry (at most one per provider in normal operation).
+    /// Owned directly — same lifecycle as `Services` — so the Dashboard
+    /// snapshot code can read from it without a Weak-upgrade dance.
+    tunnels: Arc<TunnelManager>,
     /// PTY sessions (reuses existing `Registry`).
     pub pty: Registry,
     /// Web server metadata.
@@ -87,7 +89,7 @@ impl ServiceStatusManager {
             acp_hub: RwLock::new(Weak::new()),
             channels: DashMap::new(),
             channel_monitor: RwLock::new(Weak::new()),
-            tunnels: DashMap::new(),
+            tunnels: TunnelManager::new(),
             pty: Arc::new(DashMap::new()),
             server_meta: ServerMeta {
                 started_at: unix_now_secs(),
@@ -118,6 +120,14 @@ impl ServiceStatusManager {
         self.pty.clear();
         *self.acp_hub.write() = Weak::new();
         self.notify_change();
+    }
+
+    /// Shared `TunnelManager` — callers that need to subscribe to tunnel
+    /// changes or iterate directly should use this, not the `Services`
+    /// facade methods below. The facade methods are kept as thin
+    /// delegates for backward-compat during the Phase 1g transition.
+    pub fn tunnels(&self) -> Arc<TunnelManager> {
+        Arc::clone(&self.tunnels)
     }
 
     // -----------------------------------------------------------------------
@@ -168,28 +178,19 @@ impl ServiceStatusManager {
     // -----------------------------------------------------------------------
 
     pub fn register_tunnel(&self, provider: TunnelProvider, abort_handle: AbortHandle) {
-        let entry = TunnelEntry {
-            meta: ServiceMeta::new(Some(abort_handle)),
-            provider,
-            url: None,
-        };
-        self.tunnels.insert(provider.as_str().to_string(), entry);
-        self.notify_change();
+        self.tunnels.register(provider, abort_handle);
     }
 
     pub fn set_tunnel_url(&self, provider_key: &str, url: &str) {
-        if let Some(mut entry) = self.tunnels.get_mut(provider_key) {
-            entry.url = Some(url.to_string());
-            self.notify_change();
-        }
+        self.tunnels.set_url(provider_key, url);
     }
 
     pub fn has_tunnel_url(&self) -> bool {
-        self.tunnels.iter().any(|entry| entry.url.is_some())
+        self.tunnels.has_url()
     }
 
     pub fn get_tunnel_url(&self) -> Option<String> {
-        self.tunnels.iter().find_map(|entry| entry.url.clone())
+        self.tunnels.first_url()
     }
 
     // -----------------------------------------------------------------------
@@ -219,8 +220,7 @@ impl ServiceStatusManager {
                 }
             }
             "tunnels" => {
-                if let Some(entry) = self.tunnels.get(key) {
-                    entry.meta.kill();
+                if self.tunnels.kill(key) {
                     self.notify_change();
                     return true;
                 }
@@ -242,32 +242,34 @@ impl ServiceStatusManager {
     // -----------------------------------------------------------------------
 
     pub async fn snapshot(&self) -> StatusSnapshot {
+        use crate::state::StateSource;
         let pty_count = self.pty.len();
         let agents = self.agent_snapshot().await;
+        let tunnels = self
+            .tunnels
+            .list()
+            .await
+            .into_iter()
+            .map(|t| {
+                let key = t.provider.as_str().to_string();
+                let mut extra = serde_json::Map::new();
+                extra.insert("provider".into(), t.provider.as_str().into());
+                if let Some(ref url) = t.url {
+                    extra.insert("url".into(), url.clone().into());
+                }
+                ServiceInfo {
+                    id: key,
+                    name: format!("Tunnel ({})", t.provider.as_str()),
+                    status: (&t.status).into(),
+                    uptime_secs: t.uptime_secs,
+                    extra,
+                }
+            })
+            .collect();
 
         StatusSnapshot {
             server: self.server_meta.clone(),
-            tunnels: self
-                .tunnels
-                .iter()
-                .map(|entry| {
-                    let key = entry.key().clone();
-                    ServiceInfo {
-                        id: key.clone(),
-                        name: format!("Tunnel ({})", entry.provider.as_str()),
-                        status: (&entry.meta.current_status()).into(),
-                        uptime_secs: entry.meta.uptime_secs(),
-                        extra: {
-                            let mut m = serde_json::Map::new();
-                            m.insert("provider".into(), entry.provider.as_str().into());
-                            if let Some(ref url) = entry.url {
-                                m.insert("url".into(), url.clone().into());
-                            }
-                            m
-                        },
-                    }
-                })
-                .collect(),
+            tunnels,
             agents,
             channels: self.channel_snapshot(),
             pty_session_count: pty_count,

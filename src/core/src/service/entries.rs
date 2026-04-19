@@ -2,8 +2,6 @@
 
 use serde::Serialize;
 
-use crate::tunnels::TunnelProvider;
-
 use super::status::ServiceMeta;
 
 /// Agent status entry (lightweight, for Dashboard display only).
@@ -17,11 +15,4 @@ pub struct AgentStatusEntry {
 /// Channel plugin status entry.
 pub struct ChannelEntry {
     pub meta: ServiceMeta,
-}
-
-/// Tunnel status entry.
-pub struct TunnelEntry {
-    pub meta: ServiceMeta,
-    pub provider: TunnelProvider,
-    pub url: Option<String>,
 }
