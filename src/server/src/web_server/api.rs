@@ -5,7 +5,10 @@
 //! - DELETE /api/sessions/:session_id
 //! - GET /api/tmux/sessions
 //! - GET /api/agents
-//! - GET /api/services
+//! - GET /api/channels          (Phase 1g: per-domain runtime list)
+//! - GET /api/tunnels           (Phase 1g: per-domain runtime list)
+//! - GET /api/agents/runtime    (Phase 1g: per-domain runtime list)
+//! - GET /api/services          (legacy unified; to be removed)
 //! - DELETE /api/services/:category/:id
 
 use axum::{
@@ -17,6 +20,7 @@ use axum::{
 
 use common::config;
 use common::pty::{list_tmux_sessions, tmux_available, PtyTool, SessionId};
+use common::state::StateSource;
 
 use super::AppState;
 
@@ -42,6 +46,82 @@ pub async fn list_agents_handler() -> Json<crate::api_types::AgentsConfig> {
 /// GET /api/services — list all services grouped by category.
 pub async fn list_services_handler(State(state): State<AppState>) -> Json<common::service::StatusSnapshot> {
     Json(state.services.snapshot().await)
+}
+
+/// GET /api/channels — live list of channel plugins from `ChannelMonitor`.
+pub async fn list_channels_handler(
+    State(state): State<AppState>,
+) -> Json<Vec<crate::api_types::ChannelRuntime>> {
+    let Some(monitor) = state.services.channel_monitor() else {
+        return Json(Vec::new());
+    };
+    let entries = monitor.list().await;
+    Json(
+        entries
+            .into_iter()
+            .map(|s| crate::api_types::ChannelRuntime {
+                kind: s.kind,
+                status: s.status.as_str(),
+                reason: if s.reason.is_empty() { None } else { Some(s.reason) },
+                crash_count: s.crash_count,
+                last_seen_age_secs: s.last_seen_age_secs,
+                restart_in_secs: s.restart_in_secs,
+                started_at: s.started_at,
+            })
+            .collect(),
+    )
+}
+
+/// GET /api/tunnels — live list of tunnels from `TunnelManager`.
+pub async fn list_tunnels_handler(
+    State(state): State<AppState>,
+) -> Json<Vec<crate::api_types::TunnelRuntime>> {
+    let entries = state.services.tunnels().list().await;
+    Json(
+        entries
+            .into_iter()
+            .map(|t| crate::api_types::TunnelRuntime {
+                provider: t.provider.as_str(),
+                url: t.url,
+                status: (&t.status).into(),
+                uptime_secs: t.uptime_secs,
+            })
+            .collect(),
+    )
+}
+
+/// GET /api/agents/runtime — live list of agent pods from `ACPHub`.
+pub async fn list_agents_runtime_handler(
+    State(state): State<AppState>,
+) -> Json<Vec<crate::api_types::AgentRuntime>> {
+    let acp_hub = state.channel_hub.acp_hub();
+    let pods = acp_hub.list();
+    let mut out = Vec::with_capacity(pods.len());
+    for pod in pods {
+        let st = pod.state().await;
+        let (agent_name, agent_title, agent_version) = st
+            .initialize
+            .as_ref()
+            .and_then(|i| i.agent_info.as_ref())
+            .map(|info| (Some(info.name.clone()), info.title.clone(), Some(info.version.clone())))
+            .unwrap_or((None, None, None));
+        out.push(crate::api_types::AgentRuntime {
+            route_key: pod.route.as_key(),
+            channel_kind: pod.route.channel_kind.clone(),
+            chat_id: pod.route.chat_id.clone(),
+            cli_kind: st.cli_kind,
+            profile: st.profile,
+            session_id: st.session_id,
+            workspace: st.workspace,
+            busy: st.busy,
+            failed: st.failed,
+            started_at: pod.started_at(),
+            agent_name,
+            agent_title,
+            agent_version,
+        });
+    }
+    Json(out)
 }
 
 /// POST /api/services/channels/:kind/stop — user-initiated stop of a channel

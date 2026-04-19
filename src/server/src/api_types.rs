@@ -80,3 +80,99 @@ impl AgentInfo {
             .collect()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Per-domain runtime shapes (Phase 1g). Each is returned by a dedicated
+// `/api/<domain>` handler reading directly from the relevant kernel
+// manager — no unified `StatusSnapshot` envelope, no Services facade.
+// ---------------------------------------------------------------------------
+
+/// One channel plugin, as returned by `GET /api/channels`.
+///
+/// Sources: `common::channel_manager::monitor::ChannelMonitor::list()`
+///
+/// # Wire format (JSON)
+/// ```json
+/// {
+///   "kind": "telegram",
+///   "status": "running",
+///   "reason": null,
+///   "crash_count": 0,
+///   "last_seen_age_secs": 3,
+///   "restart_in_secs": 0,
+///   "started_at": 1713460000
+/// }
+/// ```
+///
+/// `status` is one of: `"not_started" | "spawning" | "running" | "crashed" | "stopped"`.
+/// `reason` carries a short explanation for crashed/stopped states.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChannelRuntime {
+    pub kind: String,
+    pub status: &'static str,
+    pub reason: Option<String>,
+    pub crash_count: u32,
+    pub last_seen_age_secs: u64,
+    pub restart_in_secs: u64,
+    pub started_at: u64,
+}
+
+/// One tunnel, as returned by `GET /api/tunnels`.
+///
+/// Sources: `common::tunnels::TunnelManager::list()`.
+///
+/// # Wire format (JSON)
+/// ```json
+/// {
+///   "provider": "localtunnel",
+///   "url": "https://quiet-pig-42.loca.lt",
+///   "status": { "state": "running" },
+///   "uptime_secs": 120
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize)]
+pub struct TunnelRuntime {
+    pub provider: &'static str,
+    pub url: Option<String>,
+    pub status: common::service::ApiServiceStatus,
+    pub uptime_secs: u64,
+}
+
+/// One agent runtime, as returned by `GET /api/agents/runtime`.
+///
+/// Sources: `common::acp_hub::ACPHub::list()` → `ACPPod::state()`.
+///
+/// # Wire format (JSON)
+/// ```json
+/// {
+///   "route_key": "telegram:chat_42",
+///   "channel_kind": "telegram",
+///   "chat_id": "chat_42",
+///   "cli_kind": "claude",
+///   "profile": "default",
+///   "session_id": "01HXYZ...",
+///   "workspace": "/Users/foo/bar",
+///   "busy": false,
+///   "failed": null,
+///   "started_at": 1713460000,
+///   "agent_name": "Claude Code",
+///   "agent_title": "Claude",
+///   "agent_version": "1.0.0"
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentRuntime {
+    pub route_key: String,
+    pub channel_kind: String,
+    pub chat_id: String,
+    pub cli_kind: Option<String>,
+    pub profile: Option<String>,
+    pub session_id: Option<String>,
+    pub workspace: Option<String>,
+    pub busy: bool,
+    pub failed: Option<String>,
+    pub started_at: u64,
+    pub agent_name: Option<String>,
+    pub agent_title: Option<String>,
+    pub agent_version: Option<String>,
+}

@@ -150,6 +150,9 @@ pub async fn run_web_server(
         .route("/ws/chat", get(ws_chat::ws_chat_handler))
         .route("/ws/services", get(ws_services::ws_services_handler))
         .route("/api/services", get(api::list_services_handler))
+        .route("/api/channels", get(api::list_channels_handler))
+        .route("/api/tunnels", get(api::list_tunnels_handler))
+        .route("/api/agents/runtime", get(api::list_agents_runtime_handler))
         .route(
             "/api/services/{category}/{id}",
             delete(api::kill_service_handler),
