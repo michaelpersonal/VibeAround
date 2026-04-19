@@ -1,4 +1,4 @@
-//! `ApiServiceStatus` + `ServerMeta` — shared wire-adjacent types.
+//! `ApiServiceStatus` — shared wire-adjacent enum.
 //!
 //! Most of this file used to define a `StatusSnapshot` aggregate
 //! returned by the legacy `/api/services` endpoint. That endpoint and
@@ -7,26 +7,12 @@
 //! define their own wire shapes in `src/server/src/api_types.rs`.
 //!
 //! `ApiServiceStatus` stays because it's still the natural wire shape
-//! for "how is this one service doing" — reused by `TunnelRuntime`.
-//! `ServerMeta` stays because the daemon entry still carries it.
+//! for "how is this one service doing" — currently reused by
+//! `TunnelRuntime`.
 
 use serde::Serialize;
 
 use super::status::ServiceStatus;
-
-/// Daemon metadata captured at start. Not currently exposed on the
-/// wire but kept on `ServiceStatusManager` for possible future reuse
-/// (e.g. a per-domain `/api/server/meta` endpoint).
-///
-/// # Wire format (JSON, if serialized)
-/// ```json
-/// { "started_at": 1713456789, "port": 12358 }
-/// ```
-#[derive(Debug, Clone, Serialize)]
-pub struct ServerMeta {
-    pub started_at: u64,
-    pub port: u16,
-}
 
 /// Wire-level status across service kinds. Serializes as a tagged
 /// object with a `state` discriminant so consumers pattern-match

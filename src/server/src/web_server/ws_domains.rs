@@ -33,9 +33,7 @@ pub async fn ws_channels_handler(
     ws: WebSocketUpgrade,
 ) -> Response {
     ws.on_upgrade(move |socket| async move {
-        let Some(monitor) = state.services.channel_monitor() else {
-            return;
-        };
+        let monitor = state.channel_hub.monitor();
         let rx = monitor.subscribe_changes();
         run_ws_loop(socket, rx, "ws/channels", move || {
             let monitor = monitor.clone();
@@ -74,7 +72,7 @@ pub async fn ws_tunnels_handler(
     ws: WebSocketUpgrade,
 ) -> Response {
     ws.on_upgrade(move |socket| async move {
-        let tunnels = state.services.tunnels();
+        let tunnels = state.tunnels.clone();
         let rx = tunnels.subscribe_changes();
         run_ws_loop(socket, rx, "ws/tunnels", move || {
             let tunnels = tunnels.clone();

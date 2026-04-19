@@ -370,8 +370,8 @@ fn derive_title(arguments: &serde_json::Value, cwd_path: &std::path::Path) -> St
 /// All preview routes live under `/va/` to avoid conflicts with dev servers.
 fn build_preview_url(state: &AppState, route: &str, slug: &str) -> String {
     let base = state
-        .services
-        .get_tunnel_url()
-        .unwrap_or_else(|| format!("http://127.0.0.1:{}", state.services.port));
+        .tunnels
+        .first_url()
+        .unwrap_or_else(|| format!("http://127.0.0.1:{}", state.port));
     format!("{}/va/{}/{}", base.trim_end_matches('/'), route, slug)
 }

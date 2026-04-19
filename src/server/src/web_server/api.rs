@@ -50,9 +50,7 @@ pub async fn list_agents_handler() -> Json<crate::api_types::AgentsConfig> {
 pub async fn list_channels_handler(
     State(state): State<AppState>,
 ) -> Json<Vec<crate::api_types::ChannelRuntime>> {
-    let Some(monitor) = state.services.channel_monitor() else {
-        return Json(Vec::new());
-    };
+    let monitor = state.channel_hub.monitor();
     let entries = monitor.list().await;
     Json(
         entries
@@ -74,7 +72,7 @@ pub async fn list_channels_handler(
 pub async fn list_tunnels_handler(
     State(state): State<AppState>,
 ) -> Json<Vec<crate::api_types::TunnelRuntime>> {
-    let entries = state.services.tunnels().list().await;
+    let entries = state.tunnels.list().await;
     Json(
         entries
             .into_iter()
@@ -128,10 +126,7 @@ pub async fn stop_channel_handler(
     State(state): State<AppState>,
     Path(kind): Path<String>,
 ) -> impl IntoResponse {
-    let Some(monitor) = state.services.channel_monitor() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "monitor not available".to_string());
-    };
-    match monitor.force_stop(&kind).await {
+    match state.channel_hub.monitor().force_stop(&kind).await {
         Ok(()) => (StatusCode::OK, format!("Stopped {}", kind)),
         Err(e) => (StatusCode::NOT_FOUND, e),
     }
@@ -143,10 +138,7 @@ pub async fn restart_channel_handler(
     State(state): State<AppState>,
     Path(kind): Path<String>,
 ) -> impl IntoResponse {
-    let Some(monitor) = state.services.channel_monitor() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "monitor not available".to_string());
-    };
-    match monitor.force_restart(&kind).await {
+    match state.channel_hub.monitor().force_restart(&kind).await {
         Ok(()) => (StatusCode::OK, format!("Restarting {}", kind)),
         Err(e) => (StatusCode::NOT_FOUND, e),
     }
@@ -158,10 +150,7 @@ pub async fn start_channel_handler(
     State(state): State<AppState>,
     Path(kind): Path<String>,
 ) -> impl IntoResponse {
-    let Some(monitor) = state.services.channel_monitor() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "monitor not available".to_string());
-    };
-    match monitor.force_start(&kind) {
+    match state.channel_hub.monitor().force_start(&kind) {
         Ok(()) => (StatusCode::OK, format!("Starting {}", kind)),
         Err(e) => (StatusCode::NOT_FOUND, e),
     }
@@ -172,7 +161,7 @@ pub async fn kill_tunnel_handler(
     State(state): State<AppState>,
     Path(provider): Path<String>,
 ) -> impl IntoResponse {
-    if state.services.tunnels().kill(&provider) {
+    if state.tunnels.kill(&provider) {
         (StatusCode::OK, format!("Killed tunnel {}", provider))
     } else {
         (StatusCode::NOT_FOUND, format!("Tunnel {} not found", provider))
@@ -386,7 +375,7 @@ pub async fn set_default_workspace_handler(
 /// GET /api/previews — list all live preview sessions and the active tunnel URL.
 pub async fn list_previews_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
     let previews = common::preview_entries::list_snapshots();
-    let tunnel_url = state.services.get_tunnel_url();
+    let tunnel_url = state.tunnels.first_url();
     Json(serde_json::json!({
         "previews": previews,
         "tunnel_url": tunnel_url,

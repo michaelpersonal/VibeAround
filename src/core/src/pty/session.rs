@@ -87,6 +87,11 @@ pub struct SessionContext {
 /// Global registry of all active PTY sessions.
 pub type Registry = Arc<DashMap<SessionId, SessionContext>>;
 
+/// Construct a fresh empty `Registry`.
+pub fn new_registry() -> Registry {
+    Arc::new(DashMap::new())
+}
+
 /// Unix timestamp for "now" (seconds).
 pub fn unix_now_secs() -> u64 {
     std::time::SystemTime::now()

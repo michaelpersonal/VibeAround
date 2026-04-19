@@ -17,14 +17,14 @@ use common::channel_manager::{handle_channel_input, ChannelManager, WebChannelMa
 use common::child_registry::{self, ChildRegistry};
 use common::config;
 use common::plugins;
-use common::pty::{PtySessionManager, SessionId};
-use common::service::ServiceStatusManager;
-use common::tunnels;
+use common::pty::{PtySessionManager, Registry, SessionId};
+use common::tunnels::{self, TunnelManager};
 
 /// Unified daemon that starts and manages all VibeAround services.
 /// Both the server binary and the desktop (Tauri) binary use this.
 pub struct ServerDaemon {
-    pub services: Arc<ServiceStatusManager>,
+    pub tunnels: Arc<TunnelManager>,
+    pub pty: Registry,
     pub port: u16,
     /// Per-session auth token, regenerated on every daemon start.
     /// Exposed so Tauri can append `?token=` when opening the dashboard.
@@ -38,7 +38,8 @@ pub struct RunningDaemon {
     pub web_handle: JoinHandle<Result<(), String>>,
     pub tunnel_handle: JoinHandle<()>,
     pub web_dispatch_handle: JoinHandle<()>,
-    pub services: Arc<ServiceStatusManager>,
+    pub tunnels: Arc<TunnelManager>,
+    pub pty: Registry,
 }
 
 impl RunningDaemon {
@@ -55,8 +56,8 @@ impl RunningDaemon {
         // outlive the daemon. Best-effort; failures are logged.
         common::preview_entries::shutdown_kill_all_ports();
 
-        let pty_manager = PtySessionManager::from_registry(Arc::clone(&self.services.pty));
-        let session_ids: Vec<SessionId> = self.services.pty.iter().map(|entry| entry.key().clone()).collect();
+        let pty_manager = PtySessionManager::from_registry(Arc::clone(&self.pty));
+        let session_ids: Vec<SessionId> = self.pty.iter().map(|entry| entry.key().clone()).collect();
         for session_id in session_ids {
             let _ = pty_manager.delete_session(session_id);
         }
@@ -65,22 +66,25 @@ impl RunningDaemon {
         self.web_handle.abort();
         self.tunnel_handle.abort();
 
-        // Clear service status so stale entries don't persist across restarts
-        self.services.clear();
+        // Clear tunnel + PTY registries so stale entries don't persist
+        // across restarts.
+        self.tunnels.clear();
+        self.pty.clear();
     }
 }
 
 impl ServerDaemon {
     pub fn new(port: u16) -> Self {
         Self {
-            services: Arc::new(ServiceStatusManager::new(port)),
+            tunnels: TunnelManager::new(),
+            pty: common::pty::new_registry(),
             port,
             auth_token: Arc::new(AuthToken::generate()),
         }
     }
 
-    pub fn services(&self) -> Arc<ServiceStatusManager> {
-        Arc::clone(&self.services)
+    pub fn tunnels(&self) -> Arc<TunnelManager> {
+        Arc::clone(&self.tunnels)
     }
 
     /// Borrow the session auth token. Tauri uses this to open the dashboard
@@ -119,7 +123,8 @@ impl ServerDaemon {
         // in-memory cache reflects the latest settings.json (which may have
         // been rewritten by onboarding or a manual edit since last start).
         let cfg = config::reload();
-        let services = Arc::clone(&self.services);
+        let tunnels = Arc::clone(&self.tunnels);
+        let pty = Arc::clone(&self.pty);
 
         // Persist the auth token so the Tauri side (tray, desktop-ui) can
         // read it without a separate IPC channel. Overwrites any stale file
@@ -178,11 +183,9 @@ impl ServerDaemon {
             .expect("Failed to spawn channel input thread");
 
         // 3. Channel plugins — supervised by ChannelMonitor (respawn on
-        //    crash + heartbeat watchdog). Install the monitor back-ref into
-        //    ServiceStatusManager so the Dashboard snapshot + kill flow
-        //    route through it.
-        services.set_channel_monitor(Arc::downgrade(&channel_hub.monitor()));
-
+        //    crash + heartbeat watchdog). Handlers reach the monitor
+        //    directly via `state.channel_hub.monitor()`; no back-ref
+        //    needed.
         let discovered_plugins = plugins::discover_channel_plugins();
         for name in cfg.channel_names() {
             let Some(plugin) = discovered_plugins.get(&name) else {
@@ -193,7 +196,8 @@ impl ServerDaemon {
         }
 
         // 4. Web server (Axum)
-        let web_services = Arc::clone(&services);
+        let web_tunnels = Arc::clone(&tunnels);
+        let web_pty = Arc::clone(&pty);
         let web_channel_hub = Arc::clone(&channel_hub);
         let web_channel_manager = Arc::clone(&web_channel);
         let web_auth_token = Arc::clone(&self.auth_token);
@@ -202,7 +206,8 @@ impl ServerDaemon {
             run_web_server(
                 daemon_port,
                 dist_path,
-                web_services,
+                web_tunnels,
+                web_pty,
                 web_channel_hub,
                 web_channel_manager,
                 web_auth_token,
@@ -215,12 +220,12 @@ impl ServerDaemon {
         let tunnel_provider = cfg.tunnel_provider;
         eprintln!("[VibeAround][daemon] Tunnel ({})", tunnel_provider.as_str());
         let tunnel_handle = if tunnel_provider.is_enabled() {
-            let tunnel_services = Arc::clone(&services);
+            let tunnel_manager = Arc::clone(&tunnels);
             let handle = tokio::spawn(async move {
                 match tunnels::start_web_tunnel_with_provider(tunnel_provider, &cfg).await {
                     Ok((guard, url)) => {
                         eprintln!("[VibeAround][daemon] Tunnel URL: {}", url);
-                        tunnel_services.set_tunnel_url(tunnel_provider.as_str(), &url);
+                        tunnel_manager.set_url(tunnel_provider.as_str(), &url);
                         guard.wait().await;
                     }
                     Err(e) => {
@@ -228,7 +233,7 @@ impl ServerDaemon {
                     }
                 }
             });
-            services.register_tunnel(tunnel_provider, handle.abort_handle());
+            tunnels.register(tunnel_provider, handle.abort_handle());
             handle
         } else {
             eprintln!("[VibeAround][daemon] Tunnel disabled (none)");
@@ -242,7 +247,8 @@ impl ServerDaemon {
             web_handle,
             tunnel_handle,
             web_dispatch_handle,
-            services,
+            tunnels,
+            pty,
         })
     }
 

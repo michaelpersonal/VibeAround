@@ -65,24 +65,3 @@ impl ServiceMeta {
     }
 }
 
-/// Spawn a task that auto-updates the ServiceMeta status on completion.
-pub fn spawn_tracked<F>(
-    meta_status: Arc<RwLock<ServiceStatus>>,
-    future: F,
-) -> tokio::task::JoinHandle<()>
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    let status = meta_status;
-    tokio::spawn(async move {
-        future.await;
-        // The future has finished — we're past the last await. Safe to take
-        // the blocking parking_lot write guard inside this async block.
-        let mut s = status.write();
-        if s.is_running() {
-            *s = ServiceStatus::Stopped {
-                reason: "completed".into(),
-            };
-        }
-    })
-}

@@ -11,7 +11,7 @@ use tauri::{
     App, Listener, Manager, Runtime,
 };
 
-use crate::{AppServiceManager, OnboardingActive};
+use crate::{AppTunnels, OnboardingActive};
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const LOCAL_DASHBOARD_URL: &str = "http://127.0.0.1:12358/va";
@@ -86,8 +86,8 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
                 let _ = open::that(dashboard_url_with_token(LOCAL_DASHBOARD_URL));
             }
             "open_tunnel" => {
-                if let Some(state) = app.try_state::<AppServiceManager>() {
-                    if let Some(url) = state.0.get_tunnel_url() {
+                if let Some(state) = app.try_state::<AppTunnels>() {
+                    if let Some(url) = state.0.first_url() {
                         let dashboard_url = format!("{}/va", url.trim_end_matches('/'));
                         let _ = open::that(tunnel_url_with_token(&dashboard_url));
                     }
@@ -110,12 +110,11 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         use common::state::StateSource;
-        let Some(state) = app_handle.try_state::<AppServiceManager>() else { return };
-        let sm = &state.0;
-        let tunnels = sm.tunnels();
+        let Some(state) = app_handle.try_state::<AppTunnels>() else { return };
+        let tunnels = &state.0;
         let mut rx = tunnels.subscribe_changes();
         loop {
-            let has_url = sm.has_tunnel_url();
+            let has_url = tunnels.has_url();
             let _ = tunnel_item_clone.set_enabled(has_url);
 
             // Wait for next change notification

@@ -23,7 +23,8 @@ use tower_http::services::ServeDir;
 
 use common::auth::AuthToken;
 use common::channel_manager::{ChannelManager, WebChannelManager};
-use common::pty::PtySessionManager;
+use common::pty::{PtySessionManager, Registry};
+use common::tunnels::TunnelManager;
 
 use self::auth::{require_auth, AuthState};
 
@@ -45,14 +46,18 @@ struct WsQuery {
     token: Option<String>,
 }
 
-/// Shared app state: registry, SPA fallback path, working dir, service manager.
+/// Shared app state: per-domain manager handles + server metadata.
 #[derive(Clone)]
 pub(crate) struct AppState {
     pty_manager: Arc<PtySessionManager>,
     dist_for_fallback: PathBuf,
-    services: Arc<common::service::ServiceStatusManager>,
+    tunnels: Arc<TunnelManager>,
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
+    /// Port the daemon is bound to. Handlers that need to build
+    /// loopback URLs use this instead of reaching into a services
+    /// facade.
+    port: u16,
     /// Shared HTTP client for preview proxy (connection pooling).
     preview_client: reqwest::Client,
 }
@@ -96,7 +101,8 @@ async fn spa_fallback_handler(axum::extract::State(state): axum::extract::State<
 pub async fn run_web_server(
     port: u16,
     dist_path: PathBuf,
-    services: Arc<common::service::ServiceStatusManager>,
+    tunnels: Arc<TunnelManager>,
+    pty_registry: Registry,
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
     auth_token: Arc<AuthToken>,
@@ -117,11 +123,12 @@ pub async fn run_web_server(
         .build()
         .expect("reqwest client");
     let state = AppState {
-        pty_manager: Arc::new(PtySessionManager::from_registry(Arc::clone(&services.pty))),
+        pty_manager: Arc::new(PtySessionManager::from_registry(pty_registry)),
         dist_for_fallback: web_dist.clone(),
-        services,
+        tunnels,
         channel_hub,
         web_channel,
+        port,
         preview_client,
     };
 

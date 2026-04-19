@@ -12,8 +12,10 @@ use tokio::sync::{Mutex, Notify};
 
 use onboarding::{OnboardingGate, OnboardingInstallState, OnboardingSessions};
 
-/// Shared ServiceStatusManager, injected into Tauri state for tray and IPC access.
-pub struct AppServiceManager(pub Arc<common::service::ServiceStatusManager>);
+/// Shared `TunnelManager` handle, injected into Tauri state for the
+/// tray (live tunnel menu item) and any IPC command that needs the
+/// current tunnel URL.
+pub struct AppTunnels(pub Arc<common::tunnels::TunnelManager>);
 
 /// Whether the app is currently in onboarding mode (tray reads this).
 pub struct OnboardingActive(pub std::sync::atomic::AtomicBool);
@@ -130,7 +132,7 @@ fn main() {
     }
 
     let daemon = Arc::new(server::ServerDaemon::new(port));
-    let services = daemon.services();
+    let tunnels = daemon.tunnels();
 
     // Persist the auth token immediately so the desktop-ui (which runs in
     // a Tauri webview that starts rendering before the daemon has fully
@@ -170,7 +172,7 @@ fn main() {
                 let _ = w.set_focus();
             }
         }))
-        .manage(AppServiceManager(services))
+        .manage(AppTunnels(tunnels))
         .manage(OnboardingGate { notify: Arc::clone(&gate) })
         .manage(OnboardingSessions {
             plugin_sessions: Arc::new(Mutex::new(std::collections::HashMap::new())),
