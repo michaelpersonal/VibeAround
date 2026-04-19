@@ -35,8 +35,8 @@ use crate::channel_manager::monitor::{ChannelMonitor, ChannelRunStatus};
 // `.await` point. If a lock needs to be held longer, convert that specific
 // site to `tokio::sync::RwLock` — do not yield while holding parking_lot.
 
+use crate::acp_hub::ACPHub;
 use crate::pty::{unix_now_secs, Registry, SessionId};
-use crate::runtime_status::RuntimeStatusStore;
 use crate::tunnels::TunnelProvider;
 
 pub use entries::{AgentStatusEntry, ChannelEntry, TunnelEntry};
@@ -52,8 +52,10 @@ use snapshot::capitalize;
 /// Lightweight status registry for all running services.
 /// Data is synced by `ServerDaemon` via hub events.
 pub struct ServiceStatusManager {
-    /// Runtime status store (event-driven, from `ACPHub` `HubEvent` stream).
-    runtime_status: RwLock<Option<Arc<RuntimeStatusStore>>>,
+    /// `ACPHub` back-ref (Weak). When present, agent snapshots are
+    /// built by iterating `acp_hub.list()` and reading each pod's
+    /// `state()` directly.
+    acp_hub: RwLock<Weak<ACPHub>>,
     /// Channel plugin status (keyed by channel kind). Legacy store — the
     /// authoritative source once the monitor is installed is `channel_monitor`.
     /// Kept as a no-op compat layer for the tiny window before the monitor is
@@ -82,7 +84,7 @@ impl ServiceStatusManager {
         // and re-sync on next receive. 64 is generous for status updates.
         let (change_tx, _) = broadcast::channel(64);
         Self {
-            runtime_status: RwLock::new(None),
+            acp_hub: RwLock::new(Weak::new()),
             channels: DashMap::new(),
             channel_monitor: RwLock::new(Weak::new()),
             tunnels: DashMap::new(),
@@ -114,7 +116,7 @@ impl ServiceStatusManager {
         self.channels.clear();
         self.tunnels.clear();
         self.pty.clear();
-        *self.runtime_status.write() = None;
+        *self.acp_hub.write() = Weak::new();
         self.notify_change();
     }
 
@@ -136,11 +138,16 @@ impl ServiceStatusManager {
     }
 
     // -----------------------------------------------------------------------
-    // Runtime status (event-driven from ACPHub)
+    // ACPHub back-ref (set once at daemon boot). Agents snapshot is read
+    // live from each pod via `acp_hub.list()` + `pod.state().await`.
     // -----------------------------------------------------------------------
 
-    pub fn set_runtime_status(&self, store: Arc<RuntimeStatusStore>) {
-        *self.runtime_status.write() = Some(store);
+    pub fn set_acp_hub(&self, hub: Weak<ACPHub>) {
+        *self.acp_hub.write() = hub;
+    }
+
+    fn acp_hub(&self) -> Option<Arc<ACPHub>> {
+        self.acp_hub.read().upgrade()
     }
 
     // -----------------------------------------------------------------------
@@ -234,15 +241,9 @@ impl ServiceStatusManager {
     // Snapshot (for Dashboard API / WebSocket)
     // -----------------------------------------------------------------------
 
-    pub fn snapshot(&self) -> StatusSnapshot {
+    pub async fn snapshot(&self) -> StatusSnapshot {
         let pty_count = self.pty.len();
-
-        let agents = self
-            .runtime_status
-            .read()
-            .as_ref()
-            .map(|store| store.snapshot_agents())
-            .unwrap_or_default();
+        let agents = self.agent_snapshot().await;
 
         StatusSnapshot {
             server: self.server_meta.clone(),
@@ -271,6 +272,79 @@ impl ServiceStatusManager {
             channels: self.channel_snapshot(),
             pty_session_count: pty_count,
         }
+    }
+
+    /// Build the per-agent `ServiceInfo` list by iterating the `ACPHub`'s
+    /// pods and reading each pod's live state. Replaces the previous
+    /// `RuntimeStatusStore` projection cache (deleted).
+    async fn agent_snapshot(&self) -> Vec<ServiceInfo> {
+        let Some(hub) = self.acp_hub() else {
+            return Vec::new();
+        };
+        let pods = hub.list();
+        let now = unix_now_secs();
+        let mut out = Vec::with_capacity(pods.len());
+        for pod in pods {
+            let st = pod.state().await;
+            let route_key = pod.route.as_key();
+            let service_key = format!(
+                "{}:{}:{}:{}",
+                pod.route.channel_kind,
+                pod.route.chat_id,
+                st.profile.clone().unwrap_or_else(|| "default".to_string()),
+                st.cli_kind.clone().unwrap_or_else(|| "unknown".to_string()),
+            );
+
+            let mut extra = serde_json::Map::new();
+            extra.insert("routeKey".into(), route_key.clone().into());
+            extra.insert("channelKind".into(), pod.route.channel_kind.clone().into());
+            extra.insert("chatId".into(), pod.route.chat_id.clone().into());
+            if let Some(kind) = &st.cli_kind {
+                extra.insert("kind".into(), kind.clone().into());
+            }
+            if let Some(profile) = &st.profile {
+                extra.insert("profile".into(), profile.clone().into());
+            }
+            if let Some(sid) = &st.session_id {
+                extra.insert("sessionId".into(), sid.clone().into());
+            }
+            extra.insert("busy".into(), st.busy.into());
+            if let Some(err) = &st.failed {
+                extra.insert("error".into(), err.clone().into());
+            }
+            if let Some(initialize) = &st.initialize {
+                if let Ok(value) = serde_json::to_value(initialize) {
+                    extra.insert("initialize".into(), value);
+                }
+                if let Some(agent_info) = &initialize.agent_info {
+                    extra.insert("agentName".into(), agent_info.name.clone().into());
+                    if let Some(title) = &agent_info.title {
+                        extra.insert("agentTitle".into(), title.clone().into());
+                    }
+                    extra.insert("agentVersion".into(), agent_info.version.clone().into());
+                }
+                extra.insert(
+                    "protocolVersion".into(),
+                    format!("{:?}", initialize.protocol_version).into(),
+                );
+            }
+
+            out.push(ServiceInfo {
+                id: route_key,
+                name: format!(
+                    "{} ({})",
+                    st.cli_kind.clone().unwrap_or_else(|| "agent".to_string()),
+                    service_key,
+                ),
+                status: match &st.failed {
+                    Some(error) => ApiServiceStatus::Failed { error: error.clone() },
+                    None => ApiServiceStatus::Running,
+                },
+                uptime_secs: now.saturating_sub(pod.started_at()),
+                extra,
+            });
+        }
+        out
     }
 
     /// Build the per-channel `ServiceInfo` list. Prefers the `ChannelMonitor`

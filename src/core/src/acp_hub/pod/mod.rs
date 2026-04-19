@@ -33,7 +33,7 @@ use super::event::SystemEvent;
 use bridge_handler::SessionBridgeHandler;
 use media::relocate_cached_media;
 
-pub use snapshot::{PodSnapshot, PodState};
+pub use snapshot::PodState;
 
 // ---------------------------------------------------------------------------
 // ACPPod
@@ -62,10 +62,18 @@ pub struct ACPPod {
     /// Released just before the first prompt is sent (not when bridge is ready),
     /// because some agents (Gemini) continue replaying after load_session returns.
     suppress_replay: Mutex<Option<Arc<AtomicBool>>>,
+    /// Dashboard-facing change ping. Fired on any state mutation that a
+    /// consumer of `acp_hub.subscribe_changes()` would want to re-poll
+    /// for. Shared (cloned) from the owning `ACPHub`'s ping channel.
+    change_tx: broadcast::Sender<()>,
 }
 
 impl ACPPod {
-    pub fn new(route: RouteKey, event_tx: broadcast::Sender<SystemEvent>) -> Self {
+    pub fn new(
+        route: RouteKey,
+        event_tx: broadcast::Sender<SystemEvent>,
+        change_tx: broadcast::Sender<()>,
+    ) -> Self {
         Self {
             route,
             bot_identity: None,
@@ -83,6 +91,7 @@ impl ACPPod {
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
             suppress_replay: Mutex::new(None),
+            change_tx,
         }
     }
 
@@ -126,7 +135,7 @@ impl ACPPod {
 
         *self.busy.lock().await = true;
         *self.failed.lock().await = None;
-        self.emit_snapshot().await;
+        let _ = self.change_tx.send(());
 
         let result: acp::Result<acp::PromptResponse> = async {
             // Take handover state (consumed once)
@@ -186,7 +195,7 @@ impl ACPPod {
         if let Err(error) = &result {
             *self.failed.lock().await = Some(error.message.to_string());
         }
-        self.emit_snapshot().await;
+        let _ = self.change_tx.send(());
 
         result
     }
@@ -251,7 +260,7 @@ impl ACPPod {
         );
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(agent_kind.clone());
-        self.emit_snapshot().await;
+        let _ = self.change_tx.send(());
         eprintln!(
             "[ACPPod] switch_agent done route={} cli_kind={:?}",
             self.route, agent_kind
@@ -266,13 +275,13 @@ impl ACPPod {
         );
         self.full_reset().await;
         *self.profile.lock().await = Some(profile);
-        self.emit_snapshot().await;
+        let _ = self.change_tx.send(());
     }
 
     /// Reset session — kill session but keep bridge (start fresh conversation).
     pub async fn reset_session(&self) {
         *self.session_id.lock().await = None;
-        self.emit_snapshot().await;
+        let _ = self.change_tx.send(());
     }
 
     /// Update cached agent commands (called when `available_commands_update` arrives).
@@ -312,25 +321,6 @@ impl ACPPod {
     /// `pub` field and callers should read it directly.
     pub fn started_at(&self) -> u64 { self.started_at }
     pub fn bot_identity(&self) -> Option<&str> { self.bot_identity.as_deref() }
-
-    /// Get a serializable snapshot of pod state. Kept for the legacy
-    /// `SystemEvent::SnapshotChanged` event payload consumed by
-    /// `runtime_status` — both will be removed in the next commit.
-    pub async fn snapshot(&self) -> PodSnapshot {
-        let st = self.state().await;
-        PodSnapshot {
-            route: self.route.clone(),
-            bot_identity: self.bot_identity.clone(),
-            session_id: st.session_id,
-            cli_kind: st.cli_kind,
-            profile: st.profile,
-            workspace: st.workspace,
-            busy: st.busy,
-            failed: st.failed,
-            started_at: self.started_at,
-            initialize: st.initialize,
-        }
-    }
 
     // -----------------------------------------------------------------------
     // Internal — bridge and session lifecycle
@@ -442,7 +432,7 @@ impl ACPPod {
                     cli_kind: Some(cli_kind),
                     error: msg,
                 });
-                self.emit_snapshot().await;
+                let _ = self.change_tx.send(());
                 return Err(error);
             }
         };
@@ -479,7 +469,7 @@ impl ACPPod {
             profile: Some(profile),
             initialize: ready.initialize.clone(),
         });
-        self.emit_snapshot().await;
+        let _ = self.change_tx.send(());
 
         Ok(ready.bridge)
     }
@@ -506,7 +496,7 @@ impl ACPPod {
             route: self.route.clone(),
             session_id: session_id.clone(),
         });
-        self.emit_snapshot().await;
+        let _ = self.change_tx.send(());
 
         Ok(session_id)
     }
@@ -543,7 +533,7 @@ impl ACPPod {
                     break;
                 };
                 *pod.session_id.lock().await = Some(session_id);
-                pod.emit_snapshot().await;
+                let _ = pod.change_tx.send(());
             }
         });
     }
@@ -554,13 +544,6 @@ impl ACPPod {
 
     fn emit(&self, event: SystemEvent) {
         let _ = self.event_tx.send(event);
-    }
-
-    async fn emit_snapshot(&self) {
-        self.emit(SystemEvent::SnapshotChanged {
-            route: self.route.clone(),
-            snapshot: self.snapshot().await,
-        });
     }
 }
 

@@ -1,7 +1,14 @@
 //! ACPHub: conversation management center.
 //!
 //! Manages per-route ACPPods, calls acp::Agent methods directly on bridges
-//! (no command/event enum intermediaries). Emits SystemEvents for dashboard.
+//! (no command/event enum intermediaries). Emits two broadcast streams:
+//!
+//! - `event_tx` — typed `SystemEvent` for lifecycle milestones consumed
+//!   by `session_manager` and `channel_manager`.
+//! - `change_tx` — untyped `()` ping for dashboard-style consumers that
+//!   re-poll `list()` on each signal. Exposed via [`StateSource`].
+//!
+//! [`StateSource`]: crate::state::StateSource
 
 use std::sync::Arc;
 
@@ -19,35 +26,42 @@ pub mod event;
 pub mod pod;
 
 pub use event::SystemEvent;
-pub use pod::PodSnapshot;
+pub use pod::PodState;
 
 pub struct ACPHub {
     pods: DashMap<RouteKey, Arc<ACPPod>>,
     event_tx: broadcast::Sender<SystemEvent>,
+    change_tx: broadcast::Sender<()>,
 }
 
 impl ACPHub {
     pub fn new() -> Self {
         let (event_tx, _) = broadcast::channel(256);
+        let (change_tx, _) = broadcast::channel(256);
         Self {
             pods: DashMap::new(),
             event_tx,
+            change_tx,
         }
     }
 
+    /// Subscribe to typed lifecycle events.
     pub fn subscribe(&self) -> broadcast::Receiver<SystemEvent> {
         self.event_tx.subscribe()
     }
 
-    /// List every currently-held pod. Consumers can read live state from
-    /// each via `pod.state().await`, plus the immutable getters on the
-    /// pod itself (`route`, `started_at()`, `bot_identity()`).
-    ///
-    /// Returns `Arc<ACPPod>` handles rather than cloned snapshots so
-    /// readers can inspect individual pods without forcing a
-    /// whole-field copy up front.
+    /// List every currently-held pod. Consumers read each pod's live
+    /// state via `pod.state().await`; immutable getters on the pod
+    /// (`route` field, `started_at()`, `bot_identity()`) don't need the
+    /// state snapshot.
     pub fn list(&self) -> Vec<Arc<ACPPod>> {
         self.pods.iter().map(|e| Arc::clone(e.value())).collect()
+    }
+
+    /// Look up a pod by route. Returns `None` if no pod has been created
+    /// for that route yet.
+    pub fn pod(&self, route: &RouteKey) -> Option<Arc<ACPPod>> {
+        self.pods.get(route).map(|e| Arc::clone(&e))
     }
 
     // -----------------------------------------------------------------------
@@ -79,6 +93,7 @@ impl ACPHub {
     pub async fn close(&self, route: &RouteKey, reason: Option<String>) {
         if let Some((_, pod)) = self.pods.remove(route) {
             pod.close(reason).await;
+            let _ = self.change_tx.send(());
         }
     }
 
@@ -112,12 +127,6 @@ impl ACPHub {
             .get_pod(route)
             .ok_or_else(acp::Error::method_not_found)?;
         pod.set_session_mode(mode_id).await
-    }
-
-    /// Get a snapshot of a route's pod state.
-    pub async fn snapshot(&self, route: &RouteKey) -> Option<PodSnapshot> {
-        let pod = self.get_pod(route)?;
-        Some(pod.snapshot().await)
     }
 
     /// Get cached available agent commands for a route.
@@ -173,11 +182,26 @@ impl ACPHub {
             return existing;
         }
 
-        let pod = Arc::new(ACPPod::new(route.clone(), self.event_tx.clone()));
+        let pod = Arc::new(ACPPod::new(
+            route.clone(),
+            self.event_tx.clone(),
+            self.change_tx.clone(),
+        ));
         self.pods.insert(route.clone(), Arc::clone(&pod));
-        let _ = self
-            .event_tx
-            .send(SystemEvent::RouteCreated { route });
+        let _ = self.event_tx.send(SystemEvent::RouteCreated { route });
+        let _ = self.change_tx.send(());
         pod
+    }
+}
+
+impl crate::state::StateSource for ACPHub {
+    type Entry = Arc<ACPPod>;
+
+    async fn list(&self) -> Vec<Self::Entry> {
+        self.list()
+    }
+
+    fn subscribe_changes(&self) -> broadcast::Receiver<()> {
+        self.change_tx.subscribe()
     }
 }

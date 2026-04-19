@@ -288,8 +288,11 @@ async fn handle_handover(
     plugin_host: &Arc<PluginHost>,
     route: &RouteKey,
 ) {
-    let snapshot = acp_hub.snapshot(route).await;
-    match snapshot {
+    let pod_state = match acp_hub.pod(route) {
+        Some(pod) => Some(pod.state().await),
+        None => None,
+    };
+    match pod_state {
         Some(snap) if snap.session_id.is_some() => {
             let session_id = snap.session_id.unwrap();
             let cwd = snap.workspace.unwrap_or_else(|| "~".to_string());

@@ -2,12 +2,16 @@
 //!
 //! ACP protocol events (streaming tokens, tool calls) flow through the
 //! BridgeClientHandler chain and do NOT appear here.
+//!
+//! There is intentionally no `StateChanged` / `SnapshotChanged` event on
+//! this channel. Consumers that need the current state of a pod read it
+//! live via `acp_hub.list()` + `pod.state().await`. The event stream is
+//! only for discrete lifecycle milestones (route created, session
+//! ready, agent initialized, etc.).
 
 use crate::acp::routing::RouteKey;
 
 use agent_client_protocol as acp;
-
-use super::pod::PodSnapshot;
 
 #[derive(Debug, Clone)]
 pub enum SystemEvent {
@@ -37,10 +41,6 @@ pub enum SystemEvent {
         route: RouteKey,
         session_id: String,
     },
-    SnapshotChanged {
-        route: RouteKey,
-        snapshot: PodSnapshot,
-    },
 }
 
 impl SystemEvent {
@@ -51,8 +51,7 @@ impl SystemEvent {
             | Self::RouteFailed { route, .. }
             | Self::AgentInitialized { route, .. }
             | Self::AgentInitializeFailed { route, .. }
-            | Self::SessionReady { route, .. }
-            | Self::SnapshotChanged { route, .. } => route,
+            | Self::SessionReady { route, .. } => route,
         }
     }
 }

@@ -41,7 +41,7 @@ pub async fn list_agents_handler() -> Json<crate::api_types::AgentsConfig> {
 
 /// GET /api/services — list all services grouped by category.
 pub async fn list_services_handler(State(state): State<AppState>) -> Json<common::service::StatusSnapshot> {
-    Json(state.services.snapshot())
+    Json(state.services.snapshot().await)
 }
 
 /// POST /api/services/channels/:kind/stop — user-initiated stop of a channel

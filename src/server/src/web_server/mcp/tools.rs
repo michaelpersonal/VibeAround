@@ -36,7 +36,11 @@ pub(super) async fn mcp_get_session_id(
     let route = common::acp::routing::RouteKey::new(channel_kind, chat_id);
     let acp_hub = state.channel_hub.acp_hub();
 
-    match acp_hub.snapshot(&route).await {
+    let state_opt = match acp_hub.pod(&route) {
+        Some(pod) => Some(pod.state().await),
+        None => None,
+    };
+    match state_opt {
         Some(snap) if snap.session_id.is_some() => {
             let sid = snap.session_id.unwrap();
             mcp_text(id, &sid)

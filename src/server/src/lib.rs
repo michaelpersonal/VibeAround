@@ -19,7 +19,6 @@ use common::child_registry::{self, ChildRegistry};
 use common::config;
 use common::plugins;
 use common::pty::{PtySessionManager, SessionId};
-use common::runtime_status::RuntimeStatusStore;
 use common::service::ServiceStatusManager;
 use common::tunnels;
 
@@ -138,24 +137,29 @@ impl ServerDaemon {
         let channel_hub = Arc::new(ChannelManager::new(Arc::clone(&acp_hub)));
         let web_channel = WebChannelManager::new();
 
-        // 2. Wire event subscribers: RuntimeStatusStore listens to SystemEvent broadcast
-        let runtime_status = RuntimeStatusStore::new(services.change_tx());
+        // 2. Wire agent snapshots: Services reads pods directly from ACPHub
+        //    when building /api/services responses (no projection cache).
+        services.set_acp_hub(Arc::downgrade(&acp_hub));
+
+        // 3. Bridge ACPHub's change-ping channel into ServiceStatusManager's
+        //    so /ws/services sees pod lifecycle changes without waiting for
+        //    the 5s HTTP polling fallback.
         {
-            let runtime_status = Arc::clone(&runtime_status);
-            let mut event_rx = acp_hub.subscribe();
+            use common::state::StateSource;
+            let mut rx = acp_hub.subscribe_changes();
+            let services_tx = services.change_tx();
             tokio::spawn(async move {
                 loop {
-                    match event_rx.recv().await {
-                        Ok(event) => runtime_status.project_event(&event),
+                    match rx.recv().await {
+                        Ok(()) => { let _ = services_tx.send(()); }
                         Err(broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
             });
         }
-        services.set_runtime_status(Arc::clone(&runtime_status));
 
-        // 3. ChannelManager subscribes to SystemEvent for agent info forwarding
+        // 4. ChannelManager subscribes to SystemEvent for agent info forwarding
         channel_hub.start_event_forwarder(acp_hub.subscribe());
 
         // Register built-in internal channels.
@@ -201,6 +205,27 @@ impl ServerDaemon {
         //    ServiceStatusManager so the Dashboard snapshot + kill flow
         //    route through it.
         services.set_channel_monitor(Arc::downgrade(&channel_hub.monitor()));
+
+        // Bridge ChannelMonitor's change broadcast → ServiceStatusManager's
+        // change broadcast. Without this, channel lifecycle transitions
+        // (spawning → running → crashed, heartbeat watchdog, user stop, etc.)
+        // only reach the Dashboard via the 5s HTTP polling fallback because
+        // the /ws/services subscriber only listens on `services.change_tx`.
+        if let Some(monitor_tx) = channel_hub.monitor_change_tx() {
+            let mut monitor_rx = monitor_tx.subscribe();
+            let services_tx = services.change_tx();
+            tokio::spawn(async move {
+                loop {
+                    match monitor_rx.recv().await {
+                        Ok(()) => {
+                            let _ = services_tx.send(());
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
 
         let discovered_plugins = plugins::discover_channel_plugins();
         for name in cfg.channel_names() {

@@ -25,7 +25,7 @@ async fn ws_services_session(
     services: Arc<common::service::ServiceStatusManager>,
 ) {
     // 1. Send initial snapshot immediately
-    let snapshot = services.snapshot();
+    let snapshot = services.snapshot().await;
     if let Ok(json) = serde_json::to_string(&snapshot) {
         if socket.send(Message::Text(json.into())).await.is_err() {
             return;
@@ -39,7 +39,7 @@ async fn ws_services_session(
             result = rx.recv() => {
                 match result {
                     Ok(()) => {
-                        let snapshot = services.snapshot();
+                        let snapshot = services.snapshot().await;
                         if let Ok(json) = serde_json::to_string(&snapshot) {
                             if socket.send(Message::Text(json.into())).await.is_err() {
                                 break; // client disconnected
@@ -48,7 +48,7 @@ async fn ws_services_session(
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         eprintln!("[VibeAround][ws/services] lagged by {}, sending fresh snapshot", n);
-                        let snapshot = services.snapshot();
+                        let snapshot = services.snapshot().await;
                         if let Ok(json) = serde_json::to_string(&snapshot) {
                             if socket.send(Message::Text(json.into())).await.is_err() {
                                 break;
