@@ -8,7 +8,7 @@
 
 use agent_client_protocol as acp;
 
-use crate::acp::routing::RouteKey;
+use crate::routing::RouteKey;
 use crate::config;
 
 /// Scan content blocks for `resource_link` with `file://` URIs under the

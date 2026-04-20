@@ -86,55 +86,11 @@ impl fmt::Display for RouteKey {
     }
 }
 
-/// Attachment metadata carried with a routed envelope.
+/// Attachment metadata carried on channel envelopes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Attachment {
     pub message_id: String,
     pub file_key: String,
     pub file_name: String,
     pub resource_type: String,
-}
-
-/// Shared routed envelope exchanged between channel/session/agent layers.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RouteEnvelope {
-    pub channel_kind: ChannelKind,
-    pub chat_id: ChatId,
-    pub message_id: MessageId,
-    pub turn_id: Option<TurnId>,
-    pub text: String,
-    pub sender_id: String,
-    pub attachments: Vec<Attachment>,
-    pub parent_id: Option<String>,
-    pub cli_kind: Option<String>,
-}
-
-impl RouteEnvelope {
-    pub fn route_key(&self) -> RouteKey {
-        RouteKey::new(self.channel_kind.clone(), self.chat_id.clone())
-    }
-}
-
-/// Runtime/session identity for an agent attached to a route.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AgentSessionRef {
-    pub route: RouteKey,
-    pub runtime_id: RuntimeId,
-    pub session_id: Option<SessionId>,
-    pub cli_kind: Option<String>,
-    pub cli_session_id: Option<CliSessionId>,
-    pub profile: Option<String>,
-}
-
-impl AgentSessionRef {
-    pub fn new(route: RouteKey, runtime_id: impl Into<RuntimeId>) -> Self {
-        Self {
-            route,
-            runtime_id: runtime_id.into(),
-            session_id: None,
-            cli_kind: None,
-            cli_session_id: None,
-            profile: None,
-        }
-    }
 }

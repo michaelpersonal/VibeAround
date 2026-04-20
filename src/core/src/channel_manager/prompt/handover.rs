@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crate::acp::routing::RouteKey;
+use crate::routing::RouteKey;
 use crate::acp_hub::ACPHub;
 use crate::channel_manager::plugin_host::PluginHost;
 

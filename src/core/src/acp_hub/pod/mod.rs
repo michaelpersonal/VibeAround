@@ -27,7 +27,7 @@ use tokio::sync::{broadcast, Mutex};
 
 use agent_client_protocol as acp;
 
-use crate::acp::routing::RouteKey;
+use crate::routing::RouteKey;
 use crate::agent_factory::runtime::{AcpBridge, BridgeClientHandler};
 
 use super::event::SystemEvent;

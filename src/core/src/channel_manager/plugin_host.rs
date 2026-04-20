@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::acp::routing::ChannelKind;
+use crate::routing::ChannelKind;
 
 use super::monitor::ChannelMonitor;
 use super::plugin_runtime::PluginRuntime;

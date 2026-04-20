@@ -176,7 +176,7 @@ pub async fn kill_agent_handler(
     State(state): State<AppState>,
     Path(route_key): Path<String>,
 ) -> impl IntoResponse {
-    let Some(route) = common::acp::routing::RouteKey::from_key(&route_key) else {
+    let Some(route) = common::routing::RouteKey::from_key(&route_key) else {
         return (StatusCode::NOT_FOUND, format!("Invalid agent route key: {}", route_key));
     };
     state

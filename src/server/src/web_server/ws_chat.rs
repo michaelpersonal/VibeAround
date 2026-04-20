@@ -16,7 +16,7 @@ use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use uuid::Uuid;
 
-use common::acp::routing::RouteKey;
+use common::routing::RouteKey;
 use common::channel_manager::{ChannelEnvelope, ChannelInput, ChannelOutput};
 use common::config;
 

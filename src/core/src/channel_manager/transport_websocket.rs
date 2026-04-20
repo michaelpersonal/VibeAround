@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::mpsc;
 
-use crate::acp::routing::ChannelKind;
+use crate::routing::ChannelKind;
 
 use super::ChannelOutput;
 

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::acp::routing::{Attachment, MessageId, RouteEnvelope, RouteKey, TurnId};
+use crate::routing::{Attachment, MessageId, RouteKey, TurnId};
 
 /// Legacy envelope kept for stdio plugin compatibility.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,22 +27,6 @@ pub struct ChannelEnvelope {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub cli_kind: Option<String>,
-}
-
-impl ChannelEnvelope {
-    pub fn into_route_envelope(self) -> RouteEnvelope {
-        RouteEnvelope {
-            channel_kind: self.route.channel_kind,
-            chat_id: self.route.chat_id,
-            message_id: self.message_id,
-            turn_id: self.turn_id,
-            text: self.text,
-            sender_id: self.sender_id,
-            attachments: self.attachments,
-            parent_id: self.parent_id,
-            cli_kind: self.cli_kind,
-        }
-    }
 }
 
 /// Legacy stdio plugin input.

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::acp::routing::ChannelKind;
+use crate::routing::ChannelKind;
 use crate::config;
 use crate::plugins::DiscoveredPlugin;
 

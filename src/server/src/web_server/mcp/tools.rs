@@ -33,7 +33,7 @@ pub(super) async fn mcp_get_session_id(
         None => return jsonrpc_err(id, -32602, "Missing required argument: chat_id"),
     };
 
-    let route = common::acp::routing::RouteKey::new(channel_kind, chat_id);
+    let route = common::routing::RouteKey::new(channel_kind, chat_id);
     let acp_hub = state.channel_hub.acp_hub();
 
     let state_opt = match acp_hub.pod(&route) {

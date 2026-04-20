@@ -15,7 +15,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::broadcast;
 
-use crate::acp::routing::RouteKey;
+use crate::routing::RouteKey;
 use crate::agent_factory::runtime::BridgeClientHandler;
 
 use agent_client_protocol as acp;

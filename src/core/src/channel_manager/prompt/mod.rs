@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use agent_client_protocol as acp;
 
-use crate::acp::routing::RouteKey;
+use crate::routing::RouteKey;
 use crate::acp_hub::ACPHub;
 
 use super::plugin_host::PluginHost;

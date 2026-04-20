@@ -9,7 +9,7 @@
 //! only for discrete lifecycle milestones (route created, session
 //! ready, agent initialized, etc.).
 
-use crate::acp::routing::RouteKey;
+use crate::routing::RouteKey;
 
 use agent_client_protocol as acp;
 
