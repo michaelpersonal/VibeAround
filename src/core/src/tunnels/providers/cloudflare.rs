@@ -8,7 +8,7 @@ use std::process::Stdio;
 /// Token from config; hostname (public URL) from config since Cloudflare Named Tunnels have a fixed URL.
 pub async fn start_web_tunnel(
     config: &crate::config::Config,
-) -> Result<(super::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     let token = config.cloudflare_tunnel_token.as_deref().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -51,7 +51,7 @@ pub async fn start_web_tunnel(
     );
     tracing::info!("[cloudflare] Tunnel starting, public URL: {}", url);
 
-    Ok((super::TunnelGuard::Process(child), url))
+    Ok((crate::tunnels::TunnelGuard::Process(child), url))
 }
 
 /// Cloudflare backend. Implements TunnelBackend for unified dispatch.
@@ -66,7 +66,7 @@ impl crate::tunnels::TunnelBackend for CloudflareBackend {
     async fn start_web_tunnel(
         &self,
         config: &crate::config::Config,
-    ) -> Result<(super::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
         start_web_tunnel(config).await
     }
 }

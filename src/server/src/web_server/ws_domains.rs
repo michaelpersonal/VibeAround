@@ -93,7 +93,7 @@ async fn build_tunnels(
         .map(|t| crate::api_types::TunnelRuntime {
             provider: t.provider.as_str(),
             url: t.url,
-            status: (&t.status).into(),
+            status: t.status,
             uptime_secs: t.uptime_secs,
         })
         .collect()

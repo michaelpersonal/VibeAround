@@ -11,16 +11,15 @@ use dashmap::DashMap;
 use tokio::sync::broadcast;
 use tokio::task::AbortHandle;
 
-use crate::service::ServiceStatus;
-use crate::service::ServiceMeta;
+use super::status::{TunnelMeta, TunnelStatus};
 
 use super::TunnelProvider;
 
 /// One registered tunnel (at most one per provider in normal operation).
 /// Held internally by `TunnelManager`; external consumers see the
-/// value-typed [`TunnelStatus`] via [`TunnelManager::list`].
+/// value-typed [`TunnelInfo`] via [`TunnelManager::list`].
 pub struct TunnelEntry {
-    pub meta: ServiceMeta,
+    pub meta: TunnelMeta,
     pub provider: TunnelProvider,
     /// Public URL once the backend has finished connecting. `None` while
     /// the backend is still starting up.
@@ -31,14 +30,14 @@ pub struct TunnelEntry {
 /// handing out to consumers that iterate the registry. This is what
 /// `StateSource::list` returns.
 ///
-/// We don't hand out the raw `TunnelEntry` because its `ServiceMeta`
+/// We don't hand out the raw `TunnelEntry` because its `TunnelMeta`
 /// holds a `Box<dyn Fn>` kill closure that isn't `Clone`, so a
 /// snapshot type is the most honest interface.
 #[derive(Debug, Clone)]
-pub struct TunnelStatus {
+pub struct TunnelInfo {
     pub provider: TunnelProvider,
     pub url: Option<String>,
-    pub status: ServiceStatus,
+    pub status: TunnelStatus,
     pub uptime_secs: u64,
 }
 
@@ -68,7 +67,7 @@ impl TunnelManager {
         self.tunnels.insert(
             provider.as_str().to_string(),
             TunnelEntry {
-                meta: ServiceMeta::new(Some(abort_handle)),
+                meta: TunnelMeta::new(Some(abort_handle)),
                 provider,
                 url: None,
             },
@@ -123,12 +122,12 @@ impl TunnelManager {
 }
 
 impl crate::state::StateSource for TunnelManager {
-    type Entry = TunnelStatus;
+    type Entry = TunnelInfo;
 
     async fn list(&self) -> Vec<Self::Entry> {
         self.tunnels
             .iter()
-            .map(|entry| TunnelStatus {
+            .map(|entry| TunnelInfo {
                 provider: entry.provider,
                 url: entry.url.clone(),
                 status: entry.meta.current_status(),

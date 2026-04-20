@@ -39,7 +39,7 @@ fn parse_url_from_line(line: &str) -> Option<String> {
 
 /// Start localtunnel for the given port. Returns (guard, public URL) once the URL is printed.
 /// Caller must keep the guard and await `guard.wait()` to keep the tunnel alive.
-pub async fn start(port: u16) -> Result<(super::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start(port: u16) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     let tunnel_def = crate::resources::tunnel_by_id("localtunnel")
         .expect("localtunnel not in tunnels.json");
     let program = tunnel_def.program.as_deref().unwrap_or("npx");
@@ -77,11 +77,11 @@ pub async fn start(port: u16) -> Result<(super::TunnelGuard, String), Box<dyn st
         }
     };
 
-    Ok((super::TunnelGuard::Process(child), url))
+    Ok((crate::tunnels::TunnelGuard::Process(child), url))
 }
 
 /// Start tunnel for the default web dashboard port.
-pub async fn start_web_tunnel() -> Result<(super::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_web_tunnel() -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     start(PORT).await
 }
 
@@ -97,47 +97,7 @@ impl crate::tunnels::TunnelBackend for LocaltunnelBackend {
     async fn start_web_tunnel(
         &self,
         _config: &crate::config::Config,
-    ) -> Result<(super::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
         start_web_tunnel().await
     }
-}
-
-/// URL to obtain tunnel password when running on this machine (loca.lt returns your public IP as the password).
-pub const TUNNEL_PASSWORD_URL: &str = "https://loca.lt/mytunnelpassword";
-
-/// Request header to bypass loca.lt tunnel reminder page (any value).
-pub const BYPASS_TUNNEL_REMINDER_HEADER: &str = "bypass-tunnel-reminder";
-pub const BYPASS_TUNNEL_REMINDER_VALUE: &str = "1";
-/// Non-standard User-Agent so requests bypass the reminder (alternative to the header).
-pub const TUNNEL_BYPASS_USER_AGENT: &str = "VibeAround/1.0";
-
-/// Fetch the tunnel password by requesting loca.lt from the same machine (same IP as the tunnel).
-pub async fn fetch_tunnel_password() -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|e| format!("reqwest client: {}", e))?;
-    let resp = client
-        .get(TUNNEL_PASSWORD_URL)
-        .send()
-        .await
-        .map_err(|e| format!("GET {}: {}", TUNNEL_PASSWORD_URL, e))?;
-    let text = resp.text().await.map_err(|e| format!("response body: {}", e))?;
-    let re = regex::Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").unwrap();
-    Ok(re.find(&text).map(|m| m.as_str().to_string()))
-}
-
-/// Ping the tunnel URL with bypass header so loca.lt does not show the reminder.
-pub async fn ping_tunnel_with_bypass(tunnel_url: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let url = tunnel_url.trim_end_matches('/');
-    let client = reqwest::Client::builder()
-        .user_agent(TUNNEL_BYPASS_USER_AGENT)
-        .build()
-        .map_err(|e| format!("reqwest client: {}", e))?;
-    let _ = client
-        .get(url)
-        .header(BYPASS_TUNNEL_REMINDER_HEADER, BYPASS_TUNNEL_REMINDER_VALUE)
-        .send()
-        .await
-        .map_err(|e| format!("GET {}: {}", url, e))?;
-    Ok(())
 }

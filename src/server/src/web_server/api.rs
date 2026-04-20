@@ -78,7 +78,7 @@ pub async fn list_tunnels_handler(
             .map(|t| crate::api_types::TunnelRuntime {
                 provider: t.provider.as_str(),
                 url: t.url,
-                status: (&t.status).into(),
+                status: t.status,
                 uptime_secs: t.uptime_secs,
             })
             .collect(),

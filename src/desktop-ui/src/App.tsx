@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye, Play,
 } from "lucide-react";
-import type { ApiServiceStatus } from "@va/client";
+import type { TunnelStatus } from "@va/client";
 import { useChannelsState, type ChannelRuntime } from "./hooks/useChannelsState";
 import { useTunnelsState, type TunnelRuntime } from "./hooks/useTunnelsState";
 import { useAgentsRuntime, type AgentRuntime } from "./hooks/useAgentsRuntime";
@@ -14,7 +14,7 @@ import { Previews } from "./Previews";
 
 // ---------------------------------------------------------------------------
 // Per-domain status presentation — each manager has its own natural status
-// shape (channel: string enum; tunnel: ApiServiceStatus; agent: derived
+// shape (channel: string enum; tunnel: TunnelStatus; agent: derived
 // from busy/failed flags), so each gets its own mapping.
 // ---------------------------------------------------------------------------
 
@@ -30,14 +30,11 @@ function channelStatusPresentation(status: ChannelRuntime["status"]): Pres {
   }
 }
 
-function tunnelStatusPresentation(status: ApiServiceStatus): Pres {
+function tunnelStatusPresentation(status: TunnelStatus): Pres {
   switch (status.state) {
-    case "running":     return { label: "Running",     color: "bg-emerald-500", running: true };
-    case "spawning":    return { label: "Spawning",    color: "bg-amber-500",   running: false };
-    case "not_started": return { label: "Not started", color: "bg-zinc-400",    running: false };
-    case "stopped":     return { label: "Stopped",     color: "bg-zinc-400",    running: false };
-    case "crashed":     return { label: "Crashed",     color: "bg-red-500",     running: false };
-    case "failed":      return { label: "Failed",      color: "bg-red-500",     running: false };
+    case "running": return { label: "Running", color: "bg-emerald-500", running: true };
+    case "stopped": return { label: "Stopped", color: "bg-zinc-400",    running: false };
+    case "failed":  return { label: "Failed",  color: "bg-red-500",     running: false };
   }
 }
 

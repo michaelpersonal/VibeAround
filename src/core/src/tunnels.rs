@@ -3,12 +3,12 @@
 
 use async_trait::async_trait;
 
-mod cloudflare;
-mod localtunnel;
 pub mod manager;
-mod ngrok;
+mod providers;
+pub mod status;
 
-pub use manager::{TunnelManager, TunnelStatus};
+pub use manager::{TunnelInfo, TunnelManager};
+pub use status::{TunnelMeta, TunnelStatus};
 
 /// Tunnel provider: localtunnel (default), ngrok, or cloudflare.
 #[derive(Debug, Clone, Copy, Default)]
@@ -50,9 +50,9 @@ impl TunnelProvider {
     fn backend(&self) -> Option<&'static dyn TunnelBackend> {
         match self {
             TunnelProvider::None => Option::None,
-            TunnelProvider::Localtunnel => Some(&localtunnel::LocaltunnelBackend),
-            TunnelProvider::Ngrok => Some(&ngrok::NgrokBackend),
-            TunnelProvider::Cloudflare => Some(&cloudflare::CloudflareBackend),
+            TunnelProvider::Localtunnel => Some(&providers::localtunnel::LocaltunnelBackend),
+            TunnelProvider::Ngrok => Some(&providers::ngrok::NgrokBackend),
+            TunnelProvider::Cloudflare => Some(&providers::cloudflare::CloudflareBackend),
         }
     }
 }
@@ -110,13 +110,3 @@ pub async fn start_web_tunnel_with_provider(
     }
 }
 
-// Re-export Localtunnel-specific API (used when default provider is Localtunnel).
-#[allow(unused_imports)] // re-exported for external use (e.g. clients that request tunnel URL)
-pub use localtunnel::{
-    fetch_tunnel_password,
-    ping_tunnel_with_bypass,
-    BYPASS_TUNNEL_REMINDER_HEADER,
-    BYPASS_TUNNEL_REMINDER_VALUE,
-    TUNNEL_BYPASS_USER_AGENT,
-    TUNNEL_PASSWORD_URL,
-};

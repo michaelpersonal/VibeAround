@@ -15,8 +15,6 @@ pub mod preview_entries;
 pub mod plugins;
 pub mod pty;
 pub mod resources;
-pub mod service;
-pub mod session_manager;
 pub mod state;
 pub mod tunnels;
 pub mod workspace;

@@ -60,20 +60,16 @@ export const AgentsConfigSchema = z.object({
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
 
 // ---------------------------------------------------------------------------
-// Service status — shared discriminated union reused by `TunnelRuntime`
-// below. The legacy aggregate (`/api/services` with `ServiceInfo` /
-// `StatusSnapshot`) was removed in favor of per-domain endpoints.
+// Tunnel status — discriminated union matching Rust `TunnelStatus`
+// (`src/core/src/tunnels/status.rs`).
 // ---------------------------------------------------------------------------
 
-export const ApiServiceStatusSchema = z.discriminatedUnion("state", [
+export const TunnelStatusSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("running") }),
-  z.object({ state: z.literal("spawning") }),
-  z.object({ state: z.literal("not_started") }),
-  z.object({ state: z.literal("stopped"), reason: z.string().nullable() }),
+  z.object({ state: z.literal("stopped"), reason: z.string() }),
   z.object({ state: z.literal("failed"), error: z.string() }),
-  z.object({ state: z.literal("crashed") }),
 ]);
-export type ApiServiceStatus = z.infer<typeof ApiServiceStatusSchema>;
+export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
 
 // ---------------------------------------------------------------------------
 // Per-domain runtime endpoints.
@@ -111,7 +107,7 @@ export const ChannelRuntimeListSchema = z.array(ChannelRuntimeSchema);
 export const TunnelRuntimeSchema = z.object({
   provider: z.string(),
   url: z.string().nullable(),
-  status: ApiServiceStatusSchema,
+  status: TunnelStatusSchema,
   uptime_secs: z.number(),
 });
 export type TunnelRuntime = z.infer<typeof TunnelRuntimeSchema>;

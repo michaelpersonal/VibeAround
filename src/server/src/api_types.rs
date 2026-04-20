@@ -134,7 +134,7 @@ pub struct ChannelRuntime {
 pub struct TunnelRuntime {
     pub provider: &'static str,
     pub url: Option<String>,
-    pub status: common::service::ApiServiceStatus,
+    pub status: common::tunnels::TunnelStatus,
     pub uptime_secs: u64,
 }
 
