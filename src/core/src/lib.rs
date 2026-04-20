@@ -8,7 +8,6 @@ pub mod config;
 pub mod conversation_manager;
 pub mod env;
 pub mod logging;
-pub mod pickup_codes;
 pub mod plugins;
 pub mod preview_entries;
 pub mod pty;

@@ -116,7 +116,7 @@ pub(super) async fn mcp_prepare_handover(
         },
     };
 
-    let code = common::pickup_codes::store(
+    let code = common::conversation_manager::pickup_codes::store(
         agent_kind_str.to_string(),
         session_id,
         cwd.to_string(),

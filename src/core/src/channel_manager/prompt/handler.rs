@@ -111,7 +111,7 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::PickupCode(code) => {
-                match crate::pickup_codes::consume(&code) {
+                match crate::conversation_manager::pickup_codes::consume(&code) {
                     Some((agent_kind, session_id, cwd)) => {
                         conversation_manager
                             .prepare_pickup(
