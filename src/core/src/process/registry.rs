@@ -75,6 +75,13 @@ pub struct ChildRegistry {
 }
 
 impl ChildRegistry {
+    /// Number of live entries. Crate-private — used by `Supervisor` tests
+    /// that assert the registry gets drained on terminal bridge exits.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             entries: DashMap::new(),

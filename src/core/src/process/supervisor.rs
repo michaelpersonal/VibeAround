@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use parking_lot::RwLock;
 use tokio::process::Command;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, watch};
 
 use crate::process::bridge::{BridgeExit, BridgeFactory, StdioPipes};
 use crate::process::env;
@@ -248,6 +248,12 @@ struct SupervisedProcess {
 
     /// Cancel signal for the currently-running bridge. `None` between runs.
     cancel_tx: RwLock<Option<watch::Sender<bool>>>,
+
+    /// `ChildRegistry` id for the currently-running spawn. Cleared on
+    /// exit so the `Child` gets removed from the registry and reaped by
+    /// [`Supervisor::handle_bridge_exit`] — otherwise every respawn
+    /// leaks an entry and, on Unix, an unreaped zombie.
+    current_registry_id: parking_lot::Mutex<Option<u64>>,
 }
 
 impl SupervisedProcess {
@@ -273,7 +279,7 @@ pub struct Supervisor {
     processes: RwLock<HashMap<ProcessId, Arc<SupervisedProcess>>>,
     next_id: parking_lot::Mutex<u64>,
     change_tx: broadcast::Sender<ProcessEvent>,
-    shutdown_tx: parking_lot::Mutex<Option<mpsc::Sender<()>>>,
+    tick_loop_started: parking_lot::Mutex<bool>,
 }
 
 impl Supervisor {
@@ -284,13 +290,18 @@ impl Supervisor {
             processes: RwLock::new(HashMap::new()),
             next_id: parking_lot::Mutex::new(1),
             change_tx,
-            shutdown_tx: parking_lot::Mutex::new(None),
+            tick_loop_started: parking_lot::Mutex::new(false),
         })
     }
 
     /// Process-wide singleton. Bound to `ChildRegistry::global()`; the
-    /// tick loop is auto-started on first access. Must be called from
-    /// inside a tokio runtime (every production call site qualifies).
+    /// tick loop is auto-started on first access and runs for the
+    /// remainder of the process lifetime — [`shutdown_all`] only drains
+    /// the current process table so a subsequent daemon start gets a
+    /// clean slate while the loop keeps ticking. Must be called from
+    /// inside a tokio runtime.
+    ///
+    /// [`shutdown_all`]: Supervisor::shutdown_all
     pub fn global() -> Arc<Self> {
         use std::sync::OnceLock;
         static INSTANCE: OnceLock<Arc<Supervisor>> = OnceLock::new();
@@ -336,6 +347,7 @@ impl Supervisor {
             crash_count: AtomicU32::new(0),
             restart_at: AtomicU64::new(0),
             cancel_tx: RwLock::new(None),
+            current_registry_id: parking_lot::Mutex::new(None),
         });
 
         self.processes.write().insert(id, Arc::clone(&proc));
@@ -429,30 +441,37 @@ impl Supervisor {
         self.change_tx.subscribe()
     }
 
-    /// Start the supervisor's 5-second scan loop. Spawn this once, at
-    /// daemon boot, after all initial managers have registered.
+    /// Start the supervisor's 5-second scan loop. Idempotent — a second
+    /// call is a no-op. The loop runs for the process lifetime; daemon
+    /// stop/restart cycles just drain the process table via
+    /// [`shutdown_all`].
+    ///
+    /// [`shutdown_all`]: Supervisor::shutdown_all
     pub fn spawn_tick_loop(self: &Arc<Self>) {
-        let (tx, rx) = mpsc::channel(1);
-        *self.shutdown_tx.lock() = Some(tx);
+        let mut started = self.tick_loop_started.lock();
+        if *started {
+            return;
+        }
+        *started = true;
+        drop(started);
         let sup = Arc::clone(self);
         tokio::spawn(async move {
-            sup.run_tick_loop(rx).await;
+            sup.run_tick_loop().await;
         });
     }
 
-    /// Signal the tick loop to exit and cancel every active bridge.
-    /// The `ChildRegistry::kill_all()` safety net still runs from
-    /// `RunningDaemon::stop` — this method only drives the cooperative
-    /// shutdown.
+    /// Cancel every active bridge and drain the process table so a
+    /// subsequent daemon start gets a clean slate. The tick loop keeps
+    /// running — it's process-wide and survives daemon restart.
+    /// `ChildRegistry::kill_all()` is the hard-kill safety net from
+    /// `RunningDaemon::stop`.
     pub async fn shutdown_all(&self) {
-        // Take the sender out of the guard before awaiting — parking_lot
-        // MutexGuard is !Send, so holding it across .await infects the
-        // entire shutdown chain.
-        let shutdown = self.shutdown_tx.lock().take();
-        if let Some(tx) = shutdown {
-            let _ = tx.send(()).await;
-        }
-        let procs: Vec<_> = self.processes.read().values().cloned().collect();
+        let procs: Vec<Arc<SupervisedProcess>> = self
+            .processes
+            .write()
+            .drain()
+            .map(|(_, proc)| proc)
+            .collect();
         for proc in procs {
             proc.intent
                 .store(TransitionIntent::Stop as u8, Ordering::Release);
@@ -486,20 +505,15 @@ impl Supervisor {
         });
     }
 
-    async fn run_tick_loop(self: Arc<Self>, mut shutdown_rx: mpsc::Receiver<()>) {
+    async fn run_tick_loop(self: Arc<Self>) {
         let mut ticker = tokio::time::interval(TICK_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         ticker.tick().await; // consume the immediate first tick
 
         tracing::info!(tick_secs = TICK_INTERVAL.as_secs(), "supervisor loop started");
         loop {
-            tokio::select! {
-                _ = ticker.tick() => self.tick().await,
-                _ = shutdown_rx.recv() => {
-                    tracing::info!("supervisor loop shutting down");
-                    break;
-                }
-            }
+            ticker.tick().await;
+            self.tick().await;
         }
     }
 
@@ -680,9 +694,13 @@ impl Supervisor {
 
         // Hand ownership of the Child to the global registry. This is the
         // canonical owner — kill_on_drop alone can't be relied on under
-        // abrupt runtime teardown.
-        self.registry
+        // abrupt runtime teardown. The id is stashed on the proc so
+        // `handle_bridge_exit` can remove + reap the child (otherwise
+        // every respawn leaks a registry entry + zombie process).
+        let registry_id = self
+            .registry
             .register(proc.kind, proc.label.clone(), child);
+        *proc.current_registry_id.lock() = Some(registry_id);
 
         proc_log!(
             info,
@@ -728,6 +746,20 @@ impl Supervisor {
     ) {
         // Clear the cancel channel — this run is done.
         *proc.cancel_tx.write() = None;
+
+        // Pull the Child back out of the registry and reap it. Without
+        // this, the registry accumulates an entry per respawn and the
+        // process stays as a zombie on Unix until the daemon exits.
+        // `kill_on_drop(true)` sends SIGKILL if the child is somehow
+        // still alive; `wait()` then reaps. Reap on a background task so
+        // the bridge-exit hot path isn't gated on a dying process.
+        if let Some(id) = proc.current_registry_id.lock().take() {
+            if let Some(mut child) = self.registry.remove(id) {
+                tokio::spawn(async move {
+                    let _ = child.wait().await;
+                });
+            }
+        }
 
         // Atomically consume intent so two callers don't both observe Stop.
         let intent = TransitionIntent::from_u8(
@@ -1055,6 +1087,73 @@ mod tests {
             }
         }
         assert!(saw_stopped, "should have observed Stopped event");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shutdown_all_drains_but_keeps_loop_alive() {
+        // Regression: `shutdown_all` used to take the tick-loop shutdown
+        // sender and exit the loop, so after a daemon restart no new
+        // OnCrash backoffs or watchdog checks would ever fire. The fix
+        // keeps the loop alive for the process lifetime and only drains
+        // the process table.
+        let registry = Arc::new(ChildRegistry::new());
+        let sup = Supervisor::new(registry);
+        sup.spawn_tick_loop();
+
+        let id = sup.register(
+            ProcessKind::ChannelPlugin,
+            "pre-shutdown",
+            cat_spec(),
+            RestartPolicy::Never,
+            Box::new(|| Box::new(WaitForCancelBridge)),
+        );
+        wait_for_status(&sup, id, ProcessStatus::Running).await;
+
+        sup.shutdown_all().await;
+        wait_for_absent(&sup, id).await;
+
+        // Post-shutdown register: the tick loop must still be alive to
+        // drive this new process to Running.
+        let id2 = sup.register(
+            ProcessKind::ChannelPlugin,
+            "post-shutdown",
+            cat_spec(),
+            RestartPolicy::Never,
+            Box::new(|| Box::new(WaitForCancelBridge)),
+        );
+        wait_for_status(&sup, id2, ProcessStatus::Running).await;
+        sup.force_stop(id2).await.unwrap();
+        wait_for_absent(&sup, id2).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn bridge_exit_removes_from_registry() {
+        // Regression: the supervisor used to discard the registry_id
+        // returned by ChildRegistry::register on every spawn, leaving
+        // the entry and a zombie process behind on every respawn.
+        let registry = Arc::new(ChildRegistry::new());
+        let sup = Supervisor::new(Arc::clone(&registry));
+
+        let id = sup.register(
+            ProcessKind::AcpAgent,
+            "reap-test",
+            cat_spec(),
+            RestartPolicy::Never,
+            Box::new(|| Box::new(InstantCleanBridge)),
+        );
+
+        wait_for_absent(&sup, id).await;
+
+        // Registry must be empty — otherwise every respawn leaks a Child
+        // handle (and, on Unix, an unreaped zombie). The reap happens on
+        // a background task so give it a beat to settle.
+        for _ in 0..50 {
+            if registry.len() == 0 {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("registry leaked {} entries after Never-policy exit", registry.len());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
