@@ -1,3 +1,28 @@
+//! `PluginHost` — the per-daemon **routing table** for outbound channel
+//! traffic, plus a small amount of bridge-adjacent bookkeeping.
+//!
+//! Three tables, one job each:
+//!
+//! 1. **`runtimes`** (`DashMap<ChannelKind, PluginRuntime>`) — "which live
+//!    sender does a `ChannelOutput` for channel X go through?". The
+//!    supervisor's bridge factory calls [`PluginHost::replace_stdio_runtime`]
+//!    on every (re)spawn so the table always points at the live bridge;
+//!    `ws_chat` calls [`PluginHost::register_websocket_plugin`] once per
+//!    dashboard connection.
+//!
+//! 2. **`pending_permissions`** — in-flight `requestPermission` replies,
+//!    keyed by a fresh `request_id`. The plugin-side forwarder pops from
+//!    here when the plugin answers; [`PluginHost::cancel_channel_permissions`]
+//!    drains the map when a plugin dies so waiting callers don't stall.
+//!
+//! 3. **`monitor: Weak<ChannelMonitor>`** — back-pointer used by the ACP
+//!    bridge to report `_va/heartbeat` liveness. Weak to avoid a
+//!    reference cycle (`ChannelMonitor` holds `Arc<PluginHost>`).
+//!
+//! `PluginHost` does **not** spawn processes, drive protocols, or own
+//! state machines — those are `process::Supervisor`, the bridge threads,
+//! and `ChannelMonitor` respectively.
+
 use std::sync::{Arc, Weak};
 
 use agent_client_protocol as acp;
