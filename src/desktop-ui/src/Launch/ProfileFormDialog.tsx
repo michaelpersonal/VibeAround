@@ -8,8 +8,26 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
-import { Eye, EyeOff, Globe, X } from "lucide-react";
+import { Eye, EyeOff, Globe } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   ApiTypeOverrides,
   AuthMode,
@@ -117,11 +135,8 @@ function generateProfileId(providerId: string): string {
   return `${providerId}-${random}`;
 }
 
-const CONTROL_CLASS =
-  "h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15";
-const MONO_CONTROL_CLASS = `${CONTROL_CLASS} font-mono`;
-const SECRET_CONTROL_CLASS = `${CONTROL_CLASS} pr-8 font-mono`;
-const SELECT_CLASS = `${CONTROL_CLASS} cursor-pointer`;
+const MONO_INPUT_CLASS = "h-8 font-mono";
+const SECRET_INPUT_CLASS = "h-8 pr-8 font-mono";
 
 export function ProfileFormDialog({
   catalog,
@@ -263,29 +278,25 @@ export function ProfileFormDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <div className="bg-background border border-border rounded-lg shadow-xl w-[620px] max-w-[calc(100vw-32px)] max-h-[85vh] flex flex-col overflow-hidden">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-          <h3 className="text-sm font-semibold">
+      <DialogContent>
+        <DialogHeader className="border-b border-border pr-10">
+          <DialogTitle>
             {editing
               ? `Edit profile · ${initial!.label}`
               : step === "pick-provider"
               ? "Pick a provider"
               : `New profile · ${provider?.label}`}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded hover:bg-accent text-muted-foreground"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </header>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure a Quick Launch provider profile.
+          </DialogDescription>
+        </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4">
           {step === "pick-provider" ? (
@@ -321,36 +332,28 @@ export function ProfileFormDialog({
           </div>
         )}
 
-        <footer className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border shrink-0">
+        <DialogFooter className="border-t border-border">
           {step === "fill-form" && !editing && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setStep("pick-provider")}
-              className="px-3 py-1.5 text-xs rounded hover:bg-accent"
             >
               Back
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs rounded hover:bg-accent"
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
             Cancel
-          </button>
+          </Button>
           {step === "fill-form" && (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
+            <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : editing ? "Save changes" : "Create profile"}
-            </button>
+            </Button>
           )}
-        </footer>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -393,12 +396,9 @@ function ProviderGrid({
           </div>
           <div className="flex flex-wrap gap-1 mt-1">
             {c.endpoints.filter((e) => isProviderApiKind(e.api_type)).map((e) => (
-              <span
-                key={e.api_type}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
-              >
+              <Badge key={e.api_type} variant="muted" className="text-[10px]">
                 {apiTypeShort(e.api_type)}
-              </span>
+              </Badge>
             ))}
           </div>
           {c.homepage && (
@@ -418,15 +418,9 @@ function ProviderGrid({
           <span className="text-sm font-medium">Custom endpoint</span>
         </div>
         <div className="flex flex-wrap gap-1 mt-1">
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            anthropic
-          </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            responses
-          </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            openai-chat
-          </span>
+          <Badge variant="muted" className="text-[10px]">anthropic</Badge>
+          <Badge variant="muted" className="text-[10px]">responses</Badge>
+          <Badge variant="muted" className="text-[10px]">openai-chat</Badge>
         </div>
         <span className="text-[10px] text-muted-foreground/60 truncate w-full">
           Bring your own URL + key
@@ -480,12 +474,11 @@ function FormBody(props: FormBodyProps) {
     <div className="space-y-3">
       <FormSection title="Profile">
         <FieldRow label="Label" hint="Visible name for this profile.">
-          <input
+          <Input
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder={`${provider.label} (work)`}
-            className={CONTROL_CLASS}
           />
         </FieldRow>
 
@@ -541,7 +534,7 @@ function FormBody(props: FormBodyProps) {
                           : "Endpoint URL from the provider dashboard."
                       }
                     >
-                      <input
+                      <Input
                         type="text"
                         value={ov.base_url ?? ""}
                         onChange={(e) =>
@@ -556,7 +549,7 @@ function FormBody(props: FormBodyProps) {
                             ? "https://your-resource.openai.azure.com/openai/v1"
                             : "https://your-endpoint.example.com/v1")
                         }
-                        className={MONO_CONTROL_CLASS}
+                        className={MONO_INPUT_CLASS}
                       />
                     </FieldRow>
                   )}
@@ -565,25 +558,28 @@ function FormBody(props: FormBodyProps) {
                     hint={apiKindHint(provider, apiType)}
                   >
                     {ep.models.length > 0 ? (
-                      <select
+                      <Select
                         value={ov.model ?? ""}
-                        onChange={(e) =>
+                        onValueChange={(value) =>
                           setOverrides({
                             ...overrides,
-                            [apiType]: { ...ov, model: e.target.value },
+                            [apiType]: { ...ov, model: value },
                           })
                         }
-                        className={SELECT_CLASS}
                       >
-                        <option value="">(none)</option>
-                        {ep.models.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.label ?? m.id}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger size="sm" className="h-8 w-full">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ep.models.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.label ?? m.id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
-                      <input
+                      <Input
                         type="text"
                         value={ov.model ?? ""}
                         onChange={(e) =>
@@ -593,27 +589,31 @@ function FormBody(props: FormBodyProps) {
                           })
                         }
                         placeholder="model id (e.g. gpt-4o, claude-sonnet-4-6)"
-                        className={MONO_CONTROL_CLASS}
+                        className={MONO_INPUT_CLASS}
                       />
                     )}
                   </FieldRow>
                   {ep.capabilities?.reasoning_effort && (
                     <FieldRow label="Reasoning effort">
-                      <select
+                      <Select
                         value={ov.reasoning_effort ?? "medium"}
-                        onChange={(e) =>
+                        onValueChange={(value) =>
                           setOverrides({
                             ...overrides,
-                            [apiType]: { ...ov, reasoning_effort: e.target.value },
+                            [apiType]: { ...ov, reasoning_effort: value },
                           })
                         }
-                        className={SELECT_CLASS}
                       >
-                        <option value="low">low</option>
-                        <option value="medium">medium</option>
-                        <option value="high">high</option>
-                        <option value="xhigh">xhigh</option>
-                      </select>
+                        <SelectTrigger size="sm" className="h-8 w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">low</SelectItem>
+                          <SelectItem value="medium">medium</SelectItem>
+                          <SelectItem value="high">high</SelectItem>
+                          <SelectItem value="xhigh">xhigh</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </FieldRow>
                   )}
                 </div>
@@ -738,12 +738,12 @@ function CredentialField({
   return (
     <FieldRow label={field.label} required={field.required}>
       <div className="relative">
-        <input
+        <Input
           type={field.secret && !reveal ? "password" : "text"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder ?? undefined}
-          className={SECRET_CONTROL_CLASS}
+          className={SECRET_INPUT_CLASS}
         />
         {field.secret && (
           <button
