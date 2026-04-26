@@ -9,7 +9,7 @@ function PageShell({
 }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("p-4 space-y-4", className)}
+      className={cn("p-3 space-y-3", className)}
       {...props}
     />
   )
@@ -29,12 +29,12 @@ function PageHeader({
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold flex items-center gap-2">
+        <h2 className="text-[13px] font-semibold flex items-center gap-1.5">
           {icon}
           {title}
         </h2>
         {description && (
-          <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
+          <p className="text-[11px] text-muted-foreground mt-0.5 max-w-2xl">
             {description}
           </p>
         )}
@@ -62,7 +62,7 @@ function StatusBanner({
 
   return (
     <div
-      className={cn("text-xs rounded-md px-3 py-2", variantClass, className)}
+      className={cn("text-xs rounded-md px-2.5 py-1.5", variantClass, className)}
       {...props}
     />
   )
@@ -84,9 +84,9 @@ function SectionCard({
   return (
     <section className={cn("border border-border rounded-lg overflow-hidden", className)}>
       {(title || icon || badge !== undefined) && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border">
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/40 border-b border-border">
           {icon}
-          {title && <span className="text-sm font-semibold">{title}</span>}
+          {title && <span className="text-xs font-semibold">{title}</span>}
           {badge !== undefined && (
             <Badge variant="muted" className="ml-auto tabular-nums">
               {badge}
@@ -105,7 +105,7 @@ function EmptyBlock({
 }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("px-4 py-6 text-center text-xs text-muted-foreground", className)}
+      className={cn("px-3 py-4 text-center text-xs text-muted-foreground", className)}
       {...props}
     />
   )

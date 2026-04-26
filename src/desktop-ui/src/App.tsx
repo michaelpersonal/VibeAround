@@ -142,7 +142,7 @@ function Row({ dot, name, label, running, title, suffix, secondary, tailLink, ac
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 transition-colors group">
+    <div className="flex items-center gap-1.5 py-1 px-2 rounded-md hover:bg-accent/50 transition-colors group">
       <StatusDot colorClass={dot} />
       <span className="text-xs font-medium flex-1 truncate">{name}</span>
       {secondary && (
@@ -156,8 +156,10 @@ function Row({ dot, name, label, running, title, suffix, secondary, tailLink, ac
         {suffix && <span className="text-muted-foreground/50">{suffix}</span>}
       </span>
       {tailLink && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           onClick={(e) => {
             e.preventDefault();
             void openDashboardUrl(tailLink.url);
@@ -166,7 +168,7 @@ function Row({ dot, name, label, running, title, suffix, secondary, tailLink, ac
           title={tailLink.url}
         >
           <ExternalLink className="w-3 h-3" />
-        </button>
+        </Button>
       )}
       {actions}
     </div>
@@ -183,13 +185,16 @@ function IconBtn({ onClick, title, icon, hover }: {
     ? "hover:text-destructive"
     : "hover:text-emerald-500";
   return (
-    <button
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
       onClick={onClick}
       className={`text-muted-foreground/40 ${hoverClass} opacity-0 group-hover:opacity-100 transition-opacity`}
       title={title}
     >
       {icon}
-    </button>
+    </Button>
   );
 }
 
@@ -262,20 +267,23 @@ function Dashboard() {
   if (timedOut && !anyEverLoaded) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3">
-        <p className="text-sm text-destructive">Server failed to start</p>
-        <button
+        <p className="text-xs text-destructive">Server failed to start</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => { setTimedOut(false); refreshAll(); }}
-          className="text-xs text-primary hover:underline flex items-center gap-1"
+          className="text-primary hover:text-primary"
         >
           <RefreshCw className="w-3 h-3" /> Retry
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="h-full flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <header className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <Tabs
           value={page}
           onValueChange={(value) => setPage(value as DashboardPage)}
@@ -288,7 +296,7 @@ function Dashboard() {
             <TabsTrigger value="workspaces"><FolderOpen /> Workspaces</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {anyConnected ? (
             <span className="flex items-center gap-1 text-xs text-emerald-600">
               <Wifi className="w-3 h-3" /> Live
@@ -319,7 +327,7 @@ function Dashboard() {
       </header>
 
       {firstError && (
-        <div className="px-4 py-1.5 bg-destructive/10 text-destructive text-xs">{firstError}</div>
+        <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">{firstError}</div>
       )}
 
       {page === "workspaces" ? (
