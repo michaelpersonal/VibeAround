@@ -53,6 +53,11 @@ pub struct EndpointDef {
     #[serde(default)]
     pub models: Vec<ModelDef>,
     pub auth_modes: Vec<AuthModeDef>,
+    /// Optional caveat shown to users next to the launch button — e.g.
+    /// "codex 0.X+ requires Responses API and this provider only serves
+    /// chat-completions". `None` for endpoints with no known caveat.
+    #[serde(default)]
+    pub compatibility_warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -155,6 +160,17 @@ pub fn get(id: &str) -> Option<&'static ProviderCatalog> {
 // user fills everything in.
 // ---------------------------------------------------------------------------
 
+/// Same caveat we paint on every openai-chat catalog endpoint — codex
+/// dropped chat-completions in late 2025/early 2026 and now only speaks
+/// the OpenAI Responses API. Most third-party providers (DeepSeek
+/// non-Responses, Moonshot, Z.AI, OpenRouter) only serve `/v1/chat/
+/// completions`, so the codex launch will fail at request time even
+/// though the config files parse fine.
+const CODEX_CHAT_REMOVED_WARNING: &str =
+    "Recent codex versions require the OpenAI Responses API. If your provider only serves \
+     /v1/chat/completions, the launch will start but the first prompt will fail. Use the \
+     claude (Anthropic) button instead for providers that offer both endpoints.";
+
 pub fn custom() -> &'static ProviderCatalog {
     static CUSTOM: LazyLock<ProviderCatalog> = LazyLock::new(|| ProviderCatalog {
         id: "custom".to_string(),
@@ -166,6 +182,7 @@ pub fn custom() -> &'static ProviderCatalog {
                 api_type: "anthropic".to_string(),
                 default_base_url: String::new(),
                 models: Vec::new(),
+                compatibility_warning: None,
                 auth_modes: vec![AuthModeDef {
                     mode: "api_key".to_string(),
                     label: Some("Use API key".to_string()),
@@ -193,6 +210,7 @@ pub fn custom() -> &'static ProviderCatalog {
                 api_type: "openai-chat".to_string(),
                 default_base_url: String::new(),
                 models: Vec::new(),
+                compatibility_warning: Some(CODEX_CHAT_REMOVED_WARNING.to_string()),
                 auth_modes: vec![AuthModeDef {
                     mode: "api_key".to_string(),
                     label: Some("Use API key".to_string()),
@@ -213,7 +231,7 @@ pub fn custom() -> &'static ProviderCatalog {
                             },
                             SettingsFileTemplate {
                                 rel_path: "auth.json".to_string(),
-                                template: "{\n  \"OPENAI_API_KEY\": \"{{api_key}}\"\n}\n".to_string(),
+                                template: "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n".to_string(),
                             },
                         ],
                     }),

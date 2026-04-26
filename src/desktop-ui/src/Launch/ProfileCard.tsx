@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
+import { AlertTriangle, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
 
 import type { ProfileSummary } from "./types";
 import { apiTypeShort } from "./types";
@@ -89,19 +89,30 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
       </div>
 
       <div className="flex flex-wrap gap-1.5 mt-1">
-        {profile.apiTypes.map((apiType) => (
-          <button
-            key={apiType}
-            type="button"
-            onClick={() => handleLaunch(apiType)}
-            disabled={busy}
-            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
-            title={`Launch ${apiTypeShort(apiType)} with this profile`}
-          >
-            <Play className="w-3 h-3" />
-            {apiTypeShort(apiType)}
-          </button>
-        ))}
+        {profile.apiTypes.map((apiType) => {
+          const warning = profile.apiTypeWarnings[apiType];
+          return (
+            <button
+              key={apiType}
+              type="button"
+              onClick={() => handleLaunch(apiType)}
+              disabled={busy}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
+              // `title` is the only tooltip surface available without
+              // pulling in a popover lib; warning text wraps natively in
+              // the system OS tooltip.
+              title={
+                warning
+                  ? `⚠ ${warning}\n\n(Click to launch ${apiTypeShort(apiType)} anyway.)`
+                  : `Launch ${apiTypeShort(apiType)} with this profile`
+              }
+            >
+              <Play className="w-3 h-3" />
+              {apiTypeShort(apiType)}
+              {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

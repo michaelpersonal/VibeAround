@@ -103,10 +103,19 @@ export function ProfileFormDialog({
 }: Props) {
   const editing = !!initial;
 
-  const initialProvider = useMemo(() => {
-    if (!initial) return null;
-    if (initial.provider === "custom") return CUSTOM_PROVIDER;
-    return catalog.find((c) => c.id === initial.provider) ?? null;
+  // When editing a profile whose provider was removed from the catalog
+  // (rename, deprecation, etc.), fall through to CUSTOM_PROVIDER so the
+  // form is still functional — the user keeps their api_key + can pick
+  // a different provider via Back. Without this fallback the dialog
+  // would render an empty form with no fields.
+  const { initialProvider, providerMissing } = useMemo(() => {
+    if (!initial) return { initialProvider: null, providerMissing: false };
+    if (initial.provider === "custom") {
+      return { initialProvider: CUSTOM_PROVIDER, providerMissing: false };
+    }
+    const found = catalog.find((c) => c.id === initial.provider);
+    if (!found) return { initialProvider: CUSTOM_PROVIDER, providerMissing: true };
+    return { initialProvider: found, providerMissing: false };
   }, [catalog, initial]);
 
   const [step, setStep] = useState<Step>(editing ? "fill-form" : "pick-provider");
@@ -195,7 +204,7 @@ export function ProfileFormDialog({
       auth_mode: "api_key" as AuthMode,
       api_types: selectedApiTypes,
       credentials: stripEmpty(credentials),
-      overrides: pruneOverrides(overrides, selectedApiTypes),
+      overrides: pruneOverrides(overrides, selectedApiTypes, provider),
     };
 
     setSaving(true);
@@ -254,6 +263,13 @@ export function ProfileFormDialog({
           ) : null}
         </div>
 
+        {providerMissing && (
+          <div className="px-4 py-2 bg-amber-500/10 text-amber-700 text-xs border-t border-amber-500/20">
+            ⚠ The provider <code>{initial?.provider}</code> is no longer in the
+            catalog. Form fell back to a custom endpoint — re-pick a provider
+            via Back, or edit the URL/key and save.
+          </div>
+        )}
         {error && (
           <div className="px-4 py-2 bg-destructive/10 text-destructive text-xs border-t border-destructive/20">
             {error}
@@ -675,17 +691,31 @@ function stripEmpty(map: Record<string, string>): Record<string, string> {
   return out;
 }
 
+/**
+ * Strip override values that match the catalog default — keeps profile.json
+ * minimal AND lets future catalog updates flow through automatically. If
+ * we always saved the visible value (which the form pre-fills), users
+ * who never touched base_url would still be locked to the URL that was
+ * default when they created the profile, missing later catalog fixes.
+ */
 function pruneOverrides(
   overrides: Record<string, ApiTypeOverrides>,
   apiTypes: string[],
+  provider: CatalogEntry,
 ): Record<string, ApiTypeOverrides> {
   const out: Record<string, ApiTypeOverrides> = {};
   for (const apiType of apiTypes) {
     const ov = overrides[apiType];
     if (!ov) continue;
+    const ep = provider.endpoints.find((e) => e.api_type === apiType);
+    const defaultBaseUrl = ep?.default_base_url ?? "";
     const trimmed: ApiTypeOverrides = {};
     if (ov.model && ov.model.length > 0) trimmed.model = ov.model;
-    if (ov.base_url && ov.base_url.length > 0) trimmed.base_url = ov.base_url;
+    // Only persist base_url if user changed it from the catalog default —
+    // otherwise leave it for render-time fallback.
+    if (ov.base_url && ov.base_url.length > 0 && ov.base_url !== defaultBaseUrl) {
+      trimmed.base_url = ov.base_url;
+    }
     if (Object.keys(trimmed).length > 0) out[apiType] = trimmed;
   }
   return out;

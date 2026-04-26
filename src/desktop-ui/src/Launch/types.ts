@@ -15,6 +15,10 @@ export interface ProfileSummary {
   providerIcon: string | null;
   authMode: AuthMode;
   apiTypes: string[];
+  /** `api_type → caveat string`. Populated only for api_types whose
+   * catalog endpoint has a `compatibility_warning`. UI shows ⚠ on the
+   * matching launch button. */
+  apiTypeWarnings: Record<string, string>;
 }
 
 export interface ApiTypeOverrides {
@@ -60,6 +64,7 @@ export interface EndpointDef {
   default_base_url: string;
   models: ModelDef[];
   auth_modes: AuthModeDef[];
+  compatibility_warning?: string | null;
 }
 
 export interface CatalogEntry {

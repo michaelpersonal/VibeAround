@@ -37,6 +37,7 @@
     {
       "api_type": "openai-chat",
       "default_base_url": "https://api.z.ai/api/paas/v4",
+      "compatibility_warning": "Recent codex versions require the OpenAI Responses API. Z.AI's /v4 endpoint serves chat-completions only — codex will start but the first prompt fails. Use the claude (Anthropic) button on this card instead.",
       "models": [
         { "id": "glm-4.6", "label": "GLM-4.6" },
         { "id": "glm-4.5", "label": "GLM-4.5" }
@@ -64,7 +65,7 @@
               },
               {
                 "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key}}\"\n}\n"
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
               }
             ]
           }

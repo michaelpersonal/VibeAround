@@ -38,6 +38,7 @@
     {
       "api_type": "openai-chat",
       "default_base_url": "https://api.moonshot.cn/v1",
+      "compatibility_warning": "Recent codex versions require the OpenAI Responses API. Moonshot's /v1 endpoint serves chat-completions only — codex will start but the first prompt fails. Use the claude (Anthropic) button on this card instead.",
       "models": [
         { "id": "kimi-k2-0905-preview", "label": "Kimi K2 (0905 preview)" },
         { "id": "moonshot-v1-32k", "label": "Moonshot v1 32K" },
@@ -67,7 +68,7 @@
               },
               {
                 "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key}}\"\n}\n"
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
               }
             ]
           }

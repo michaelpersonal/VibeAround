@@ -192,9 +192,31 @@ fn substitute(template: &str, ctx: &BTreeMap<String, String>) -> String {
             // Find the closing `}}`.
             let after_open = i + 2;
             if let Some(close_rel) = template[after_open..].find("}}") {
-                let name = template[after_open..after_open + close_rel].trim();
+                let raw = template[after_open..after_open + close_rel].trim();
+                // `{{name|filter}}` runs the named value through a filter
+                // before substitution. Used to JSON-escape secrets that
+                // get spliced into auth.json templates — without this an
+                // api_key containing `"` or `\` would corrupt the file.
+                let (name, filter) = match raw.split_once('|') {
+                    Some((n, f)) => (n.trim(), Some(f.trim())),
+                    None => (raw, None),
+                };
                 if let Some(v) = ctx.get(name) {
-                    out.push_str(v);
+                    let rendered = match filter {
+                        Some("json") => json_escape(v),
+                        Some(other) => {
+                            tracing::warn!(
+                                "[profiles] unknown template filter '{}' on '{{{{ {} | {} }}}}'; \
+                                 substituting raw value",
+                                other,
+                                name,
+                                other
+                            );
+                            v.clone()
+                        }
+                        None => v.clone(),
+                    };
+                    out.push_str(&rendered);
                 }
                 i = after_open + close_rel + 2;
                 continue;
@@ -205,6 +227,28 @@ fn substitute(template: &str, ctx: &BTreeMap<String, String>) -> String {
         }
         out.push(bytes[i] as char);
         i += 1;
+    }
+    out
+}
+
+/// JSON-escape the *contents* of a string literal — the caller is
+/// responsible for the surrounding `"`. This intentionally does NOT add
+/// the outer quotes so catalog templates can keep the JSON shape
+/// human-readable (`"OPENAI_API_KEY": "{{api_key|json}}"`).
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0c}' => out.push_str("\\f"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
     }
     out
 }
@@ -275,6 +319,34 @@ mod tests {
     fn unclosed_brace_is_literal() {
         let c = ctx(&[("a", "1")]);
         assert_eq!(substitute("hi {{a", &c), "hi {{a");
+    }
+
+    #[test]
+    fn json_filter_escapes_quotes_and_backslash() {
+        let c = ctx(&[("k", "sk-\"weird\\value")]);
+        assert_eq!(
+            substitute(r#"{"OPENAI_API_KEY": "{{k|json}}"}"#, &c),
+            r#"{"OPENAI_API_KEY": "sk-\"weird\\value"}"#,
+        );
+    }
+
+    #[test]
+    fn json_filter_escapes_control_chars() {
+        let c = ctx(&[("k", "a\nb\tc")]);
+        assert_eq!(substitute("{{k|json}}", &c), "a\\nb\\tc");
+    }
+
+    #[test]
+    fn unknown_filter_warns_and_passes_through() {
+        let c = ctx(&[("k", "hi")]);
+        assert_eq!(substitute("{{k|nonsense}}", &c), "hi");
+    }
+
+    #[test]
+    fn no_filter_keeps_raw_substitution() {
+        let c = ctx(&[("k", "sk-\"hi\"")]);
+        // No filter → raw substitution (caller must trust the value).
+        assert_eq!(substitute("X={{k}}", &c), "X=sk-\"hi\"");
     }
 
     #[test]

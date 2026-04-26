@@ -40,6 +40,7 @@
     {
       "api_type": "openai-chat",
       "default_base_url": "https://api.deepseek.com/v1",
+      "compatibility_warning": "Recent codex versions require the OpenAI Responses API. If your DeepSeek deployment only serves /v1/chat/completions, the launch will start but the first prompt fails — use the claude (Anthropic) button on this card instead.",
       "models": [
         { "id": "deepseek-v4-flash", "label": "DeepSeek V4 Flash" },
         { "id": "deepseek-v4-pro", "label": "DeepSeek V4 Pro" },
@@ -70,7 +71,7 @@
               },
               {
                 "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key}}\"\n}\n"
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
               }
             ]
           }

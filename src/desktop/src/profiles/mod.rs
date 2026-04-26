@@ -34,6 +34,11 @@ pub struct ProfileSummary {
     pub provider_icon: Option<String>,
     pub auth_mode: AuthMode,
     pub api_types: Vec<String>,
+    /// `api_type → caveat string` (subset; only the api_types that have a
+    /// non-empty `compatibility_warning` in the catalog appear here). Lets
+    /// the UI render a ⚠ tooltip on the affected launch button without
+    /// needing the full catalog client-side.
+    pub api_type_warnings: std::collections::BTreeMap<String, String>,
 }
 
 /// Catalog entry sent to the UI. Nested `EndpointDef` / `AuthModeDef` /
@@ -58,10 +63,22 @@ pub fn profiles_list() -> Vec<ProfileSummary> {
     schema::list()
         .into_iter()
         .map(|p| {
-            let (label, icon) = match catalog::get(&p.provider) {
+            let provider = catalog::get(&p.provider);
+            let (label, icon) = match provider {
                 Some(c) => (c.label.clone(), c.icon.clone()),
                 None => (p.provider.clone(), None),
             };
+            let mut api_type_warnings: std::collections::BTreeMap<String, String> =
+                std::collections::BTreeMap::new();
+            if let Some(c) = provider {
+                for api_type in &p.api_types {
+                    if let Some(ep) = c.endpoints.iter().find(|e| &e.api_type == api_type) {
+                        if let Some(w) = &ep.compatibility_warning {
+                            api_type_warnings.insert(api_type.clone(), w.clone());
+                        }
+                    }
+                }
+            }
             ProfileSummary {
                 id: p.id,
                 label: p.label,
@@ -70,6 +87,7 @@ pub fn profiles_list() -> Vec<ProfileSummary> {
                 provider_icon: icon,
                 auth_mode: p.auth_mode,
                 api_types: p.api_types,
+                api_type_warnings,
             }
         })
         .collect()

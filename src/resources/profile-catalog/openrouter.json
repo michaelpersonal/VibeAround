@@ -7,6 +7,7 @@
     {
       "api_type": "openai-chat",
       "default_base_url": "https://openrouter.ai/api/v1",
+      "compatibility_warning": "Recent codex versions require the OpenAI Responses API. OpenRouter currently exposes chat-completions only — codex will start but the first prompt fails. No Anthropic-compatible OpenRouter endpoint exists today; consider waiting for codex / OpenRouter parity or use a different CLI via Direct launch.",
       "models": [
         { "id": "anthropic/claude-sonnet-4.5", "label": "Claude Sonnet 4.5 (via OpenRouter)" },
         { "id": "openai/gpt-4o", "label": "GPT-4o (via OpenRouter)" },
@@ -37,7 +38,7 @@
               },
               {
                 "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key}}\"\n}\n"
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
               }
             ]
           }
