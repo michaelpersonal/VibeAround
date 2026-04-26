@@ -111,7 +111,7 @@ impl acp::Agent for PluginAgentHandler {
             self.channel_kind,
             chat_id,
             content_blocks.len(),
-            &text_preview[..text_preview.len().min(80)]
+            text_preview.chars().take(80).collect::<String>()
         );
 
         // Call through to handle_prompt — blocks until the turn completes.

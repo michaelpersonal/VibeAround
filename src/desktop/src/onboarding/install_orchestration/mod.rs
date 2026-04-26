@@ -227,7 +227,9 @@ async fn run_install<R: Runtime>(
         // ACP agent install (npm or script)
         let install_type = agent_def.install.as_ref().map(|i| i.install_type.as_str());
         match install_type {
-            Some("npm") => install_npm_agent(&app, agent_id, agent_def, &log_file, &mut had_error).await,
+            Some("npm") => {
+                install_npm_agent(&app, agent_id, agent_def, &log_file, &mut had_error).await
+            }
             Some("script") => {
                 install_script_agent(&app, agent_id, agent_def, &log_file, &mut had_error).await
             }

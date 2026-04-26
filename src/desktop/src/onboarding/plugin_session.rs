@@ -20,14 +20,18 @@ pub struct PluginSession {
 }
 
 /// Spawn a plugin's auth-standalone script (for QR/pairing flows during onboarding).
-pub(super) async fn spawn_auth_session(name: &str, config_value: Value) -> anyhow::Result<PluginSession> {
+pub(super) async fn spawn_auth_session(
+    name: &str,
+    config_value: Value,
+) -> anyhow::Result<PluginSession> {
     let plugin = plugins::channel::find(name)
         .ok_or_else(|| anyhow!("plugin '{}' not found or not built", name))?;
     let auth_entry = plugin.dir.join("dist").join("auth-standalone.js");
     if !auth_entry.exists() {
         return Err(anyhow!(
             "auth script not found for plugin '{}' at {:?}",
-            name, auth_entry
+            name,
+            auth_entry
         ));
     }
     let _ = config_value; // reserved for future per-plugin auth config
@@ -37,7 +41,10 @@ pub(super) async fn spawn_auth_session(name: &str, config_value: Value) -> anyho
 /// Spawn a plugin's main entry point and perform the ACP initialize handshake.
 /// Kept for future runtime plugin management; currently only auth sessions are used during onboarding.
 #[allow(dead_code)]
-pub(super) async fn spawn_plugin_session(name: &str, config_value: Value) -> anyhow::Result<PluginSession> {
+pub(super) async fn spawn_plugin_session(
+    name: &str,
+    config_value: Value,
+) -> anyhow::Result<PluginSession> {
     let plugin = plugins::channel::find(name)
         .ok_or_else(|| anyhow!("plugin '{}' not found or not built", name))?;
     let entry_point = plugin.entry_path();
@@ -48,13 +55,21 @@ pub(super) async fn spawn_plugin_session(name: &str, config_value: Value) -> any
     let client_init_id: Value;
     loop {
         let mut line = String::new();
-        let bytes = session.stdout.read_line(&mut line).await
+        let bytes = session
+            .stdout
+            .read_line(&mut line)
+            .await
             .context("reading plugin initialize request")?;
         if bytes == 0 {
-            return Err(anyhow!("plugin '{}' exited before sending initialize", name));
+            return Err(anyhow!(
+                "plugin '{}' exited before sending initialize",
+                name
+            ));
         }
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
         let msg: Value = serde_json::from_str(trimmed).context("parsing plugin message")?;
         if msg.get("method").and_then(|v| v.as_str()) == Some("initialize") {
             client_init_id = msg.get("id").cloned().unwrap_or(Value::Null);
@@ -77,14 +92,26 @@ pub(super) async fn spawn_plugin_session(name: &str, config_value: Value) -> any
         }
     });
     let line = serde_json::to_string(&init_response).context("serializing init response")? + "\n";
-    session.stdin.write_all(line.as_bytes()).await.context("writing init response")?;
-    session.stdin.flush().await.context("flushing init response")?;
+    session
+        .stdin
+        .write_all(line.as_bytes())
+        .await
+        .context("writing init response")?;
+    session
+        .stdin
+        .flush()
+        .await
+        .context("flushing init response")?;
 
     Ok(session)
 }
 
 /// Spawn a Node.js script, wire stderr logging, and perform a raw JSON-RPC initialize handshake.
-async fn spawn_node_session(name: &str, entry_point: &Path, plugin_dir: &Path) -> anyhow::Result<PluginSession> {
+async fn spawn_node_session(
+    name: &str,
+    entry_point: &Path,
+    plugin_dir: &Path,
+) -> anyhow::Result<PluginSession> {
     let mut child = common::process::env::command("node")
         .arg(entry_point)
         .current_dir(plugin_dir)
@@ -113,29 +140,45 @@ async fn spawn_node_session(name: &str, entry_point: &Path, plugin_dir: &Path) -
         "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
     });
     let line = serde_json::to_string(&init_req).context("serializing initialize")? + "\n";
-    stdin.write_all(line.as_bytes()).await.context("writing initialize")?;
+    stdin
+        .write_all(line.as_bytes())
+        .await
+        .context("writing initialize")?;
     stdin.flush().await.context("flushing initialize")?;
 
     let mut stdout = BufReader::new(stdout);
     loop {
         let mut line = String::new();
-        let bytes = stdout.read_line(&mut line).await.context("reading initialize response")?;
+        let bytes = stdout
+            .read_line(&mut line)
+            .await
+            .context("reading initialize response")?;
         if bytes == 0 {
             return Err(anyhow!("'{}' exited before initialize completed", name));
         }
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
         let msg: Value = serde_json::from_str(trimmed).context("parsing initialize response")?;
         if msg.get("id").and_then(|v| v.as_u64()) == Some(1) {
             if let Some(error) = msg.get("error") {
-                let msg = error.get("message").and_then(|v| v.as_str()).unwrap_or("init error");
+                let msg = error
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("init error");
                 return Err(anyhow!("{}", msg));
             }
             break;
         }
     }
 
-    Ok(PluginSession { child, stdin, stdout, next_request_id: 2 })
+    Ok(PluginSession {
+        child,
+        stdin,
+        stdout,
+        next_request_id: 2,
+    })
 }
 
 /// Send a JSON-RPC request and wait for the matching response ID.
@@ -154,24 +197,39 @@ pub(super) async fn plugin_request<T: for<'de> Deserialize<'de>>(
         "params": params,
     });
     let line = serde_json::to_string(&req).context("serializing request")? + "\n";
-    session.stdin.write_all(line.as_bytes()).await
+    session
+        .stdin
+        .write_all(line.as_bytes())
+        .await
         .with_context(|| format!("writing request '{}'", method))?;
     session.stdin.flush().await.context("flushing request")?;
 
     loop {
         let mut line = String::new();
-        let bytes = session.stdout.read_line(&mut line).await.context("reading response")?;
+        let bytes = session
+            .stdout
+            .read_line(&mut line)
+            .await
+            .context("reading response")?;
         if bytes == 0 {
-            return Err(anyhow!("plugin request '{}' ended without a response", method));
+            return Err(anyhow!(
+                "plugin request '{}' ended without a response",
+                method
+            ));
         }
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
         let msg: Value = serde_json::from_str(trimmed).context("parsing response")?;
         if msg.get("id").and_then(|v| v.as_u64()) != Some(request_id) {
             continue;
         }
         if let Some(error) = msg.get("error") {
-            let message = error.get("message").and_then(|v| v.as_str()).unwrap_or("unknown plugin error");
+            let message = error
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown plugin error");
             return Err(anyhow!("{}", message));
         }
         let result = msg.get("result").cloned().unwrap_or(Value::Null);

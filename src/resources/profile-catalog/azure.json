@@ -1,0 +1,71 @@
+{
+  "id": "azure",
+  "label": "Azure OpenAI",
+  "icon": "🔷",
+  "homepage": "https://ai.azure.com",
+  "endpoints": [
+    {
+      "api_type": "openai-responses",
+      "default_base_url": "",
+      "models": [],
+      "capabilities": {
+        "reasoning_effort": true
+      },
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Azure OpenAI key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Azure OpenAI API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "AZURE_OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"azure\"\nmodel_reasoning_effort = \"{{reasoning_effort}}\"\n\n[model_providers.azure]\nname = \"Azure OpenAI\"\nbase_url = \"{{base_url}}\"\nenv_key = \"AZURE_OPENAI_API_KEY\"\nwire_api = \"responses\"\n"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "api_type": "openai-chat",
+      "default_base_url": "",
+      "models": [],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Azure OpenAI key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Azure OpenAI API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "AZURE_OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"azure\"\n\n[model_providers.azure]\nname = \"Azure OpenAI\"\nbase_url = \"{{base_url}}\"\nenv_key = \"AZURE_OPENAI_API_KEY\"\nwire_api = \"chat\"\n"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

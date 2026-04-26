@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.1/banner.webp" width="100%" alt="VibeAround — 在任意 IM 里和你的 AI 编程 Agent 对话" />
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.1/banner.webp" width="100%" alt="VibeAround — 你的本地 AI Agent，随时随地 vibe coding" />
 
 # VibeAround
 
-**在任意 IM 里和你的 AI 编程 Agent 对话 —— 无需订阅官方会员方案。**
+**你的本地 AI Agent，随时随地 vibe coding。**
 
 [English](README.md) | [简体中文](README_CN.md) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki)
 
@@ -18,109 +18,41 @@
 
 </div>
 
-VibeAround 是一个把主流 AI 编程 Agent —— **Claude Code、Codex CLI、Cursor CLI、Gemini CLI、Kiro CLI、Qwen Code、OpenCode** —— 接入日常 IM 工具的友好桥梁：**Telegram、飞书、Discord、Slack、微信、钉钉、企业微信、QQ Bot**。无需任何官方付费订阅，配置第三方 API Key 即可使用。
+VibeAround 为本地 AI Agent（Claude Code、Codex、Cursor、Gemini CLI…）提供两种远程访问方式：通过常用 IM（Telegram、Slack、飞书、Discord…）直接对话，或通过浏览器打开 Web Terminal（可搭配 tmux 使用）。可根据场景选择 —— 在手机 IM 中发送消息驱动 Agent，或在笔记本 / 平板上进入终端进行调试 —— 访问的始终是同一个 Agent、同一个 workspace。
 
-在 Mac 上用 Claude Code 开始一个任务，通过 `/handover` 一键移交到手机上的 Telegram 继续对话，保留完整上下文，回到桌前再移交回终端。在任意 IM 里用 `/switch codex` 中途切换 Agent。可以同时让 Claude 在 Telegram 上跑、让 Codex 在 Slack 上跑，互不干扰。
-
-Tauri 打包的桌面应用提供一键安装引导，无需复杂配置。每个 IM 渠道和每个 Agent 都是可下载的插件，核心保持小而干净。内置的 Web 控制台监听 `localhost:12358`，提供完整的 PTY + tmux Web 终端；内置的隧道（Cloudflare Tunnel / Ngrok / Localtunnel）让你随时从手机访问。
+桌面应用是一个基于 Tauri 的轻量单体应用，提供图形化的配置与服务管理。Agent 和 IM 频道均以插件形式按需启用。
 
 ## 演示视频
 
 [![VibeAround 演示视频 —— 会话接力、Agent 切换、多渠道并发](https://img.youtube.com/vi/6kxNKTMz-AM/maxresdefault.jpg)](https://youtu.be/6kxNKTMz-AM)
 
-*观看 VibeAround 实际运行 —— 终端与 IM 之间的会话接力、会话中切换 Agent、多渠道并发。*
+*VibeAround 实际效果演示：在任意 IM 中直达本地 Agent、终端与手机之间的会话接力、对话中切换 Agent。*
 
-## 核心功能
+## 核心能力
 
-- **会话接力** — 将任意 agent 的编程会话一键移交到任意 IM 频道，手机上继续对话
-- **Agent 切换** — 在任何频道中 `/switch claude`、`/switch codex`、`/switch cursor` 随时切换
-- **IM 频道** — Telegram、飞书、Discord、Slack、微信、钉钉、企业微信、QQ Bot — 每个都是独立插件
-- **原生 IM 体验** — 飞书交互卡片、Slack Block Kit、Discord embeds、企业微信 Markdown 流式输出 —— 每个渠道都使用其最丰富的原生格式
-- **实时预览** — Agent 可以分享开发服务器的实时预览链接（iframe + 反向代理）或 Markdown 文件（GitHub 风格渲染），通过手机或浏览器查看，链接 5 分钟后自动过期
-- **Skills + MCP 自动集成** — 每次启动时，VibeAround 都会把自己的 skill 集合和 MCP 服务端点同步写入每个已启用的编程 Agent（Claude Code、Codex、Gemini、Cursor、Kiro、Qwen），无需手动配置即可让它们将 VibeAround 作为工具调用
-- **本地 Bearer Token 鉴权** — 守护进程的 HTTP、WebSocket、MCP 端点统一通过 `~/.vibearound/auth.json`（0600，每次启动轮换）中的会话 token 鉴权
-- **网页终端** — 浏览器内完整 PTY 终端，集成 tmux，shell 会话与 agent 对话并行运行
-- **网页控制台** — 终端、tmux、agent 对话，访问 `localhost:12358`
-- **桌面应用** — 引导向导（含安装进度）、服务监控、工作空间管理、系统托盘
-- **多工作空间** — 管理项目目录、设置默认、切换上下文
-- **隧道访问** — 通过 Cloudflare Tunnel、Ngrok 或 Localtunnel 远程访问
+### 💬 在任意 IM 里和本地 AI Agent 对话
 
-## 支持的 Agents
+打开 Telegram、Slack、飞书或 Discord，直接向 Agent 发送消息即可协作。编写代码、执行命令、启动服务 —— 完整的编程能力均可在对话中完成。
 
-所有 agent 通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 经由 stdio 通信。基于 npm 的 agent 首次使用时自动安装。CLI 类 agent（Cursor、Kiro、Qwen、OpenCode）需用户自行安装。
+### 💻 Web Terminal
 
-| Agent | ACP | 会话接力 |
-|---|---|---|
-| **Claude Code** | 可用 | 已支持 |
-| **Gemini CLI** | 可用 | 已支持 |
-| **Codex CLI** | 可用 | 已支持 |
-| **Cursor CLI** | 可用 | 已支持 |
-| **Kiro CLI** | 可用 | 已支持 |
-| **Qwen Code** | 可用 | 已支持 |
-| **OpenCode** | 可用 | 不支持 |
+浏览器中的完整 shell。移动端内置命令面板，提供 ESC / Ctrl / 方向键等特殊按键的快捷输入；可搭配 tmux 使用，关闭浏览器后会话依然保留。
 
-## 频道插件
+### 🔄 双向会话接力
 
-每个频道都是独立的 Node.js 插件，基于 [@vibearound/plugin-channel-sdk](https://www.npmjs.com/package/@vibearound/plugin-channel-sdk) 构建。
+使用 `/handover` 和 `/pickup` 在终端与 IM 之间接力同一个编程会话，上下文完整保留。支持 Claude Code、Gemini CLI、Codex CLI、Cursor CLI、Kiro CLI 和 Qwen Code。
 
-| 频道 | 认证方式 | 私聊 | 文件/图片 | 流式输出 | 斜杠命令 | 状态 |
-|---|---|---|---|---|---|---|
-| **Telegram** | Bot Token | 支持 | 支持 | 支持 | `/command` | 可用 |
-| **飞书 / Lark** | 应用凭证 | 支持 | 支持 | 支持（卡片） | `/command` | 可用 |
-| **Discord** | Bot Token | 支持 | 支持 | 支持 | `/command` | 可用 |
-| **Slack** | Bot + App Token | 支持 | 支持 | 支持 | `/va`、`/vibearound` | 可用 |
-| **微信** | 二维码登录 | 支持 | 支持 | 不支持 | `/command` | 可用 |
-| **钉钉** | AppKey + Secret | 支持 | 支持 | 支持（Markdown） | `/command` | 可用 |
-| **企业微信** | Bot ID + Secret | 支持 | 支持 | 支持（Markdown） | `/command` | 可用 |
-| **QQ 频道** | App ID + Token | 支持 | 支持 | 不支持 | `/command` | 可用 |
+### 🎛️ 对话中途切换 Agent
 
-## 命令
+在任何频道中执行 `/switch claude`、`/switch codex` 或 `/switch cursor` 即可切换 Agent，无需重启 VibeAround。
 
-### 系统命令
+### 👁️ 实时预览
 
-| 命令 | 说明 |
-|---|---|
-| `/help` | 显示可用命令 |
-| `/new` | 重置会话（新对话） |
-| `/switch <agent>` | 切换 agent（claude、gemini、codex、cursor、kiro、qwen-code、opencode） |
-| `/profile <name>` | 切换 profile |
-| `/close` | 关闭对话 |
-| `/pickup <code>` | 恢复一个编程 agent 会话 |
-| `/handover` | 将会话导出到编程 agent CLI |
+Agent 可将开发服务器或渲染后的 Markdown/HTML 通过短时效链接分享，手机和浏览器均可直接访问。
 
-### Agent 命令
+### 🖥️ 一键引导向导
 
-| 命令 | 说明 |
-|---|---|
-| `/agent <command>` | 向 agent 发送斜杠命令（如 `/agent status`） |
-
-### Slack 专用
-
-在 Slack 中，`/` 前缀会被客户端拦截。请使用 `/va` 或 `/vibearound` 代替：
-
-| Slack 命令 | 等同于 |
-|---|---|
-| `/va help` | `/help` |
-| `/va switch claude` | `/switch claude` |
-| `/va agent status` | `/agent status` |
-| `/va new` | `/new` |
-
-## 环境要求
-
-| 工具 | 版本 | 安装 |
-|------|------|------|
-| **Rust** | 1.82+ | [rustup.rs](https://rustup.rs/) |
-| **Node.js** | 20+ | [nodejs.org](https://nodejs.org/) |
-| **Bun** | 1.1+ | [bun.sh](https://bun.sh/) |
-| **npm** | 10+ | 随 Node.js 一起安装 |
-
-**平台支持：** 代码库支持 macOS、Linux 和 Windows。目前只打包了 macOS 的预编译版本 —— 因为我手边只有一台 Mac，Linux 和 Windows 用户暂时需要自行从源码构建。欢迎贡献 Linux / Windows 的 CI 与发布流程。
-
-在 macOS 上需要安装 Xcode 命令行工具：
-
-```bash
-xcode-select --install
-```
+向导自动安装 Agent 依赖、配置各频道凭证、选择隧道服务，基本无需手动修改配置文件。
 
 ## 快速开始
 
@@ -131,84 +63,74 @@ bun run prebuild
 bun run dev
 ```
 
-1. 首次运行时桌面应用会打开引导向导
-2. 选择 agents，配置频道和隧道
-3. 网页控制台：`http://127.0.0.1:12358`
-4. 通过终端、对话或 IM 频道开始编程
+桌面应用首次启动时会进入引导向导：选择 Agent、配置频道、设置隧道。
 
-## 会话接力
+**环境要求：** Rust 1.82+、Node.js 20+、Bun 1.1+。macOS 还需要执行 `xcode-select --install`。
 
-将编程会话移交到任意已连接的 IM 频道 — 支持 Claude Code、Gemini CLI、Codex CLI、Cursor CLI、Kiro CLI 和 Qwen Code：
+若尚未安装，请参考各自官网的安装指引：[Rust](https://rust-lang.org/tools/install/)、[Bun](https://bun.com/)、[Node.js](https://nodejs.org/en/download/)。
 
-```
-你 (终端)    > /handover
-Agent       > 移交就绪，已复制到剪贴板：
-               /pickup V5RX
-               在任何已连接 VibeAround 的 IM 中粘贴。
-               此代码 2 分钟内有效。
-```
+## 支持的 Agents
 
-在 Telegram、飞书、Discord、Slack 或微信中粘贴 `/pickup` 命令 — 完整上下文继续对话。完成后再次 `/handover`，将会话移交回终端。
+所有 Agent 均通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 在 stdio 上通信。通过 npm 分发的 Agent 首次使用时会自动安装。
 
-## 架构
+| Agent | ACP | 会话接力 |
+|---|---|---|
+| **Claude Code** | ✅ | ✅ |
+| **Gemini CLI** | ✅ | ✅ |
+| **Codex CLI** | ✅ | ✅ |
+| **Cursor CLI** | ✅ | ✅ |
+| **Kiro CLI** | ✅ | ✅ |
+| **Qwen Code** | ✅ | ✅ |
+| **OpenCode** | ✅ | ❌ |
 
-```
-┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│   桌面端    │  │  网页控制台  │  │  IM 频道    │
-│  (Tauri)    │  │  Dashboard  │  │   插件      │
-└──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-       │                │                │
-       └────────────────┼────────────────┘
-                        │
-              ┌─────────┴─────────┐
-              │   Rust 运行时     │
-              │  ┌─────────────┐  │
-              │  │  ACP Hub    │  │   ← 将 prompt 路由到 agent
-              │  │ (按路由分配  │  │
-              │  │   ACPPod)   │  │
-              │  └──────┬──────┘  │
-              │         │         │
-              │  ┌──────┴──────┐  │
-              │  │ Agent 工厂  │  │   ← 启动 Claude/Gemini/Codex/Cursor/Kiro/Qwen/OpenCode
-              │  └─────────────┘  │
-              │                   │
-              │  ┌─────────────┐  │
-              │  │ PTY 管理器  │  │   ← 终端会话 + tmux
-              │  └─────────────┘  │
-              └───────────────────┘
-```
+## 频道插件
 
-## 配置
+每个频道均为独立的 Node.js 插件，基于 [@vibearound/plugin-channel-sdk](https://www.npmjs.com/package/@vibearound/plugin-channel-sdk) 构建。
 
-所有配置位于 `~/.vibearound/settings.json`：
+| 频道 | 认证方式 | 私聊 | 文件/图片 | 流式输出 | 状态 |
+|---|---|---|---|---|---|
+| **Telegram** | Bot Token | ✅ | ✅ | ✅ | ✅ |
+| **飞书 / Lark** | 应用凭证 | ✅ | ✅ | ✅ | ✅ |
+| **Discord** | Bot Token | ✅ | ✅ | ✅ | ✅ |
+| **Slack** | Bot + App Token | ✅ | ✅ | ✅ | ✅ |
+| **微信** | 二维码登录 | ✅ | ✅ | ❌ | ✅ |
+| **钉钉** | AppKey + Secret | ✅ | ✅ | ✅ | ✅ |
+| **企业微信** | Bot ID + Secret | ✅ | ✅ | ✅ | ✅ |
+| **QQ 频道** | App ID + Token | ✅ | ✅ | ❌ | ✅ |
 
-```json
-{
-  "default_agent": "claude",
-  "enabled_agents": ["claude", "gemini", "opencode", "codex", "cursor", "kiro", "qwen-code"],
-  "workspaces": ["/path/to/your/project"],
-  "channels": {
-    "telegram": { "bot_token": "..." },
-    "feishu": { "app_id": "...", "app_secret": "..." },
-    "discord": { "bot_token": "..." },
-    "slack": { "bot_token": "xoxb-...", "app_token": "xapp-..." }
-  },
-  "tunnel": {
-    "provider": "cloudflare",
-    "cloudflare": { "tunnel_token": "...", "hostname": "..." }
-  }
-}
-```
+## 内部架构
 
-## 插件 SDK
+- **基于 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/)** —— 所有支持的 Agent 均通过 stdio 使用统一协议通信，新增 Agent 成本低，切换体验保持一致。
+- **内置隧道** —— 使 Web Terminal 与实时预览可从手机或任意浏览器直接访问。内置 ngrok、localtunnel、Cloudflare 三种后端。
+- **插件化架构** —— 每个 IM 频道均为独立的 Node.js 子进程，发布至 npm 后按需加载。第三方基于 [@vibearound/plugin-channel-sdk](https://www.npmjs.com/package/@vibearound/plugin-channel-sdk) 即可扩展新频道，无需修改核心。
+- **频道原生渲染** —— 每个频道插件直接使用对应平台的 SDK（Telegraf、Lark SDK、Slack Bolt…），消息以该平台支持的最佳原生格式呈现，而非套用最低公分母的"翻译层"。
+- **对外入口鉴权** —— 通过隧道暴露的 Web Terminal 与实时预览链接均需鉴权，即使 URL 公开，也仅授权用户可访问。
+- **多 Agent / 多频道并发** —— 不同 Agent 可同时运行在不同频道上（如 Claude 运行在 Telegram、Codex 运行在 Slack），各自独立的路由与会话互不干扰。
+- **Skill + MCP 自动注入** —— 启动时 VibeAround 将自身的技能集（`SKILL.md`）与 MCP 端点写入已启用 Agent 的全局配置，使 Agent 自动发现 VibeAround。
 
-使用 SDK 构建自己的频道插件：
+## 命令
 
-```bash
-npm install @vibearound/plugin-channel-sdk
-```
+VibeAround 提供两类斜杠命令：
 
-详见 [SDK README](https://github.com/jazzenchen/vibearound-plugin-channel-sdk)。
+- **系统命令** —— 管理 VibeAround 会话本身（重置、切换 Agent、跨频道接力会话等），是 VibeAround 在 Agent 之上增加的交互层。
+- **Agent 透传** —— `/agent <command>` 将任意斜杠命令原样转发给底层 Agent，使 Agent 原生能力（如 Claude Code 的 `/status`）在 IM 对话中可直接使用。
+
+| 命令 | 说明 |
+|---|---|
+| `/help` | 显示可用命令 |
+| `/new` | 重置会话，开始新的对话 |
+| `/switch <agent>` | 在对话中切换 Agent（claude、gemini、codex、cursor、kiro、qwen-code、opencode） |
+| `/profile <name>` | 切换 profile |
+| `/close` | 关闭当前对话 |
+| `/handover` | 导出当前会话，以便在其他设备继续 |
+| `/pickup <code>` | 恢复从其他频道移交的会话 |
+| `/agent <command>` | 向 Agent 发送斜杠命令，例如 `/agent status` |
+
+在 Slack 中，`/` 前缀会被客户端拦截，请改用 `/va` 或 `/vibearound`，例如 `/va switch claude`。
+
+## 平台支持
+
+代码库支持 macOS、Linux 和 Windows。目前仅提供 macOS 的预编译版本，Linux 和 Windows 用户仍可从源码构建。欢迎贡献跨平台 CI。
 
 ## 文档
 
@@ -219,31 +141,13 @@ npm install @vibearound/plugin-channel-sdk
 - [配置模型](https://github.com/jazzenchen/VibeAround/wiki/Configuration-Model)
 - [FAQ 和故障排除](https://github.com/jazzenchen/VibeAround/wiki/FAQ-and-Troubleshooting)
 
-## 路线图
+## 下一步
 
-### 更多 IM 频道
-
-| 频道 | 状态 |
-|---|---|
-| WhatsApp | 计划中 |
-| LINE | 计划中 |
-| Microsoft Teams | 计划中 |
-
-### 实时预览（下一步）
-
-- 在 IM 对话里直接查看 Agent 生成的文件、截图和产物（目前可通过隧道 URL 使用）
-- IM 原生内嵌预览（图片卡片、嵌入式 iframe 等）
-
-### 更多 IM 原生功能
-
-- 更深度的渠道集成：表情回复、话题（threads）、交互式按钮与表单、语音消息等，充分利用每个 IM 的原生能力
-- 扩展文件、图片和富媒体在现有渠道的支持范围
-
-### 工作空间管理
-
-- 多项目工作空间切换与持久化
-- 按工作空间配置 agent 和频道
-- 工作空间级别的会话历史与上下文
+- **一键启动编程 CLI** —— 在桌面应用中保存 API Key，一键启动 Claude Code / Codex 并自动对接所选服务商（智谱、Minimax、通义千问、DeepSeek…）
+- **更多 IM 频道** —— WhatsApp、LINE、Microsoft Teams
+- **容器化 + 沙盒架构** —— 每个 Agent 运行在独立的容器 / 沙盒中，文件系统与网络访问均限定在安全边界内
+- **Web Chat 增强** —— 升级内置 Web 聊天界面，补齐更丰富的渲染、文件上传与历史管理能力
+- **工作空间隔离** —— 按工作空间分别管理 Agent、频道和会话历史
 
 ## 许可证
 

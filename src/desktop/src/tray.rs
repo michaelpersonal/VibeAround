@@ -52,7 +52,10 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
         .enabled(false)
         .build(app)?;
     let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-    let menu = Menu::with_items(app, &[&show_item, &open_local_item, &open_tunnel_item, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show_item, &open_local_item, &open_tunnel_item, &quit_item],
+    )?;
 
     // Embed the tray icon bytes at compile time so the shipped binary
     // doesn't depend on any filesystem path being present at runtime.
@@ -110,7 +113,9 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         use common::state::StateSource;
-        let Some(state) = app_handle.try_state::<AppTunnels>() else { return };
+        let Some(state) = app_handle.try_state::<AppTunnels>() else {
+            return;
+        };
         let tunnels = &state.0;
         let mut rx = tunnels.subscribe_changes();
         loop {
@@ -118,7 +123,9 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
             let _ = tunnel_item_clone.set_enabled(has_url);
 
             // Wait for next change notification
-            if rx.recv().await.is_err() { break; }
+            if rx.recv().await.is_err() {
+                break;
+            }
         }
     });
 

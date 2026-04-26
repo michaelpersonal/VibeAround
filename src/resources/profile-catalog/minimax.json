@@ -1,0 +1,87 @@
+{
+  "id": "minimax",
+  "label": "MiniMax (国内)",
+  "icon": "🦊",
+  "homepage": "https://platform.minimaxi.com",
+  "endpoints": [
+    {
+      "api_type": "anthropic",
+      "default_base_url": "https://api.minimaxi.com/anthropic",
+      "models": [
+        {
+          "id": "MiniMax-M2.7",
+          "label": "MiniMax M2.7"
+        },
+        {
+          "id": "MiniMax-M2.7-highspeed",
+          "label": "MiniMax M2.7 highspeed"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "MiniMax API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "ANTHROPIC_API_KEY": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
+            },
+            "settings_files": []
+          }
+        }
+      ]
+    },
+    {
+      "api_type": "openai-chat",
+      "default_base_url": "https://api.minimaxi.com/v1",
+      "models": [
+        {
+          "id": "MiniMax-M2.7",
+          "label": "MiniMax M2.7"
+        },
+        {
+          "id": "MiniMax-M2.7-highspeed",
+          "label": "MiniMax M2.7 highspeed"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "MiniMax API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"minimax\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.minimax]\nname = \"MiniMax\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
+              },
+              {
+                "rel_path": "auth.json",
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

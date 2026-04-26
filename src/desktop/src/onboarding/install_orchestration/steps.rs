@@ -55,14 +55,8 @@ pub(super) async fn install_npm_agent<R: Runtime>(
 
     match common::agent::auto_install_npm_agent_with_output(npm_pkg).await {
         Ok(out) => {
-            log_line(
-                log_file,
-                &format!("[{}] stdout:\n{}", agent_id, out.stdout),
-            );
-            log_line(
-                log_file,
-                &format!("[{}] stderr:\n{}", agent_id, out.stderr),
-            );
+            log_line(log_file, &format!("[{}] stdout:\n{}", agent_id, out.stdout));
+            log_line(log_file, &format!("[{}] stderr:\n{}", agent_id, out.stderr));
             emit_progress(
                 app,
                 &InstallProgressEvent {
@@ -132,18 +126,10 @@ pub(super) async fn install_script_agent<R: Runtime>(
     );
     log_line(log_file, &format!("[{}] {}", agent_id, msg));
 
-    match common::agent::auto_install_agent_cmd_with_output(install_cmd, agent_id)
-        .await
-    {
+    match common::agent::auto_install_agent_cmd_with_output(install_cmd, agent_id).await {
         Ok(out) => {
-            log_line(
-                log_file,
-                &format!("[{}] stdout:\n{}", agent_id, out.stdout),
-            );
-            log_line(
-                log_file,
-                &format!("[{}] stderr:\n{}", agent_id, out.stderr),
-            );
+            log_line(log_file, &format!("[{}] stdout:\n{}", agent_id, out.stdout));
+            log_line(log_file, &format!("[{}] stderr:\n{}", agent_id, out.stderr));
             emit_progress(
                 app,
                 &InstallProgressEvent {

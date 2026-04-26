@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye, Play,
+  Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye, Play, Rocket,
 } from "lucide-react";
 import type { TunnelStatus } from "@va/client";
 import { useChannelsState, type ChannelRuntime } from "./hooks/useChannelsState";
@@ -11,6 +11,7 @@ import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Workspaces } from "./Workspaces";
 import { Previews } from "./Previews";
+import { Launch } from "./Launch";
 
 // ---------------------------------------------------------------------------
 // Per-domain status presentation — each manager has its own natural status
@@ -213,7 +214,7 @@ function App() {
   return <Dashboard />;
 }
 
-type DashboardPage = "services" | "workspaces" | "previews";
+type DashboardPage = "services" | "workspaces" | "previews" | "launch";
 
 function Dashboard() {
   const [page, setPage] = useState<DashboardPage>("services");
@@ -276,6 +277,7 @@ function Dashboard() {
           <TabButton active={page === "services"} onClick={() => setPage("services")} icon={<Server className="w-3 h-3" />} label="VibeAround" />
           <TabButton active={page === "workspaces"} onClick={() => setPage("workspaces")} icon={<FolderOpen className="w-3 h-3" />} label="Workspaces" />
           <TabButton active={page === "previews"} onClick={() => setPage("previews")} icon={<Eye className="w-3 h-3" />} label="Previews" />
+          <TabButton active={page === "launch"} onClick={() => setPage("launch")} icon={<Rocket className="w-3 h-3" />} label="Launch" />
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -312,6 +314,8 @@ function Dashboard() {
         <div className="flex-1 overflow-y-auto"><Workspaces /></div>
       ) : page === "previews" ? (
         <div className="flex-1 overflow-y-auto"><Previews /></div>
+      ) : page === "launch" ? (
+        <div className="flex-1 min-h-0"><Launch /></div>
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           <Section

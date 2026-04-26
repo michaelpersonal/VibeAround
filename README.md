@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.1/banner.webp" width="100%" alt="VibeAround — Talk to your AI coding agent anywhere from your IM" />
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.1/banner.webp" width="100%" alt="VibeAround — Vibe coding with your local AI agent, from anywhere" />
 
 # VibeAround
 
-**Talk to your AI coding agent anywhere from your IM — no coding plan required.**
+**Vibe coding with your local AI agent, from anywhere.**
 
 [English](README.md) | [简体中文](README_CN.md) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki)
 
@@ -18,109 +18,41 @@
 
 </div>
 
-VibeAround is a friendly bridge for mainstream AI coding agents — **Claude Code, Codex CLI, Cursor CLI, Gemini CLI, Kiro CLI, Qwen Code, OpenCode** — connecting them to the IM tools you already use every day: **Telegram, Feishu, Discord, Slack, WeChat, DingTalk, WeCom, and QQ Bot**. No official paid subscription required — bring your own third-party API key and you're done.
+VibeAround gives you two ways to reach your local AI agent (Claude Code, Codex, Cursor, Gemini CLI…) from anywhere: chat with it from your daily IM (Telegram, Slack, Feishu, Discord…), or a browser-based web terminal compatible with tmux. Pick the surface that fits the moment — a quick message from your phone, or a full terminal session from a café laptop — it's the same agent, the same workspace.
 
-Start a task with Claude Code on your Mac, hand it over to Telegram on your phone with a single `/handover`, continue the conversation with full context, and hand it back when you're at your desk. Switch agents mid-conversation with `/switch codex` from any channel. Run Claude on Telegram and Codex on Slack at the same time — they don't collide.
-
-A Tauri-packaged desktop app walks you through setup with a one-click wizard. Each IM channel and each agent is a downloadable plugin, so the core stays small and clean. A built-in web dashboard at `localhost:12358` gives you a full PTY + tmux web terminal, and an embedded tunnel (Cloudflare / Ngrok / Localtunnel) exposes it when you want to reach it from your phone.
+The desktop app is a lightweight all-in-one Tauri build that gives you a GUI for configuration and service management. Agents and IM channels are both plugins you can enable on demand.
 
 ## Demo
 
 [![VibeAround demo — session handover, agent switching, multi-channel concurrency](https://img.youtube.com/vi/6kxNKTMz-AM/maxresdefault.jpg)](https://youtu.be/6kxNKTMz-AM)
 
-*Watch VibeAround in action — session handover between terminal and IM, agent switching mid-conversation, and multi-channel concurrency.*
+*Watch VibeAround in action: reach your local agent from any IM, hand a session between terminal and phone, and switch agents mid-conversation.*
 
 ## Key features
 
-- **Session handover** — hand off a coding session from any agent to any IM channel and continue on your phone
-- **Agent switching** — `/switch claude`, `/switch codex`, `/switch cursor` mid-conversation from any channel
-- **IM channels** — Telegram, Feishu, Discord, Slack, WeChat, DingTalk, WeCom, QQ Bot — each a standalone plugin
-- **Native IM experience** — Feishu interactive cards, Slack Block Kit, Discord embeds, WeCom markdown streaming — each channel uses the richest native formatting it supports
-- **Live preview** — agents can share a live preview URL for dev servers (iframe + reverse proxy) or markdown files (GitHub-style rendering), viewable on phone or browser with a 5-minute expiring link
-- **Skills + MCP auto-integration** — on every startup VibeAround syncs its skill set and an MCP server endpoint into each enabled coding agent (Claude Code, Codex, Gemini, Cursor, Kiro, Qwen) so they discover VibeAround as a tool with zero manual config
-- **Loopback bearer-token auth** — daemon HTTP, WebSocket, and MCP endpoints are gated by a session token at `~/.vibearound/auth.json` (0600, rotated on every daemon start)
-- **Web terminal** — full PTY-based terminal in the browser with tmux integration, run shell sessions alongside agent chat
-- **Web dashboard** — terminals, tmux, and agent chat at `localhost:12358`
-- **Desktop app** — onboarding with install progress, service monitoring, workspace management, system tray
-- **Multi-workspace** — manage project folders, set defaults, switch contexts
-- **Tunnel access** — expose your dashboard via Cloudflare Tunnel, Ngrok, or Localtunnel
+### 💬 Chat with your local AI agent from any IM
 
-## Supported agents
+Open Telegram, Slack, Feishu, or Discord and DM your agent like a colleague. Writing code, running commands, spinning up servers — full coding capabilities, just through a chat bubble.
 
-All agents communicate via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) over stdio. npm-based agents are auto-installed on first use. CLI-based agents (Cursor, Kiro, Qwen, OpenCode) must be installed by the user.
+### 💻 Web terminal
 
-| Agent | ACP | Session Handover |
-|---|---|---|
-| **Claude Code** | Working | Supported |
-| **Gemini CLI** | Working | Supported |
-| **Codex CLI** | Working | Supported |
-| **Cursor CLI** | Working | Supported |
-| **Kiro CLI** | Working | Supported |
-| **Qwen Code** | Working | Supported |
-| **OpenCode** | Working | Not supported |
+Full shell in the browser. On mobile, an on-screen command pad surfaces ESC / Ctrl / arrow keys for one-tap input. Pair with tmux and your sessions stay alive after you close the browser.
 
-## Channel plugins
+### 🔄 Bidirectional session handover
 
-Each channel is a standalone Node.js plugin built with [@vibearound/plugin-channel-sdk](https://www.npmjs.com/package/@vibearound/plugin-channel-sdk).
+Move a live coding session between terminal and IM with `/handover` / `/pickup` — full context preserved. Works with Claude Code, Gemini CLI, Codex CLI, Cursor CLI, Kiro CLI, and Qwen Code.
 
-| Channel | Auth | DM | File/Image | Streaming | Slash Commands | Status |
-|---|---|---|---|---|---|---|
-| **Telegram** | Bot token | Yes | Yes | Yes | `/command` | Working |
-| **Feishu / Lark** | App credentials | Yes | Yes | Yes (cards) | `/command` | Working |
-| **Discord** | Bot token | Yes | Yes | Yes | `/command` | Working |
-| **Slack** | Bot + App token | Yes | Yes | Yes | `/va`, `/vibearound` | Working |
-| **WeChat** | QR code login | Yes | Yes | No | `/command` | Working |
-| **DingTalk** | AppKey + Secret | Yes | Yes | Yes (markdown) | `/command` | Working |
-| **WeCom** (企业微信) | Bot ID + Secret | Yes | Yes | Yes (markdown) | `/command` | Working |
-| **QQ Bot** (QQ频道) | App ID + Token | Yes | Yes | No | `/command` | Working |
+### 🎛️ Switch agents mid-conversation
 
-## Commands
+Run `/switch claude`, `/switch codex`, or `/switch cursor` from any channel to switch agents on the fly — no VibeAround restart needed.
 
-### System commands
+### 👁️ Live preview
 
-| Command | Description |
-|---|---|
-| `/help` | Show available commands |
-| `/new` | Reset session (new conversation) |
-| `/switch <agent>` | Switch agent (claude, gemini, codex, cursor, kiro, qwen-code, opencode) |
-| `/profile <name>` | Switch profile |
-| `/close` | Close conversation |
-| `/pickup <code>` | Resume a coding agent session |
-| `/handover` | Export session to a coding agent CLI |
+Share dev servers and rendered Markdown/HTML through short-lived links that open on your phone or any browser.
 
-### Agent commands
+### 🖥️ One-click setup wizard
 
-| Command | Description |
-|---|---|
-| `/agent <command>` | Send a slash command to the agent (e.g. `/agent status`) |
-
-### Slack-specific
-
-In Slack, the `/` prefix is intercepted by the client. Use `/va` or `/vibearound` instead:
-
-| Slack command | Equivalent |
-|---|---|
-| `/va help` | `/help` |
-| `/va switch claude` | `/switch claude` |
-| `/va agent status` | `/agent status` |
-| `/va new` | `/new` |
-
-## Prerequisites
-
-| Tool | Version | Install |
-|------|---------|---------|
-| **Rust** | 1.82+ | [rustup.rs](https://rustup.rs/) |
-| **Node.js** | 20+ | [nodejs.org](https://nodejs.org/) |
-| **Bun** | 1.1+ | [bun.sh](https://bun.sh/) |
-| **npm** | 10+ | Included with Node.js |
-
-**Platforms:** The codebase supports macOS, Linux, and Windows. Prebuilt binaries are currently bundled for macOS only — I only have a Mac, so Linux and Windows users need to build from source for now. Contributions to add Linux and Windows CI and release bundles are very welcome.
-
-On macOS, Xcode Command Line Tools are required:
-
-```bash
-xcode-select --install
-```
+The wizard installs agent dependencies, fills in each channel's credentials, and picks a tunnel provider for you. You rarely need to touch a config file manually.
 
 ## Quick start
 
@@ -131,84 +63,74 @@ bun run prebuild
 bun run dev
 ```
 
-1. Desktop app opens with onboarding wizard
-2. Choose agents, configure channels, set up tunnel
-3. Web dashboard at `http://127.0.0.1:12358`
-4. Start coding through terminals, chat, or IM channels
+The desktop app opens its setup wizard on first launch: choose agents, configure channels, and set up the tunnel.
 
-## Session handover
+**Prerequisites:** Rust 1.82+, Node.js 20+, Bun 1.1+. On macOS, also run `xcode-select --install`.
 
-Hand off your coding session to any connected IM channel — works with Claude Code, Gemini CLI, Codex CLI, Cursor CLI, Kiro CLI, and Qwen Code:
+If you don't have them yet, follow the official install guides: [Rust](https://rust-lang.org/tools/install/), [Bun](https://bun.com/), [Node.js](https://nodejs.org/en/download/).
 
-```
-you (terminal)  > /handover
-Agent           > Handover ready. Copied to clipboard:
-                  /pickup V5RX
-                  Paste it in any IM chat connected to VibeAround.
-                  The code expires in 2 minutes.
-```
+## Supported agents
 
-Paste the `/pickup` command in Telegram, Feishu, Discord, Slack, or WeChat — continue the conversation with full context. When you're done, `/handover` again to return the session to your terminal.
+All agents communicate over stdio via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/). Agents distributed through npm are installed automatically on first use.
 
-## Architecture
+| Agent | ACP | Session Handover |
+|---|---|---|
+| **Claude Code** | ✅ | ✅ |
+| **Gemini CLI** | ✅ | ✅ |
+| **Codex CLI** | ✅ | ✅ |
+| **Cursor CLI** | ✅ | ✅ |
+| **Kiro CLI** | ✅ | ✅ |
+| **Qwen Code** | ✅ | ✅ |
+| **OpenCode** | ✅ | ❌ |
 
-```
-┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│  Desktop    │  │    Web      │  │  IM Channel │
-│  (Tauri)    │  │  Dashboard  │  │  Plugins    │
-└──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-       │                │                │
-       └────────────────┼────────────────┘
-                        │
-              ┌─────────┴─────────┐
-              │   Rust Runtime    │
-              │  ┌─────────────┐  │
-              │  │  ACP Hub    │  │   ← routes prompts to agents
-              │  │  (per-route │  │
-              │  │   ACPPod)   │  │
-              │  └──────┬──────┘  │
-              │         │         │
-              │  ┌──────┴──────┐  │
-              │  │Agent Factory│  │   ← spawns Claude/Gemini/Codex/Cursor/Kiro/Qwen/OpenCode
-              │  └─────────────┘  │
-              │                   │
-              │  ┌─────────────┐  │
-              │  │ PTY Manager │  │   ← terminal sessions + tmux
-              │  └─────────────┘  │
-              └───────────────────┘
-```
+## Channel plugins
 
-## Configuration
+Each channel runs as a standalone Node.js plugin built with [@vibearound/plugin-channel-sdk](https://www.npmjs.com/package/@vibearound/plugin-channel-sdk).
 
-All config lives in `~/.vibearound/settings.json`:
+| Channel | Auth | DM | File/Image | Streaming | Status |
+|---|---|---|---|---|---|
+| **Telegram** | Bot token | ✅ | ✅ | ✅ | ✅ |
+| **Feishu / Lark** | App credentials | ✅ | ✅ | ✅ | ✅ |
+| **Discord** | Bot token | ✅ | ✅ | ✅ | ✅ |
+| **Slack** | Bot + App token | ✅ | ✅ | ✅ | ✅ |
+| **WeChat** | QR code login | ✅ | ✅ | ❌ | ✅ |
+| **DingTalk** | AppKey + Secret | ✅ | ✅ | ✅ | ✅ |
+| **WeCom** | Bot ID + Secret | ✅ | ✅ | ✅ | ✅ |
+| **QQ Bot** | App ID + Token | ✅ | ✅ | ❌ | ✅ |
 
-```json
-{
-  "default_agent": "claude",
-  "enabled_agents": ["claude", "gemini", "opencode", "codex", "cursor", "kiro", "qwen-code"],
-  "workspaces": ["/path/to/your/project"],
-  "channels": {
-    "telegram": { "bot_token": "..." },
-    "feishu": { "app_id": "...", "app_secret": "..." },
-    "discord": { "bot_token": "..." },
-    "slack": { "bot_token": "xoxb-...", "app_token": "xapp-..." }
-  },
-  "tunnel": {
-    "provider": "cloudflare",
-    "cloudflare": { "tunnel_token": "...", "hostname": "..." }
-  }
-}
-```
+## Under the hood
 
-## Plugin SDK
+- **Built on [ACP (Agent Client Protocol)](https://agentclientprotocol.com/)** — every supported agent speaks the same protocol over stdio, so adding a new agent is cheap and switching between them feels consistent.
+- **Built-in tunnels** — reach the web terminal and live preview from your phone or any browser. Ships with ngrok, localtunnel, and Cloudflare backends.
+- **Plugin architecture** — every IM channel is a standalone Node.js subprocess published to npm and loaded on demand. Build your own with [@vibearound/plugin-channel-sdk](https://www.npmjs.com/package/@vibearound/plugin-channel-sdk) without touching the core.
+- **Native rendering for every channel** — each plugin uses the platform's own SDK (Telegraf, Lark SDK, Slack Bolt, …). Messages render in the richest format each platform supports, not a lowest-common-denominator layer.
+- **Token-gated public URLs** — the web terminal and live preview exposed through tunnels require auth, so the URLs are public but only you can open them.
+- **Multi-agent, multi-channel concurrency** — different agents can run on different channels at the same time (e.g. Claude in Telegram, Codex in Slack). Separate routes and separate sessions keep everything isolated.
+- **Skill + MCP auto-injection** — on startup, VibeAround writes its skills (`SKILL.md`) and MCP endpoint into each enabled agent's global config, so the agent discovers VibeAround automatically.
 
-Build your own channel plugin:
+## Commands
 
-```bash
-npm install @vibearound/plugin-channel-sdk
-```
+Two kinds of slash commands:
 
-See the [SDK README](https://github.com/jazzenchen/vibearound-plugin-channel-sdk) for the full guide.
+- **System commands** manage the VibeAround session itself (reset, switch agents, hand sessions between channels, …) — the UX layer we add on top.
+- **Agent relay** — `/agent <command>` forwards any slash command straight to the underlying agent, so agent-native features (e.g. Claude Code's `/status`) still work inside your IM chat.
+
+| Command | What it does |
+|---|---|
+| `/help` | Show available commands |
+| `/new` | Reset the session and start a fresh conversation |
+| `/switch <agent>` | Switch agents mid-conversation (`claude`, `gemini`, `codex`, `cursor`, `kiro`, `qwen-code`, `opencode`) |
+| `/profile <name>` | Switch profile |
+| `/close` | Close the conversation |
+| `/handover` | Export the current session so you can resume it elsewhere |
+| `/pickup <code>` | Resume a session handed over from another channel |
+| `/agent <command>` | Send a slash command to the agent, for example `/agent status` |
+
+In Slack, the `/` prefix is reserved by the client, so use `/va` or `/vibearound` instead, for example `/va switch claude`.
+
+## Platforms
+
+The codebase runs on macOS, Linux, and Windows. Prebuilt binaries are currently bundled only for macOS. Linux and Windows users can still build from source, and contributions for cross-platform CI are very welcome.
 
 ## Documentation
 
@@ -219,31 +141,13 @@ See the [SDK README](https://github.com/jazzenchen/vibearound-plugin-channel-sdk
 - [Configuration](https://github.com/jazzenchen/VibeAround/wiki/Configuration-Model)
 - [FAQ & Troubleshooting](https://github.com/jazzenchen/VibeAround/wiki/FAQ-and-Troubleshooting)
 
-## Roadmap
+## What's next
 
-### More IM channels
-
-| Channel | Status |
-|---|---|
-| WhatsApp | Planned |
-| LINE | Planned |
-| Microsoft Teams | Planned |
-
-### Live preview (next)
-
-- Preview files, screenshots, and artifacts directly inside the IM chat (currently available via tunnel URL)
-- IM-native inline previews (image cards, embedded iframes where supported)
-
-### More IM native features
-
-- Deeper per-channel integrations using each IM's native capabilities — reactions, threads, interactive buttons, forms, voice messages
-- Expanding file, image, and rich media support across channels that don't yet support them
-
-### Workspace management
-
-- Multi-project workspace switching and persistence
-- Per-workspace agent and channel configuration
-- Workspace-level session history and context
+- **One-click CLI launcher** — save your API keys in the desktop app and launch Claude Code or Codex pre-wired to your provider of choice (Zhipu, Minimax, Qwen, DeepSeek, …)
+- **More IM channels** — WhatsApp, LINE, Microsoft Teams
+- **Containerized + sandboxed agents** — run each agent in an isolated container / sandbox so file system and network access stay within safe boundaries
+- **Enhanced web chat** — upgrade the built-in web chat with richer rendering, file upload, and history controls
+- **Workspace isolation** — separate agent settings, channel settings, and session history per workspace
 
 ## License
 
