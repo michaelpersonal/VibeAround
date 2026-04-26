@@ -8,8 +8,26 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
-import { Eye, EyeOff, Globe, X } from "lucide-react";
+import { Eye, EyeOff, Globe, Search } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   ApiTypeOverrides,
   AuthMode,
@@ -116,6 +134,10 @@ function generateProfileId(providerId: string): string {
   const random = Math.random().toString(36).slice(2, 10).padEnd(8, "0");
   return `${providerId}-${random}`;
 }
+
+const INPUT_CLASS = "h-8 text-[13px]";
+const MONO_INPUT_CLASS = "h-8 text-[13px] font-mono";
+const SECRET_INPUT_CLASS = "h-8 pr-8 text-[13px] font-mono";
 
 export function ProfileFormDialog({
   catalog,
@@ -257,29 +279,25 @@ export function ProfileFormDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <div className="bg-background border border-border rounded-lg shadow-xl w-[560px] max-h-[85vh] flex flex-col overflow-hidden">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-          <h3 className="text-sm font-semibold">
+      <DialogContent>
+        <DialogHeader className="border-b border-border pr-10">
+          <DialogTitle>
             {editing
               ? `Edit profile · ${initial!.label}`
               : step === "pick-provider"
               ? "Pick a provider"
               : `New profile · ${provider?.label}`}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded hover:bg-accent text-muted-foreground"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </header>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure a Quick Launch provider profile.
+          </DialogDescription>
+        </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4">
           {step === "pick-provider" ? (
@@ -315,36 +333,28 @@ export function ProfileFormDialog({
           </div>
         )}
 
-        <footer className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border shrink-0">
+        <DialogFooter className="border-t border-border">
           {step === "fill-form" && !editing && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setStep("pick-provider")}
-              className="px-3 py-1.5 text-xs rounded hover:bg-accent"
             >
               Back
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs rounded hover:bg-accent"
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
             Cancel
-          </button>
+          </Button>
           {step === "fill-form" && (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
+            <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : editing ? "Save changes" : "Create profile"}
-            </button>
+            </Button>
           )}
-        </footer>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -359,6 +369,15 @@ function ProviderGrid({
   catalog: CatalogEntry[];
   onPick: (c: CatalogEntry) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredCatalog = useMemo(() => {
+    if (!normalizedQuery) return catalog;
+    return catalog.filter((provider) =>
+      providerSearchText(provider).includes(normalizedQuery),
+    );
+  }, [catalog, normalizedQuery]);
+
   if (catalog.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -367,66 +386,97 @@ function ProviderGrid({
       </p>
     );
   }
-  // Show catalog providers first, then a synthetic "Custom..." tile that
-  // routes to the same form path with `provider: "custom"`. Keeping it
-  // inside the grid (rather than as a separate row on the main Launch
-  // page) means users see "all the ways to add a provider" in one place
-  // when they hit `+ New profile`.
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {catalog.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          onClick={() => onPick(c)}
-          className="flex flex-col items-start gap-1 p-3 border border-border rounded-md hover:border-primary hover:bg-accent/30 transition-colors text-left"
-        >
-          <div className="flex items-center gap-2">
-            {c.icon && <span className="text-base">{c.icon}</span>}
-            <span className="text-sm font-medium">{c.label}</span>
+    <div className="space-y-3">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search providers"
+          className="h-8 pl-8 text-[13px]"
+          autoFocus
+        />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-semibold">Preset providers</div>
+          <Badge variant="muted" className="tabular-nums">
+            {filteredCatalog.length}
+          </Badge>
+        </div>
+        {filteredCatalog.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+            No matching providers
           </div>
-          <div className="flex flex-wrap gap-1 mt-1">
-            {c.endpoints.filter((e) => isProviderApiKind(e.api_type)).map((e) => (
-              <span
-                key={e.api_type}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
-              >
-                {apiTypeShort(e.api_type)}
-              </span>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {filteredCatalog.map((provider) => (
+              <ProviderTile
+                key={provider.id}
+                provider={provider}
+                onPick={() => onPick(provider)}
+              />
             ))}
           </div>
-          {c.homepage && (
-            <span className="text-[10px] text-muted-foreground/60 truncate w-full">
-              {hostnameOf(c.homepage)}
-            </span>
-          )}
-        </button>
-      ))}
-      <button
-        type="button"
-        onClick={() => onPick(CUSTOM_PROVIDER)}
-        className="flex flex-col items-start gap-1 p-3 border border-dashed border-border rounded-md hover:border-primary hover:bg-accent/30 transition-colors text-left"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-base">{CUSTOM_PROVIDER.icon}</span>
-          <span className="text-sm font-medium">Custom endpoint</span>
-        </div>
-        <div className="flex flex-wrap gap-1 mt-1">
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            anthropic
-          </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            responses
-          </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            openai-chat
-          </span>
-        </div>
-        <span className="text-[10px] text-muted-foreground/60 truncate w-full">
-          Bring your own URL + key
-        </span>
-      </button>
+        )}
+      </div>
+
+      <div className="space-y-2 border-t border-border/60 pt-3">
+        <div className="text-xs font-semibold">Custom</div>
+        <ProviderTile
+          provider={CUSTOM_PROVIDER}
+          onPick={() => onPick(CUSTOM_PROVIDER)}
+          dashed
+          description="Bring your own URL + key"
+        />
+      </div>
     </div>
+  );
+}
+
+function ProviderTile({
+  provider,
+  onPick,
+  dashed,
+  description,
+}: {
+  provider: CatalogEntry;
+  onPick: () => void;
+  dashed?: boolean;
+  description?: string;
+}) {
+  const endpoints = provider.endpoints.filter((e) =>
+    isProviderApiKind(e.api_type),
+  );
+  const subtitle = description ?? (provider.homepage ? hostnameOf(provider.homepage) : null);
+
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className={`flex flex-col items-start gap-1 p-2.5 border rounded-md hover:border-primary hover:bg-accent/30 transition-colors text-left ${
+        dashed ? "border-dashed border-border" : "border-border"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        {provider.icon && <span className="text-base">{provider.icon}</span>}
+        <span className="text-[13px] font-medium">{provider.label}</span>
+      </div>
+      <div className="flex flex-wrap gap-1 mt-1">
+        {endpoints.map((e) => (
+          <Badge key={e.api_type} variant="muted" className="text-[10px]">
+            {apiTypeShort(e.api_type)}
+          </Badge>
+        ))}
+      </div>
+      {subtitle && (
+        <span className="text-[10px] text-muted-foreground/60 truncate w-full">
+          {subtitle}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -471,29 +521,212 @@ function FormBody(props: FormBodyProps) {
   const apiKindsEditable = provider.id === "custom";
 
   return (
-    <div className="space-y-4">
-      <FieldRow
-        label="Label"
-        hint="Shown on the launcher card. Pick something that helps you tell multiple keys apart (e.g. work vs personal)."
-      >
-        <input
-          type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder={`${provider.label} (work)`}
-          className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-        />
-      </FieldRow>
+    <div className="space-y-3">
+      <FormSection title="Profile">
+        <FieldRow label="Label" hint="Visible name for this profile.">
+          <Input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={`${provider.label} (work)`}
+            className={INPUT_CLASS}
+          />
+        </FieldRow>
 
-      <div>
-        <div className="text-xs font-medium mb-1.5">API kinds</div>
-        <div className="flex flex-wrap gap-2">
-          {apiKindEndpoints.map((ep) => {
-            const checked = selectedApiTypes.includes(ep.api_type);
-            return apiKindsEditable ? (
+        <ApiKindsField
+          endpoints={apiKindEndpoints}
+          editable={apiKindsEditable}
+          selectedApiTypes={selectedApiTypes}
+          setSelectedApiTypes={setSelectedApiTypes}
+        />
+      </FormSection>
+
+      {fieldDefs.length > 0 && (
+        <FormSection title="Credentials">
+          {fieldDefs.map((f) => (
+            <CredentialField
+              key={f.name}
+              field={f}
+              value={credentials[f.name] ?? ""}
+              reveal={revealKeys[f.name] ?? false}
+              onChange={(v) => setCredentials({ ...credentials, [f.name]: v })}
+              onToggleReveal={() =>
+                setRevealKeys({ ...revealKeys, [f.name]: !revealKeys[f.name] })
+              }
+            />
+          ))}
+        </FormSection>
+      )}
+
+      {selectedApiTypes.length > 0 && (
+        <FormSection title="Model settings">
+          <div className="space-y-2">
+            {selectedApiTypes.map((apiType) => {
+              const ep = provider.endpoints.find((e) => e.api_type === apiType);
+              if (!ep) return null;
+              const ov = overrides[apiType] ?? {};
+              return (
+                <div key={apiType} className="border border-border/60 rounded-md p-2.5 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-mono px-1.5 py-0.5 rounded bg-muted">
+                      {apiTypeShort(apiType)}
+                    </span>
+                    <span className="text-muted-foreground">{apiType}</span>
+                  </div>
+                  {shouldShowBaseUrl(provider, ep, ov) && (
+                    <FieldRow
+                      label={provider.id === "azure" ? "Endpoint" : "Base URL"}
+                      required={ep.default_base_url === ""}
+                      hint={
+                        ep.default_base_url
+                          ? "Leave blank to use the catalog default."
+                          : provider.id === "custom"
+                          ? "Required for custom endpoints."
+                          : "Endpoint URL from the provider dashboard."
+                      }
+                    >
+                      <Input
+                        type="text"
+                        value={ov.base_url ?? ""}
+                        onChange={(e) =>
+                          setOverrides({
+                            ...overrides,
+                            [apiType]: { ...ov, base_url: e.target.value },
+                          })
+                        }
+                        placeholder={
+                          ep.default_base_url ||
+                          (provider.id === "azure"
+                            ? "https://your-resource.openai.azure.com/openai/v1"
+                            : "https://your-endpoint.example.com/v1")
+                        }
+                        className={MONO_INPUT_CLASS}
+                      />
+                    </FieldRow>
+                  )}
+                  <FieldRow
+                    label={provider.id === "azure" ? "Deployment name" : "Model"}
+                    hint={apiKindHint(provider, apiType)}
+                  >
+                    {ep.models.length > 0 ? (
+                      <Select
+                        value={ov.model ?? ""}
+                        onValueChange={(value) =>
+                          setOverrides({
+                            ...overrides,
+                            [apiType]: { ...ov, model: value },
+                          })
+                        }
+                      >
+                        <SelectTrigger size="sm" className="h-8 w-full text-[13px]">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ep.models.map((m) => (
+                            <SelectItem key={m.id} value={m.id} className="text-xs">
+                              {m.label ?? m.id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        type="text"
+                        value={ov.model ?? ""}
+                        onChange={(e) =>
+                          setOverrides({
+                            ...overrides,
+                            [apiType]: { ...ov, model: e.target.value },
+                          })
+                        }
+                        placeholder="model id (e.g. gpt-4o, claude-sonnet-4-6)"
+                        className={MONO_INPUT_CLASS}
+                      />
+                    )}
+                  </FieldRow>
+                  {ep.capabilities?.reasoning_effort && (
+                    <FieldRow label="Reasoning effort">
+                      <Select
+                        value={ov.reasoning_effort ?? "medium"}
+                        onValueChange={(value) =>
+                          setOverrides({
+                            ...overrides,
+                            [apiType]: { ...ov, reasoning_effort: value },
+                          })
+                        }
+                      >
+                        <SelectTrigger size="sm" className="h-8 w-full text-[13px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low" className="text-xs">low</SelectItem>
+                          <SelectItem value="medium" className="text-xs">medium</SelectItem>
+                          <SelectItem value="high" className="text-xs">high</SelectItem>
+                          <SelectItem value="xhigh" className="text-xs">xhigh</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FieldRow>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </FormSection>
+      )}
+
+      {provider.homepage && (
+        <a
+          href={provider.homepage}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[11px] text-primary hover:underline flex items-center gap-1"
+        >
+          <Globe className="w-3 h-3" /> {provider.homepage}
+        </a>
+      )}
+    </div>
+  );
+}
+
+function FormSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3 border-t border-border/60 pt-3 first:border-t-0 first:pt-0">
+      <div className="text-xs font-semibold">{title}</div>
+      {children}
+    </section>
+  );
+}
+
+function ApiKindsField({
+  endpoints,
+  editable,
+  selectedApiTypes,
+  setSelectedApiTypes,
+}: {
+  endpoints: CatalogEntry["endpoints"];
+  editable: boolean;
+  selectedApiTypes: string[];
+  setSelectedApiTypes: (v: string[]) => void;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] font-medium text-muted-foreground mb-1">
+        API kinds
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {endpoints.map((ep) => {
+          const checked = selectedApiTypes.includes(ep.api_type);
+          if (editable) {
+            return (
               <label
                 key={ep.api_type}
-                className={`flex items-center gap-2 px-3 py-1.5 border rounded cursor-pointer text-xs ${
+                className={`h-8 flex items-center gap-2 px-2.5 border rounded-md cursor-pointer text-xs ${
                   checked ? "border-primary bg-primary/10" : "border-border hover:bg-accent/30"
                 }`}
               >
@@ -509,163 +742,32 @@ function FormBody(props: FormBodyProps) {
                       );
                     }
                   }}
+                  className="h-3.5 w-3.5 accent-primary"
                 />
                 <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
-                <span className="text-muted-foreground/70">· {apiTypeLabel(ep.api_type)}</span>
+                <span className="text-muted-foreground/70">
+                  · {apiTypeLabel(ep.api_type)}
+                </span>
               </label>
-            ) : (
-              <div
-                key={ep.api_type}
-                className="flex items-center gap-2 px-3 py-1.5 border border-primary bg-primary/10 rounded text-xs"
-              >
-                <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
-                <span className="text-muted-foreground/70">· {apiTypeLabel(ep.api_type)}</span>
-              </div>
             );
-          })}
-        </div>
-        <p className="text-[11px] text-muted-foreground/70 mt-1">
-          {apiKindsEditable
-            ? "Multi-select for custom keys that work with more than one API shape."
-            : "Preset providers include their supported API kinds automatically."}
-        </p>
+          }
+          return (
+            <div
+              key={ep.api_type}
+              className="h-8 flex items-center gap-2 px-2.5 border border-primary bg-primary/10 rounded-md text-xs"
+            >
+              <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
+              <span className="text-muted-foreground/70">
+                · {apiTypeLabel(ep.api_type)}
+              </span>
+            </div>
+          );
+        })}
       </div>
-
-      {fieldDefs.length > 0 && (
-        <div className="space-y-2 pt-2 border-t border-border/50">
-          <div className="text-xs font-medium">Credentials</div>
-          {fieldDefs.map((f) => (
-            <CredentialField
-              key={f.name}
-              field={f}
-              value={credentials[f.name] ?? ""}
-              reveal={revealKeys[f.name] ?? false}
-              onChange={(v) => setCredentials({ ...credentials, [f.name]: v })}
-              onToggleReveal={() =>
-                setRevealKeys({ ...revealKeys, [f.name]: !revealKeys[f.name] })
-              }
-            />
-          ))}
-        </div>
-      )}
-
-      {selectedApiTypes.length > 0 && (
-        <div className="space-y-3 pt-2 border-t border-border/50">
-          <div className="text-xs font-medium">Per-API settings</div>
-          {selectedApiTypes.map((apiType) => {
-            const ep = provider.endpoints.find((e) => e.api_type === apiType);
-            if (!ep) return null;
-            const ov = overrides[apiType] ?? {};
-            return (
-              <div key={apiType} className="border border-border/60 rounded p-3 space-y-2">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="font-mono px-1.5 py-0.5 rounded bg-muted">
-                    {apiTypeShort(apiType)}
-                  </span>
-                  <span className="text-muted-foreground">{apiType}</span>
-                </div>
-                {shouldShowBaseUrl(provider, ep, ov) && (
-                  <FieldRow
-                    label={provider.id === "azure" ? "Endpoint" : "Base URL"}
-                    required={ep.default_base_url === ""}
-                    hint={
-                      ep.default_base_url
-                        ? "Leave at default unless your provider has a region-specific endpoint"
-                        : provider.id === "custom"
-                        ? "no default — fill in the endpoint your custom provider serves"
-                        : "Fill in the endpoint URL from your provider dashboard."
-                    }
-                  >
-                    <input
-                      type="text"
-                      value={ov.base_url ?? ""}
-                      onChange={(e) =>
-                        setOverrides({
-                          ...overrides,
-                          [apiType]: { ...ov, base_url: e.target.value },
-                        })
-                      }
-                      placeholder={
-                        ep.default_base_url ||
-                        (provider.id === "azure"
-                          ? "https://your-resource.openai.azure.com/openai/v1"
-                          : "https://your-endpoint.example.com/v1")
-                      }
-                      className="w-full px-2 py-1 text-sm border border-border rounded bg-background font-mono"
-                    />
-                  </FieldRow>
-                )}
-                <FieldRow
-                  label={provider.id === "azure" ? "Deployment name" : "Model"}
-                  hint={apiKindHint(provider, apiType)}
-                >
-                  {ep.models.length > 0 ? (
-                    <select
-                      value={ov.model ?? ""}
-                      onChange={(e) =>
-                        setOverrides({
-                          ...overrides,
-                          [apiType]: { ...ov, model: e.target.value },
-                        })
-                      }
-                      className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                    >
-                      <option value="">(none)</option>
-                      {ep.models.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label ?? m.id}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={ov.model ?? ""}
-                      onChange={(e) =>
-                        setOverrides({
-                          ...overrides,
-                          [apiType]: { ...ov, model: e.target.value },
-                        })
-                      }
-                      placeholder="model id (e.g. gpt-4o, claude-sonnet-4-6)"
-                      className="w-full px-2 py-1 text-sm border border-border rounded bg-background font-mono"
-                    />
-                  )}
-                </FieldRow>
-                {ep.capabilities?.reasoning_effort && (
-                  <FieldRow label="Reasoning effort">
-                    <select
-                      value={ov.reasoning_effort ?? "medium"}
-                      onChange={(e) =>
-                        setOverrides({
-                          ...overrides,
-                          [apiType]: { ...ov, reasoning_effort: e.target.value },
-                        })
-                      }
-                      className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                    >
-                      <option value="low">low</option>
-                      <option value="medium">medium</option>
-                      <option value="high">high</option>
-                      <option value="xhigh">xhigh</option>
-                    </select>
-                  </FieldRow>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {provider.homepage && (
-        <a
-          href={provider.homepage}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[11px] text-primary hover:underline flex items-center gap-1"
-        >
-          <Globe className="w-3 h-3" /> {provider.homepage}
-        </a>
+      {editable && (
+        <p className="text-[10px] text-muted-foreground/60 mt-1">
+          Select every API shape this endpoint supports.
+        </p>
       )}
     </div>
   );
@@ -687,12 +789,12 @@ function CredentialField({
   return (
     <FieldRow label={field.label} required={field.required}>
       <div className="relative">
-        <input
+        <Input
           type={field.secret && !reveal ? "password" : "text"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder ?? undefined}
-          className="w-full px-2 py-1 pr-7 text-sm border border-border rounded bg-background font-mono"
+          className={SECRET_INPUT_CLASS}
         />
         {field.secret && (
           <button
@@ -768,6 +870,22 @@ function hostnameOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+function providerSearchText(provider: CatalogEntry): string {
+  const parts = [
+    provider.id,
+    provider.label,
+    provider.homepage ?? "",
+    ...provider.endpoints
+      .filter((endpoint) => isProviderApiKind(endpoint.api_type))
+      .flatMap((endpoint) => [
+        endpoint.api_type,
+        apiTypeShort(endpoint.api_type),
+        apiTypeLabel(endpoint.api_type),
+      ]),
+  ];
+  return parts.join(" ").toLowerCase();
 }
 
 function stripEmpty(map: Record<string, string>): Record<string, string> {

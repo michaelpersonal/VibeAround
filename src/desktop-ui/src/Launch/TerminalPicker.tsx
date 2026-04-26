@@ -7,8 +7,19 @@
  * apps later, and surfaces what VibeAround supports without hiding it.
  */
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Terminal as TerminalIcon } from "lucide-react";
+import { ChevronDown, Terminal as TerminalIcon } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   getLauncherPreferences,
   setLauncherTerminal,
@@ -54,65 +65,54 @@ export function TerminalPicker() {
   }
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        disabled={pending}
-        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground border border-border disabled:opacity-50"
-        title="Choose which terminal app to open on Launch"
-      >
-        <TerminalIcon className="w-3 h-3" />
-        <span className="font-medium">{current?.label ?? "Terminal"}</span>
-        <ChevronDown className="w-3 h-3 opacity-60" />
-      </button>
-
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="absolute right-0 top-full mt-1 z-20 w-52 bg-popover border border-border rounded shadow-md text-xs py-1">
-            <div className="px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground/60">
-              Open launches in
-            </div>
-            {prefs.options.map((o) => {
-              const isSelected = o.id === prefs.terminal;
-              const disabled = !o.installed;
-              return (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => !disabled && pick(o.id)}
-                  disabled={disabled}
-                  className={`flex items-center gap-2 w-full px-2.5 py-1.5 text-left ${
-                    disabled
-                      ? "opacity-40 cursor-not-allowed"
-                      : "hover:bg-accent cursor-pointer"
-                  }`}
-                >
-                  <span className="w-3 h-3 shrink-0">
-                    {isSelected && <Check className="w-3 h-3" />}
-                  </span>
-                  <span className="flex-1">{o.label}</span>
-                  {disabled && (
-                    <span className="text-[10px] text-muted-foreground/60">
-                      not installed
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            {error && (
-              <div className="px-2.5 py-1 text-[10px] text-destructive border-t border-border/50">
-                {error}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </div>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          title="Choose which terminal app to open on Launch"
+          className="h-8 px-2.5 text-xs"
+        >
+          <TerminalIcon className="w-3 h-3" />
+          <span>{current?.label ?? "Terminal"}</span>
+          <ChevronDown className="w-3 h-3 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel className="text-[10px] font-medium uppercase text-muted-foreground/60">
+          Open launches in
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={prefs.terminal}
+          onValueChange={(id) => {
+            void pick(id);
+          }}
+        >
+          {prefs.options.map((o) => (
+            <DropdownMenuRadioItem
+              key={o.id}
+              value={o.id}
+              disabled={!o.installed || pending}
+              className="text-xs"
+            >
+              <span>{o.label}</span>
+              {!o.installed && (
+                <DropdownMenuShortcut className="normal-case tracking-normal">
+                  not installed
+                </DropdownMenuShortcut>
+              )}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        {error && (
+          <>
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1 text-[10px] text-destructive">{error}</div>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

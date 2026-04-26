@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Rocket } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import {
   deleteProfile,
   getProfile,
@@ -112,38 +113,39 @@ export function Launch() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <header className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <Rocket className="w-4 h-4 text-primary" />
-          <span className="text-sm font-semibold">Launch</span>
+          <span className="text-[13px] font-semibold">Launch</span>
           <span className="text-[11px] text-muted-foreground/70">
             One-click coding agent in your Terminal
           </span>
         </div>
         <div className="flex items-center gap-2">
           <TerminalPicker />
-          <button
+          <Button
             type="button"
             onClick={openNewEditor}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-primary-foreground text-xs hover:bg-primary/90"
+            size="sm"
+            className="h-8 text-xs"
           >
             <Plus className="w-3 h-3" /> New profile
-          </button>
+          </Button>
         </div>
       </header>
 
       {error && (
-        <div className="px-4 py-1.5 bg-destructive/10 text-destructive text-xs">
+        <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">
           {error}
         </div>
       )}
       {toast && (
-        <div className="px-4 py-1.5 bg-emerald-500/10 text-emerald-600 text-xs">
+        <div className="px-3 py-1 bg-emerald-500/10 text-emerald-600 text-xs">
           {toast}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {loading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
         ) : (
@@ -184,25 +186,25 @@ export function Launch() {
 
 function EmptyState({ onNew }: { onNew: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center text-center py-12 px-4 gap-3">
-      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-        <Rocket className="w-5 h-5 text-primary" />
+    <div className="flex flex-col items-center justify-center text-center py-8 px-3 gap-2.5">
+      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+        <Rocket className="w-4 h-4 text-primary" />
       </div>
       <div>
-        <h2 className="text-sm font-semibold">No profiles yet</h2>
+        <h2 className="text-[13px] font-semibold">No profiles yet</h2>
         <p className="text-xs text-muted-foreground mt-1 max-w-xs">
           Add your provider's API key once. From then on it's one click to
           launch claude or codex with that key already wired up — VibeAround
           opens a fresh Terminal window and stays out of the way.
         </p>
       </div>
-      <button
+      <Button
         type="button"
         onClick={onNew}
-        className="flex items-center gap-1 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs hover:bg-primary/90"
+        size="sm"
       >
         <Plus className="w-3 h-3" /> Add your first profile
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Play, Sparkles } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { listAgents, type AgentSummary } from "./api";
 
 interface Props {
@@ -28,13 +29,13 @@ export function DirectCards({ onLaunch, busy }: Props) {
   }, []);
 
   return (
-    <div className="border border-border rounded-md p-3 flex flex-col gap-2">
+    <div className="border border-border rounded-md p-2.5 flex flex-col gap-1.5">
       <div className="flex items-start gap-2">
         <span className="w-7 h-7 rounded bg-primary/10 text-primary flex items-center justify-center shrink-0">
           <Sparkles className="w-3.5 h-3.5" />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium">Direct launch</div>
+          <div className="text-[13px] font-medium">Direct launch</div>
           <div className="text-[11px] text-muted-foreground truncate">
             No profile — uses each CLI's existing login session
           </div>
@@ -46,17 +47,19 @@ export function DirectCards({ onLaunch, busy }: Props) {
       ) : (
         <div className="flex flex-wrap gap-1.5 mt-1">
           {(agents ?? []).map((a) => (
-            <button
+            <Button
               key={a.id}
               type="button"
+              variant="secondary"
+              size="xs"
               onClick={() => onLaunch(a.id)}
               disabled={busy}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
+              className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
               title={`${a.display_name} — ${a.description}`}
             >
               <Play className="w-3 h-3" />
               {a.id}
-            </button>
+            </Button>
           ))}
         </div>
       )}

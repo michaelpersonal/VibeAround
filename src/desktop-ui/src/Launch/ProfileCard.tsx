@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { AlertTriangle, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { ProfileSummary } from "./types";
 import { apiTypeBadge, apiTypeShort } from "./types";
 
@@ -12,7 +20,6 @@ interface Props {
 }
 
 export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function handleLaunch(launchTarget: string) {
@@ -25,7 +32,6 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
   }
 
   async function handleDelete() {
-    setMenuOpen(false);
     if (!window.confirm(`Delete profile "${profile.label}"?`)) return;
     setBusy(true);
     try {
@@ -36,71 +42,58 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
   }
 
   return (
-    <div className="border border-border rounded-md p-3 flex flex-col gap-2 hover:border-primary/40 transition-colors">
+    <div className="border border-border rounded-md p-2.5 flex flex-col gap-1.5 hover:border-primary/40 transition-colors">
       <div className="flex items-start gap-2">
         {profile.providerIcon && (
           <span className="text-base shrink-0">{profile.providerIcon}</span>
         )}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{profile.label}</div>
+          <div className="text-[13px] font-medium truncate">{profile.label}</div>
           <div className="text-[11px] text-muted-foreground truncate">
             {profile.providerLabel}
           </div>
         </div>
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="p-1 rounded hover:bg-accent text-muted-foreground"
-            aria-label="More"
-          >
-            <MoreVertical className="w-3.5 h-3.5" />
-          </button>
-          {menuOpen && (
-            <>
-              {/* Click-away catcher */}
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setMenuOpen(false)}
-                aria-hidden="true"
-              />
-              <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded shadow-md text-xs py-1 w-32">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onEdit();
-                  }}
-                  className="flex items-center gap-2 w-full px-2.5 py-1.5 hover:bg-accent text-left"
-                >
-                  <Pencil className="w-3 h-3" /> Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className="flex items-center gap-2 w-full px-2.5 py-1.5 hover:bg-accent text-destructive text-left"
-                >
-                  <Trash2 className="w-3 h-3" /> Delete
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="shrink-0 text-muted-foreground"
+              aria-label="More"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-32">
+            <DropdownMenuItem className="text-xs" onSelect={onEdit}>
+              <Pencil className="w-3 h-3" /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-xs"
+              variant="destructive"
+              onSelect={() => {
+                void handleDelete();
+              }}
+            >
+              <Trash2 className="w-3 h-3" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="flex flex-wrap gap-1.5 mt-1">
         {profile.launchTargets.map((target) => {
           const warning = target.warning ?? profile.apiTypeWarnings[target.apiType];
           return (
-            <button
+            <Button
               key={target.id}
               type="button"
+              variant="secondary"
+              size="xs"
               onClick={() => handleLaunch(target.id)}
               disabled={busy}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
-              // `title` is the only tooltip surface available without
-              // pulling in a popover lib; warning text wraps natively in
-              // the system OS tooltip.
+              className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
               title={
                 warning
                   ? `⚠ ${warning}\n\n(Click to launch ${target.label} via ${apiTypeShort(target.apiType)} anyway.)`
@@ -109,9 +102,11 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
             >
               <Play className="w-3 h-3" />
               <span>{target.label}</span>
-              <span className="text-primary/55">· {apiTypeBadge(target.apiType)}</span>
+              <Badge className="border-0 bg-transparent p-0 text-[11px] text-primary/55">
+                · {apiTypeBadge(target.apiType)}
+              </Badge>
               {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-            </button>
+            </Button>
           );
         })}
       </div>
