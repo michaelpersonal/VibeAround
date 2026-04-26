@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Rocket } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import {
   deleteProfile,
   getProfile,
@@ -122,13 +123,13 @@ export function Launch() {
         </div>
         <div className="flex items-center gap-2">
           <TerminalPicker />
-          <button
+          <Button
             type="button"
             onClick={openNewEditor}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-primary-foreground text-xs hover:bg-primary/90"
+            size="xs"
           >
             <Plus className="w-3 h-3" /> New profile
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -196,13 +197,13 @@ function EmptyState({ onNew }: { onNew: () => void }) {
           opens a fresh Terminal window and stays out of the way.
         </p>
       </div>
-      <button
+      <Button
         type="button"
         onClick={onNew}
-        className="flex items-center gap-1 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs hover:bg-primary/90"
+        size="sm"
       >
         <Plus className="w-3 h-3" /> Add your first profile
-      </button>
+      </Button>
     </div>
   );
 }

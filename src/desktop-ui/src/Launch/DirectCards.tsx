@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Play, Sparkles } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { listAgents, type AgentSummary } from "./api";
 
 interface Props {
@@ -46,17 +47,19 @@ export function DirectCards({ onLaunch, busy }: Props) {
       ) : (
         <div className="flex flex-wrap gap-1.5 mt-1">
           {(agents ?? []).map((a) => (
-            <button
+            <Button
               key={a.id}
               type="button"
+              variant="secondary"
+              size="xs"
               onClick={() => onLaunch(a.id)}
               disabled={busy}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
+              className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
               title={`${a.display_name} — ${a.description}`}
             >
               <Play className="w-3 h-3" />
               {a.id}
-            </button>
+            </Button>
           ))}
         </div>
       )}

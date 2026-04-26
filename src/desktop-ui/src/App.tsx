@@ -7,6 +7,8 @@ import { useChannelsState, type ChannelRuntime } from "./hooks/useChannelsState"
 import { useTunnelsState, type TunnelRuntime } from "./hooks/useTunnelsState";
 import { useAgentsRuntime, type AgentRuntime } from "./hooks/useAgentsRuntime";
 import { openDashboardUrl, DAEMON_PORT } from "./lib/api";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Workspaces } from "./Workspaces";
@@ -273,12 +275,18 @@ function Dashboard() {
   return (
     <div className="h-full flex flex-col">
       <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
-          <TabButton active={page === "launch"} onClick={() => setPage("launch")} icon={<Rocket className="w-3 h-3" />} label="Launch" />
-          <TabButton active={page === "status"} onClick={() => setPage("status")} icon={<Activity className="w-3 h-3" />} label="Status" />
-          <TabButton active={page === "previews"} onClick={() => setPage("previews")} icon={<Eye className="w-3 h-3" />} label="Previews" />
-          <TabButton active={page === "workspaces"} onClick={() => setPage("workspaces")} icon={<FolderOpen className="w-3 h-3" />} label="Workspaces" />
-        </div>
+        <Tabs
+          value={page}
+          onValueChange={(value) => setPage(value as DashboardPage)}
+          className="contents"
+        >
+          <TabsList>
+            <TabsTrigger value="launch"><Rocket /> Launch</TabsTrigger>
+            <TabsTrigger value="status"><Activity /> Status</TabsTrigger>
+            <TabsTrigger value="previews"><Eye /> Previews</TabsTrigger>
+            <TabsTrigger value="workspaces"><FolderOpen /> Workspaces</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <div className="flex items-center gap-3">
           {anyConnected ? (
             <span className="flex items-center gap-1 text-xs text-emerald-600">
@@ -289,21 +297,23 @@ function Dashboard() {
               <WifiOff className="w-3 h-3" /> Polling
             </span>
           )}
-          <button
+          <Button
             onClick={refreshAll}
-            className="p-1 rounded hover:bg-accent transition-colors"
+            variant="ghost"
+            size="icon-xs"
             title="Refresh"
           >
             <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => window.location.replace("/onboarding")}
-            className="p-1 rounded hover:bg-accent transition-colors"
+            variant="ghost"
+            size="icon-xs"
             title="Open Config Wizard"
             aria-label="Open Config Wizard"
           >
             <Settings className="w-3.5 h-3.5 text-muted-foreground" />
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -390,25 +400,6 @@ function Dashboard() {
         </div>
       )}
     </div>
-  );
-}
-
-function TabButton({ active, onClick, icon, label }: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
-        active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 
