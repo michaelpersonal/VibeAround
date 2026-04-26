@@ -160,16 +160,13 @@ pub fn get(id: &str) -> Option<&'static ProviderCatalog> {
 // user fills everything in.
 // ---------------------------------------------------------------------------
 
-/// Same caveat we paint on every openai-chat catalog endpoint — codex
-/// dropped chat-completions in late 2025/early 2026 and now only speaks
-/// the OpenAI Responses API. Most third-party providers (DeepSeek
-/// non-Responses, Moonshot, Z.AI, OpenRouter) only serve `/v1/chat/
-/// completions`, so the codex launch will fail at request time even
-/// though the config files parse fine.
-const CODEX_CHAT_REMOVED_WARNING: &str =
-    "Recent codex versions require the OpenAI Responses API. If your provider only serves \
-     /v1/chat/completions, the launch will start but the first prompt will fail. Use the \
-     claude (Anthropic) button instead for providers that offer both endpoints.";
+// `compatibility_warning` field stays in EndpointDef for future
+// per-provider caveats, but no v1 catalog entry fills it. Earlier we
+// painted a blanket "codex requires Responses" warning on every
+// openai-chat endpoint; user testing showed at least some third-party
+// providers do serve /v1/responses, so the warning was over-cautious.
+// Re-add per-provider when we have concrete evidence a specific
+// endpoint breaks.
 
 pub fn custom() -> &'static ProviderCatalog {
     static CUSTOM: LazyLock<ProviderCatalog> = LazyLock::new(|| ProviderCatalog {
@@ -210,7 +207,7 @@ pub fn custom() -> &'static ProviderCatalog {
                 api_type: "openai-chat".to_string(),
                 default_base_url: String::new(),
                 models: Vec::new(),
-                compatibility_warning: Some(CODEX_CHAT_REMOVED_WARNING.to_string()),
+                compatibility_warning: None,
                 auth_modes: vec![AuthModeDef {
                     mode: "api_key".to_string(),
                     label: Some("Use API key".to_string()),

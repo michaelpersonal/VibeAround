@@ -37,7 +37,6 @@
     {
       "api_type": "openai-chat",
       "default_base_url": "https://api.minimax.io/v1",
-      "compatibility_warning": "Recent codex versions require the OpenAI Responses API. MiniMax's /v1 endpoint serves chat-completions only — codex will start but the first prompt fails. Use the claude (Anthropic) button on this card instead.",
       "models": [
         { "id": "MiniMax-M2.7", "label": "MiniMax M2.7" },
         { "id": "MiniMax-M2.7-highspeed", "label": "MiniMax M2.7 highspeed" }
