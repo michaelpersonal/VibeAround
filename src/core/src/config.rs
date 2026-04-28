@@ -3,6 +3,8 @@
 //! Callers load a fresh Config when they need one.
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
@@ -380,11 +382,39 @@ pub fn update_settings_json(mutator: impl FnOnce(&mut serde_json::Value)) -> Res
     let data = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
     let mut root: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
     mutator(&mut root);
-    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty).map_err(|e| e.to_string())?;
+    write_settings_json_locked(&root)?;
     // Invalidate cache so next ensure_loaded() picks up the change.
     *CONFIG_CACHE.write() = None;
     Ok(())
+}
+
+/// Replace settings.json with an already-mutated JSON value. Use this for
+/// whole-file settings flows such as onboarding. Incremental updates should
+/// prefer [`update_settings_json`] so they merge against the latest on-disk
+/// content.
+pub fn write_settings_json(root: &serde_json::Value) -> Result<(), String> {
+    write_settings_json_locked(root)?;
+    *CONFIG_CACHE.write() = None;
+    Ok(())
+}
+
+fn write_settings_json_locked(root: &serde_json::Value) -> Result<(), String> {
+    let path = data_dir().join("settings.json");
+    write_settings_json_to_path(&path, root)
+}
+
+fn write_settings_json_to_path(path: &Path, root: &serde_json::Value) -> Result<(), String> {
+    let tmp_path = path.with_extension("json.tmp");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let pretty = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
+    fs::write(&tmp_path, pretty).map_err(|e| e.to_string())?;
+    crate::auth::set_owner_only(&tmp_path).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, &path).map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        e.to_string()
+    })
 }
 
 impl Default for Config {
@@ -404,5 +434,62 @@ impl Default for Config {
             enabled_agents: crate::resources::AGENTS.iter().map(|a| a.id.clone()).collect(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!(
+            "vibearound-config-{name}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn atomic_write_replaces_file_and_removes_temp() {
+        let dir = unique_test_dir("atomic");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, "{}").unwrap();
+
+        write_settings_json_to_path(&path, &serde_json::json!({ "workspaces": [] })).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
+            serde_json::json!({ "workspaces": [] })
+        );
+        assert!(!dir.join("settings.json.tmp").exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn atomic_write_creates_parent_dir() {
+        let dir = unique_test_dir("parent");
+        let path = dir.join("nested").join("settings.json");
+
+        write_settings_json_to_path(&path, &serde_json::json!({ "onboarded": true })).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
+            serde_json::json!({ "onboarded": true })
+        );
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

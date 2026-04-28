@@ -93,17 +93,10 @@ fn read_settings_value() -> Value {
 }
 
 fn write_settings_value(val: &Value) -> Result<(), String> {
-    let path = settings_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let pretty = serde_json::to_string_pretty(val).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty).map_err(|e| e.to_string())?;
     // settings.json holds bot tokens, webhook secrets, and tunnel credentials
     // in plain text (by design — the user edits this file directly). Ensure
     // other local users cannot read it. No-op on Windows.
-    common::auth::set_owner_only(&path).map_err(|e| e.to_string())?;
-    Ok(())
+    config::write_settings_json(val)
 }
 
 // ---------------------------------------------------------------------------
