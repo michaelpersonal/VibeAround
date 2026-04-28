@@ -1,13 +1,7 @@
-import { Bot, Check, FolderOpen, Plus, Star } from "lucide-react";
+import { Bot, Check, FolderOpen, Plus, Sparkles, Star } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { BrandIcon } from "@/components/brand-icon";
 import type { AgentSummary, StepAgentsProps } from "../types";
 
 const RECOMMENDED_AGENT_IDS = new Set(["claude", "codex"]);
@@ -27,10 +21,15 @@ export function StepAgents({
 }: StepAgentsProps) {
   const recommended = agents.filter((agent) => RECOMMENDED_AGENT_IDS.has(agent.id));
   const others = agents.filter((agent) => !RECOMMENDED_AGENT_IDS.has(agent.id));
-  const compatibleProfiles = profiles.filter((profile) =>
-    profile.launchTargets.some((target) => target.id === defaultAgent),
-  );
+  const profileOptions = profiles.map((profile) => ({
+    profile,
+    compatible: profile.launchTargets.some((target) => target.id === defaultAgent),
+  }));
   const selectedProfile = defaultProfiles[defaultAgent] ?? DIRECT_VALUE;
+  const selectedProfileIsVisible = profileOptions.some(
+    ({ profile, compatible }) => compatible && profile.id === selectedProfile,
+  );
+  const activeProfile = selectedProfileIsVisible ? selectedProfile : DIRECT_VALUE;
 
   return (
     <div className="space-y-4">
@@ -79,32 +78,83 @@ export function StepAgents({
               Optional. Direct launch uses the CLI's existing login.
             </p>
           </div>
-          <Button type="button" size="sm" variant="outline" onClick={onCreateProfile}>
-            <Plus className="w-3.5 h-3.5" />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={onCreateProfile}
+          >
+            <Plus className="w-3 h-3" />
             Add API profile
           </Button>
         </div>
 
-        <Select
-          value={selectedProfile}
-          onValueChange={(value) =>
-            onSetDefaultProfile(defaultAgent, value === DIRECT_VALUE ? null : value)
-          }
-        >
-          <SelectTrigger size="sm" className="w-full">
-            <SelectValue placeholder="Direct launch" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={DIRECT_VALUE}>Direct launch</SelectItem>
-            {compatibleProfiles.map((profile) => (
-              <SelectItem key={profile.id} value={profile.id}>
-                {profile.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
+          <button
+            type="button"
+            onClick={() => onSetDefaultProfile(defaultAgent, null)}
+            className={`flex min-h-[54px] items-center gap-2 rounded-md border p-2 text-left transition-colors ${
+              activeProfile === DIRECT_VALUE
+                ? "border-primary/40 bg-primary/5"
+                : "border-border hover:border-border/80"
+            }`}
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium">Direct launch</span>
+              <span className="block truncate text-[10px] text-muted-foreground">
+                Existing CLI login
+              </span>
+            </span>
+            {activeProfile === DIRECT_VALUE && (
+              <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+            )}
+          </button>
 
-        {compatibleProfiles.length === 0 && (
+          {profileOptions.map(({ profile, compatible }) => {
+            const selected = activeProfile === profile.id;
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                disabled={!compatible}
+                onClick={() => onSetDefaultProfile(defaultAgent, profile.id)}
+                title={
+                  compatible
+                    ? `Use ${profile.label} with ${defaultAgent}`
+                    : `${profile.label} does not support ${defaultAgent}`
+                }
+                className={`flex min-h-[54px] items-center gap-2 rounded-md border p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
+                  selected
+                    ? "border-primary/40 bg-primary/5"
+                    : "border-border hover:border-border/80"
+                }`}
+              >
+                <BrandIcon
+                  kind="provider"
+                  id={profile.provider}
+                  label={profile.providerLabel}
+                  fallback={profile.providerIcon}
+                  className="h-7 w-7"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium">
+                    {profile.label}
+                  </span>
+                  <span className="block truncate text-[10px] text-muted-foreground">
+                    {compatible ? profile.providerLabel : `Not for ${defaultAgent}`}
+                  </span>
+                </span>
+                {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+              </button>
+            );
+          })}
+        </div>
+
+        {profileOptions.length === 0 && (
           <p className="text-[11px] text-muted-foreground">
             No saved profile supports {defaultAgent} yet.
           </p>
@@ -140,7 +190,7 @@ function AgentGrid({
   onSetDefault: (id: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
       {agents.map((agent) => {
         const isEnabled = enabled.has(agent.id);
         const isDefault = defaultAgent === agent.id;
@@ -148,50 +198,58 @@ function AgentGrid({
         return (
           <div
             key={agent.id}
-            className={`relative flex flex-col gap-1.5 p-3 rounded-lg border cursor-pointer transition-colors ${
+            className={`relative flex min-h-[68px] cursor-pointer gap-2 rounded-md border p-2 pr-8 text-left transition-colors ${
               isEnabled
                 ? "border-primary/40 bg-primary/5"
                 : "border-border hover:border-border/80"
             }`}
             onClick={() => onToggle(agent.id)}
           >
-            <div className="flex items-center justify-between gap-2">
-              <span
-                className={`text-sm font-medium flex items-center gap-1.5 min-w-0 ${
+            <BrandIcon
+              kind="cli"
+              id={agent.id}
+              label={agent.display_name}
+              className="h-7 w-7"
+            />
+            <div className="min-w-0 flex-1">
+              <div
+                className={`truncate text-[13px] font-medium ${
                   isEnabled ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
-                <span className="truncate">{agent.display_name}</span>
-                {noHandover && (
-                  <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-muted text-muted-foreground/60 leading-none shrink-0">
+                {agent.display_name}
+              </div>
+              {noHandover && (
+                <div className="mt-1">
+                  <span className="rounded bg-muted px-1 py-0.5 font-mono text-[9px] leading-none text-muted-foreground/60">
                     no handover
                   </span>
-                )}
-              </span>
-              <div
-                className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                  isEnabled ? "bg-primary border-primary" : "border-muted-foreground/30"
-                }`}
-              >
-                {isEnabled && <Check className="w-3 h-3 text-primary-foreground" />}
-              </div>
+                </div>
+              )}
+              {isEnabled && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSetDefault(agent.id);
+                  }}
+                  className={`mt-2 rounded px-1.5 py-0.5 font-mono text-[10px] leading-none transition-colors ${
+                    isDefault
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  {isDefault ? "default" : "set default"}
+                </button>
+              )}
             </div>
-            {isEnabled && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onSetDefault(agent.id);
-                }}
-                className={`text-[10px] font-mono px-1.5 py-0.5 rounded self-start transition-colors ${
-                  isDefault
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-accent"
-                }`}
-              >
-                {isDefault ? "default" : "set default"}
-              </button>
-            )}
+            <div
+              className={`absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                isEnabled ? "border-primary bg-primary" : "border-muted-foreground/30"
+              }`}
+            >
+              {isEnabled && <Check className="h-3 w-3 text-primary-foreground" />}
+            </div>
           </div>
         );
       })}

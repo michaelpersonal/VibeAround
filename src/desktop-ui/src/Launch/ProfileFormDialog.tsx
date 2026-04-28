@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Eye, EyeOff, Globe, Search } from "lucide-react";
 
+import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,8 @@ import type {
 import { apiTypeLabel, apiTypeShort, isProviderApiKind } from "./types";
 
 type Step = "pick-provider" | "fill-form";
+const PROVIDER_TILE_GRID =
+  "grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2";
 
 interface Props {
   catalog: CatalogEntry[];
@@ -411,7 +414,7 @@ function ProviderGrid({
             No matching providers
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className={PROVIDER_TILE_GRID}>
             {filteredCatalog.map((provider) => (
               <ProviderTile
                 key={provider.id}
@@ -425,12 +428,14 @@ function ProviderGrid({
 
       <div className="space-y-2 border-t border-border/60 pt-3">
         <div className="text-xs font-semibold">Custom</div>
-        <ProviderTile
-          provider={CUSTOM_PROVIDER}
-          onPick={() => onPick(CUSTOM_PROVIDER)}
-          dashed
-          description="Bring your own URL + key"
-        />
+        <div className={PROVIDER_TILE_GRID}>
+          <ProviderTile
+            provider={CUSTOM_PROVIDER}
+            onPick={() => onPick(CUSTOM_PROVIDER)}
+            dashed
+            description="Bring your own URL + key"
+          />
+        </div>
       </div>
     </div>
   );
@@ -456,12 +461,18 @@ function ProviderTile({
     <button
       type="button"
       onClick={onPick}
-      className={`flex flex-col items-start gap-1 p-2.5 border rounded-md hover:border-primary hover:bg-accent/30 transition-colors text-left ${
+      className={`flex min-h-[102px] w-full flex-col items-start gap-1 rounded-md border p-2 text-left transition-colors hover:border-primary hover:bg-accent/30 ${
         dashed ? "border-dashed border-border" : "border-border"
       }`}
     >
       <div className="flex items-center gap-2">
-        {provider.icon && <span className="text-base">{provider.icon}</span>}
+        <BrandIcon
+          kind="provider"
+          id={provider.id}
+          label={provider.label}
+          fallback={provider.icon}
+          className="h-6 w-6"
+        />
         <span className="text-[13px] font-medium">{provider.label}</span>
       </div>
       <div className="flex flex-wrap gap-1 mt-1">

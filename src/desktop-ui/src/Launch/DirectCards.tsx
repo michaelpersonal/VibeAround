@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Play, Sparkles, Star } from "lucide-react";
+import { Sparkles, Star } from "lucide-react";
 
+import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { listAgents, type AgentSummary } from "./api";
 
@@ -69,7 +70,13 @@ export function DirectCards({
                   className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
                   title={`${a.display_name} — ${a.description}`}
                 >
-                  <Play className="w-3 h-3" />
+                  <BrandIcon
+                    kind="cli"
+                    id={a.id}
+                    label={a.display_name}
+                    framed={false}
+                    className="h-3.5 w-3.5"
+                  />
                   {a.id}
                   {isDefault && <Star className="w-3 h-3 fill-current" />}
                 </Button>

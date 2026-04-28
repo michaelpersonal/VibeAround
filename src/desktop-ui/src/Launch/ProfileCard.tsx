@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { AlertTriangle, MoreVertical, Pencil, Play, Star, Trash2 } from "lucide-react";
+import { AlertTriangle, MoreVertical, Pencil, Star, Trash2 } from "lucide-react";
 
+import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,9 +66,13 @@ export function ProfileCard({
   return (
     <div className="border border-border rounded-md p-2.5 flex flex-col gap-1.5 hover:border-primary/40 transition-colors">
       <div className="flex items-start gap-2">
-        {profile.providerIcon && (
-          <span className="text-base shrink-0">{profile.providerIcon}</span>
-        )}
+        <BrandIcon
+          kind="provider"
+          id={profile.provider}
+          label={profile.providerLabel}
+          fallback={profile.providerIcon}
+          className="h-7 w-7"
+        />
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-medium truncate">{profile.label}</div>
           <div className="text-[11px] text-muted-foreground truncate">
@@ -123,7 +128,13 @@ export function ProfileCard({
                     : `Launch ${target.label} via ${apiTypeShort(target.apiType)}`
                 }
               >
-                <Play className="w-3 h-3" />
+                <BrandIcon
+                  kind="cli"
+                  id={target.id}
+                  label={target.label}
+                  framed={false}
+                  className="h-3.5 w-3.5"
+                />
                 <span>{target.label}</span>
                 <Badge className="border-0 bg-transparent p-0 text-[11px] text-primary/55">
                   · {apiTypeBadge(target.apiType)}
