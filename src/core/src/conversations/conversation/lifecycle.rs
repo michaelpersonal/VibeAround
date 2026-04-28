@@ -73,10 +73,8 @@ impl Conversation {
             .clone()
             .unwrap_or_else(|| cfg.default_agent.clone());
         tracing::info!(route = %self.route, cli_kind = %cli_kind, "spawning new agent");
-        let profile = self
-            .profile
-            .lock()
-            .await
+        let explicit_profile = self.profile.lock().await.clone();
+        let mut profile = explicit_profile
             .clone()
             .or_else(|| cfg.default_profile_for(&cli_kind))
             .unwrap_or_else(|| "default".to_string());
@@ -123,23 +121,49 @@ impl Conversation {
             ("VIBEAROUND_AGENT_KIND".to_string(), agent_id.clone()),
         ];
         if profile_uses_vibearound_credentials(&profile) {
-            let profile_def = profiles::schema::load(&profile)
-                .map(profiles::normalize_legacy_profile)
-                .ok_or_else(|| anyhow!("profile '{}' not found", profile))?;
-            let profile_env = profiles::runtime::env_for_launch(&profile_def, &agent_id)
-                .with_context(|| {
-                    format!(
-                        "failed to apply profile '{}' to agent '{}'",
-                        profile, agent_id
-                    )
-                })?;
-            tracing::info!(
-                route = %self.route,
-                cli_kind = %cli_kind,
-                profile = %profile,
-                "applied profile env for agent spawn"
-            );
-            env_vars.extend(profile_env);
+            if let Some(profile_def) =
+                profiles::schema::load(&profile).map(profiles::normalize_legacy_profile)
+            {
+                match profiles::runtime::env_for_launch(&profile_def, &agent_id) {
+                    Ok(profile_env) => {
+                        tracing::info!(
+                            route = %self.route,
+                            cli_kind = %cli_kind,
+                            profile = %profile,
+                            "applied profile env for agent spawn"
+                        );
+                        env_vars.extend(profile_env);
+                    }
+                    Err(error) if explicit_profile.is_some() => {
+                        return Err(error).with_context(|| {
+                            format!(
+                                "failed to apply profile '{}' to agent '{}'",
+                                profile, agent_id
+                            )
+                        });
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            route = %self.route,
+                            cli_kind = %cli_kind,
+                            profile = %profile,
+                            error = %error,
+                            "default profile could not be applied; falling back to direct launch"
+                        );
+                        profile = "default".to_string();
+                    }
+                }
+            } else if explicit_profile.is_some() {
+                return Err(anyhow!("profile '{}' not found", profile));
+            } else {
+                tracing::warn!(
+                    route = %self.route,
+                    cli_kind = %cli_kind,
+                    profile = %profile,
+                    "default profile not found; falling back to direct launch"
+                );
+                profile = "default".to_string();
+            }
         }
 
         let ready = match Agent::spawn(

@@ -145,7 +145,8 @@ pub fn profiles_upsert(profile: ProfileDef) -> Result<(), String> {
 
 #[tauri::command]
 pub fn profiles_delete(id: String) -> Result<(), String> {
-    schema::delete(&id).map_err(|e| e.to_string())
+    schema::delete(&id).map_err(|e| e.to_string())?;
+    clear_default_profile_references(&id)
 }
 
 #[tauri::command]
@@ -261,19 +262,16 @@ pub fn profiles_launch_default() -> Result<(), String> {
     let cfg = config::ensure_loaded();
     let agent_id = canonical_agent_id(&cfg.default_agent);
     if let Some(profile_id) = cfg.default_profile_for(&agent_id) {
-        let profile = schema::load(&profile_id)
-            .map(normalize_legacy_profile)
-            .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
-        if !runtime::launch_targets_for_api_types(&profile.api_types)
-            .iter()
-            .any(|(target, _, _)| *target == agent_id)
-        {
-            return Err(format!("profile '{profile_id}' cannot launch '{agent_id}'"));
+        if let Some(profile) = schema::load(&profile_id).map(normalize_legacy_profile) {
+            if runtime::launch_targets_for_api_types(&profile.api_types)
+                .iter()
+                .any(|(target, _, _)| *target == agent_id)
+            {
+                return launcher::launch(&profile, &agent_id).map_err(|e| e.to_string());
+            }
         }
-        launcher::launch(&profile, &agent_id).map_err(|e| e.to_string())
-    } else {
-        launcher::launch_direct(&agent_id).map_err(|e| e.to_string())
     }
+    launcher::launch_direct(&agent_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -375,6 +373,25 @@ fn canonical_agent_id(agent_id: &str) -> String {
     resources::agent_by_alias(agent_id)
         .map(|def| def.id.clone())
         .unwrap_or_else(|| agent_id.to_string())
+}
+
+fn clear_default_profile_references(profile_id: &str) -> Result<(), String> {
+    config::update_settings_json(|root| {
+        if let Some(obj) = root.as_object_mut() {
+            let mut remove_default_profiles = false;
+            if let Some(map) = obj
+                .get_mut("default_profiles")
+                .and_then(|value| value.as_object_mut())
+            {
+                map.retain(|_, value| value.as_str() != Some(profile_id));
+                remove_default_profiles = map.is_empty();
+            }
+            if remove_default_profiles {
+                obj.remove("default_profiles");
+            }
+        }
+    })
+    .map_err(|e| e.to_string())
 }
 
 fn push_workspace_option(
