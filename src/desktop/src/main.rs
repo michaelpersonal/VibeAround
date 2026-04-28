@@ -213,6 +213,7 @@ fn main() {
             profiles::profiles_catalog,
             profiles::launcher_get_preferences,
             profiles::launcher_set_terminal,
+            profiles::launcher_set_workspace,
         ])
         .setup({
             let daemon = Arc::clone(&daemon);

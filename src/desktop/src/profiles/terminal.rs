@@ -117,6 +117,8 @@ fn is_installed(choice: TerminalChoice) -> bool {
 struct LauncherPrefsFile {
     #[serde(default)]
     terminal: Option<String>,
+    #[serde(default)]
+    workspace: Option<PathBuf>,
 }
 
 fn prefs_path() -> PathBuf {
@@ -128,18 +130,7 @@ fn prefs_path() -> PathBuf {
 /// recognize anymore (forward-compat: an old prefs file from a future
 /// build that knew about more terminals must not crash this version).
 pub fn read_preference() -> TerminalChoice {
-    let body = match std::fs::read_to_string(prefs_path()) {
-        Ok(b) => b,
-        Err(_) => return TerminalChoice::default_for_platform(),
-    };
-    let prefs: LauncherPrefsFile = match serde_json::from_str(&body) {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!("[launcher] launcher.json parse error: {} — using default", e);
-            return TerminalChoice::default_for_platform();
-        }
-    };
-    prefs
+    read_prefs_file()
         .terminal
         .as_deref()
         .and_then(TerminalChoice::from_id)
@@ -148,14 +139,85 @@ pub fn read_preference() -> TerminalChoice {
 }
 
 pub fn write_preference(choice: TerminalChoice) -> anyhow::Result<()> {
+    let mut prefs = read_prefs_file();
+    prefs.terminal = Some(choice.id().to_string());
+    write_prefs_file(&prefs)
+}
+
+pub fn read_workspace_preference() -> Option<PathBuf> {
+    read_prefs_file().workspace
+}
+
+pub fn write_workspace_preference(path: PathBuf) -> anyhow::Result<()> {
+    let mut prefs = read_prefs_file();
+    prefs.workspace = Some(canonical_workspace_path(&path)?);
+    write_prefs_file(&prefs)
+}
+
+pub fn resolve_workspace_preference() -> anyhow::Result<PathBuf> {
+    match read_workspace_preference() {
+        Some(path) => canonical_workspace_path(&path),
+        None => launch_home_dir(),
+    }
+}
+
+pub fn canonical_workspace_path(path: &std::path::Path) -> anyhow::Result<PathBuf> {
+    let canonical = std::fs::canonicalize(path)
+        .with_context(|| format!("workspace does not exist: {}", path.display()))?;
+    if !canonical.is_dir() {
+        anyhow::bail!("workspace is not a directory: {}", canonical.display());
+    }
+    Ok(canonical)
+}
+
+pub fn launch_home_dir() -> anyhow::Result<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .or_else(|| {
+                let drive = std::env::var_os("HOMEDRIVE")?;
+                let path = std::env::var_os("HOMEPATH")?;
+                Some(PathBuf::from(format!(
+                    "{}{}",
+                    drive.to_string_lossy(),
+                    path.to_string_lossy()
+                )))
+            })
+            .ok_or_else(|| anyhow::anyhow!("could not determine Windows home directory"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow::anyhow!("could not determine home directory"));
+    }
+}
+
+fn read_prefs_file() -> LauncherPrefsFile {
+    let body = match std::fs::read_to_string(prefs_path()) {
+        Ok(b) => b,
+        Err(_) => return LauncherPrefsFile::default(),
+    };
+    match serde_json::from_str(&body) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                "[launcher] launcher.json parse error: {} — using default",
+                e
+            );
+            LauncherPrefsFile::default()
+        }
+    }
+}
+
+fn write_prefs_file(prefs: &LauncherPrefsFile) -> anyhow::Result<()> {
     let path = prefs_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("create {:?}", parent))?;
     }
-    let prefs = LauncherPrefsFile {
-        terminal: Some(choice.id().to_string()),
-    };
-    let body = serde_json::to_string_pretty(&prefs).context("serialize launcher prefs")?;
+    let body = serde_json::to_string_pretty(prefs).context("serialize launcher prefs")?;
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, body).with_context(|| format!("write {:?}", tmp))?;
     auth::set_owner_only(&tmp).ok();

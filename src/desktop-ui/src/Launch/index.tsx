@@ -22,6 +22,7 @@ import { DirectCards } from "./DirectCards";
 import { ProfileCard } from "./ProfileCard";
 import { ProfileFormDialog } from "./ProfileFormDialog";
 import { TerminalPicker } from "./TerminalPicker";
+import { WorkspacePicker } from "./WorkspacePicker";
 import type { CatalogEntry, ProfileDef, ProfileSummary } from "./types";
 
 export function Launch() {
@@ -122,6 +123,7 @@ export function Launch() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <WorkspacePicker />
           <TerminalPicker />
           <Button
             type="button"

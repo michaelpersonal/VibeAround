@@ -46,10 +46,12 @@ pub fn launch(profile: &ProfileDef, launch_target: &str) -> anyhow::Result<()> {
 pub fn launch_direct(agent_id: &str) -> anyhow::Result<()> {
     let agent = resources::agent_by_id(agent_id)
         .ok_or_else(|| anyhow!("agent '{}' not found in agents.json", agent_id))?;
+    let workspace = terminal::resolve_workspace_preference()?;
     spawn_terminal(
         &[],
         &agent.pty.command,
         &format!("{} (direct)", agent.display_name),
+        &workspace,
     )
 }
 
@@ -86,8 +88,9 @@ fn do_launch(
     let agent = resources::agent_by_id(agent_id)
         .ok_or_else(|| anyhow!("agent '{}' not found in agents.json", agent_id))?;
     let pty_command = command_with_args(&agent.pty.command, &rendered.command_args);
+    let workspace = terminal::resolve_workspace_preference()?;
 
-    spawn_terminal(&env, &pty_command, &profile.label)?;
+    spawn_terminal(&env, &pty_command, &profile.label, &workspace)?;
     Ok(())
 }
 
@@ -206,12 +209,15 @@ fn spawn_terminal(
     env: &[(String, String)],
     command: &str,
     window_label: &str,
+    workspace: &Path,
 ) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let script = build_bash_script(env, command, window_label);
-    let script_path =
-        std::env::temp_dir().join(format!("vibearound-launch-{}.command", uuid::Uuid::new_v4()));
+    let script = build_bash_script(env, command, window_label, workspace);
+    let script_path = std::env::temp_dir().join(format!(
+        "vibearound-launch-{}.command",
+        uuid::Uuid::new_v4()
+    ));
     std::fs::write(&script_path, &script)
         .with_context(|| format!("write launch script {:?}", script_path))?;
     std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o700))
@@ -250,6 +256,7 @@ fn spawn_terminal(
     _env: &[(String, String)],
     _command: &str,
     _window_label: &str,
+    _workspace: &Path,
 ) -> anyhow::Result<()> {
     bail!("Profile launch is only supported on macOS and Windows");
 }
@@ -263,9 +270,10 @@ fn spawn_terminal(
     env: &[(String, String)],
     command: &str,
     window_label: &str,
+    workspace: &Path,
 ) -> anyhow::Result<()> {
     let choice = terminal::read_preference();
-    let script_path = write_windows_launch_script(env, command, window_label, choice)?;
+    let script_path = write_windows_launch_script(env, command, window_label, choice, workspace)?;
     let title = format!("VibeAround - {}", window_label);
 
     let mut starter = std::process::Command::new("cmd.exe");
@@ -273,7 +281,7 @@ fn spawn_terminal(
         .arg("/C")
         .arg("start")
         .arg(&title)
-        .current_dir(home_dir_for_launch()?);
+        .current_dir(workspace);
 
     match choice {
         TerminalChoice::PowerShell => {
@@ -304,18 +312,23 @@ fn write_windows_launch_script(
     command: &str,
     window_label: &str,
     choice: TerminalChoice,
+    workspace: &Path,
 ) -> anyhow::Result<PathBuf> {
     let script_path = match choice {
-        TerminalChoice::PowerShell => std::env::temp_dir()
-            .join(format!("vibearound-launch-{}.ps1", uuid::Uuid::new_v4())),
-        TerminalChoice::Cmd => std::env::temp_dir()
-            .join(format!("vibearound-launch-{}.cmd", uuid::Uuid::new_v4())),
+        TerminalChoice::PowerShell => {
+            std::env::temp_dir().join(format!("vibearound-launch-{}.ps1", uuid::Uuid::new_v4()))
+        }
+        TerminalChoice::Cmd => {
+            std::env::temp_dir().join(format!("vibearound-launch-{}.cmd", uuid::Uuid::new_v4()))
+        }
         other => bail!("terminal '{}' is not supported on Windows", other.id()),
     };
 
     let body = match choice {
-        TerminalChoice::PowerShell => build_powershell_script(env, command, window_label),
-        TerminalChoice::Cmd => build_cmd_script(env, command, window_label),
+        TerminalChoice::PowerShell => {
+            build_powershell_script(env, command, window_label, workspace)
+        }
+        TerminalChoice::Cmd => build_cmd_script(env, command, window_label, workspace),
         other => bail!("terminal '{}' is not supported on Windows", other.id()),
     };
 
@@ -326,20 +339,24 @@ fn write_windows_launch_script(
 }
 
 #[cfg(target_os = "windows")]
-fn build_powershell_script(env: &[(String, String)], command: &str, window_label: &str) -> String {
+fn build_powershell_script(
+    env: &[(String, String)],
+    command: &str,
+    window_label: &str,
+    workspace: &Path,
+) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "Write-Host '# VibeAround profile: {}'\n",
         window_label.replace('\'', "''")
     ));
     for (k, v) in env {
-        out.push_str(&format!(
-            "$env:{} = '{}'\n",
-            k,
-            v.replace('\'', "''")
-        ));
+        out.push_str(&format!("$env:{} = '{}'\n", k, v.replace('\'', "''")));
     }
-    out.push_str("Set-Location $HOME\n");
+    out.push_str(&format!(
+        "Set-Location -LiteralPath '{}'\n",
+        escape_powershell_single_quoted(&workspace.to_string_lossy())
+    ));
     out.push_str(command);
     out.push_str("\n");
     out.push_str("if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {\n");
@@ -351,7 +368,12 @@ fn build_powershell_script(env: &[(String, String)], command: &str, window_label
 }
 
 #[cfg(target_os = "windows")]
-fn build_cmd_script(env: &[(String, String)], command: &str, window_label: &str) -> String {
+fn build_cmd_script(
+    env: &[(String, String)],
+    command: &str,
+    window_label: &str,
+    workspace: &Path,
+) -> String {
     let mut out = String::new();
     out.push_str("@echo off\r\n");
     out.push_str(&format!("@title VibeAround - {}\r\n", window_label));
@@ -359,7 +381,10 @@ fn build_cmd_script(env: &[(String, String)], command: &str, window_label: &str)
     for (k, v) in env {
         out.push_str(&format!("set \"{}={}\"\r\n", k, v));
     }
-    out.push_str("cd /d \"%USERPROFILE%\"\r\n");
+    out.push_str(&format!(
+        "cd /d \"{}\"\r\n",
+        escape_cmd_quoted(&workspace.to_string_lossy())
+    ));
     out.push_str(command);
     out.push_str("\r\n");
     out.push_str("set \"VA_EXIT=%ERRORLEVEL%\"\r\n");
@@ -369,27 +394,16 @@ fn build_cmd_script(env: &[(String, String)], command: &str, window_label: &str)
     out
 }
 
-#[cfg(target_os = "windows")]
-fn home_dir_for_launch() -> anyhow::Result<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .map(PathBuf::from)
-        .or_else(|| {
-            let drive = std::env::var_os("HOMEDRIVE")?;
-            let path = std::env::var_os("HOMEPATH")?;
-            Some(PathBuf::from(format!(
-                "{}{}",
-                drive.to_string_lossy(),
-                path.to_string_lossy()
-            )))
-        })
-        .ok_or_else(|| anyhow!("could not determine Windows home directory"))
-}
-
 // ---------------------------------------------------------------------------
 // Bash script builder
 // ---------------------------------------------------------------------------
 
-fn build_bash_script(env: &[(String, String)], command: &str, window_label: &str) -> String {
+fn build_bash_script(
+    env: &[(String, String)],
+    command: &str,
+    window_label: &str,
+    workspace: &Path,
+) -> String {
     let mut out = String::new();
     out.push_str("#!/bin/bash\n");
     // Self-delete first so an unexpected ^C between here and `exec` doesn't
@@ -416,13 +430,24 @@ fn build_bash_script(env: &[(String, String)], command: &str, window_label: &str
     }
 
     // `open -a Terminal foo.command` opens the new window with $TMPDIR as
-    // CWD; surfacing the user in /private/var/folders/... is jarring. cd
-    // home before exec so the CLI session feels like a normal `claude` /
-    // `codex` invocation. If the user intended a project dir they can `cd`
-    // themselves once the prompt appears.
-    out.push_str("cd \"$HOME\"\n");
+    // CWD; surfacing the user in /private/var/folders/... is jarring. Move
+    // to the selected launch workspace before exec so the CLI starts in the
+    // project the user intended.
+    let workspace_string = workspace.to_string_lossy();
+    let cwd = shell_escape::unix::escape(std::borrow::Cow::Borrowed(workspace_string.as_ref()));
+    out.push_str(&format!("cd {}\n", cwd));
     out.push_str(&format!("exec {}\n", command));
     out
+}
+
+#[cfg(target_os = "windows")]
+fn escape_powershell_single_quoted(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
+#[cfg(target_os = "windows")]
+fn escape_cmd_quoted(value: &str) -> String {
+    value.replace('"', "\"\"")
 }
 
 // ---------------------------------------------------------------------------
@@ -439,7 +464,7 @@ mod tests {
             "ANTHROPIC_API_KEY".to_string(),
             "hi$(touch /tmp/pwned)".to_string(),
         )];
-        let script = build_bash_script(&env, "claude", "Test");
+        let script = build_bash_script(&env, "claude", "Test", Path::new("/tmp/work dir"));
         // The export line must contain the payload as a *literal* — i.e.
         // single-quoted by shell_escape — not as an unquoted command
         // substitution that bash would actually evaluate.
@@ -453,9 +478,15 @@ mod tests {
 
     #[test]
     fn build_bash_script_includes_self_delete_first() {
-        let script = build_bash_script(&[], "claude", "x");
+        let script = build_bash_script(&[], "claude", "x", Path::new("/tmp/work dir"));
         let lines: Vec<&str> = script.lines().collect();
         assert_eq!(lines[0], "#!/bin/bash");
         assert_eq!(lines[1], "rm -- \"$0\"");
+    }
+
+    #[test]
+    fn build_bash_script_cd_selected_workspace() {
+        let script = build_bash_script(&[], "claude", "x", Path::new("/tmp/my project"));
+        assert!(script.contains("cd '/tmp/my project'\n"));
     }
 }

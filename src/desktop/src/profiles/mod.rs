@@ -11,6 +11,9 @@ mod render;
 mod schema;
 mod terminal;
 
+use std::path::{Path, PathBuf};
+
+use common::config;
 use serde::Serialize;
 
 pub use schema::{AuthMode, ProfileDef};
@@ -206,6 +209,20 @@ pub struct LauncherPreferences {
     /// gray out unavailable choices instead of just hiding them — keeps
     /// the dropdown stable and discoverable as users install more apps.
     pub options: Vec<TerminalOption>,
+    /// Resolved cwd used for profile/direct launches.
+    pub workspace: String,
+    /// Suggested cwd choices surfaced in the Launch header.
+    pub workspace_options: Vec<WorkspaceOption>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceOption {
+    pub path: String,
+    pub label: String,
+    pub detail: String,
+    pub kind: String,
+    pub is_default: bool,
 }
 
 #[tauri::command]
@@ -222,9 +239,16 @@ pub fn launcher_get_preferences() -> LauncherPreferences {
             installed: installed_ids.contains(c.id()),
         })
         .collect();
+    let workspace_options = launcher_workspace_options();
+    let workspace = terminal::resolve_workspace_preference()
+        .unwrap_or_else(|_| terminal::launch_home_dir().unwrap_or_else(|_| config::data_dir()))
+        .to_string_lossy()
+        .to_string();
     LauncherPreferences {
         terminal: terminal::read_preference().id().to_string(),
         options,
+        workspace,
+        workspace_options,
     }
 }
 
@@ -277,4 +301,90 @@ pub fn launcher_set_terminal(terminal_id: String) -> Result<(), String> {
     let choice = terminal::TerminalChoice::from_id(&terminal_id)
         .ok_or_else(|| format!("unknown terminal: '{}'", terminal_id))?;
     terminal::write_preference(choice).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn launcher_set_workspace(workspace_path: String) -> Result<(), String> {
+    terminal::write_workspace_preference(PathBuf::from(workspace_path)).map_err(|e| e.to_string())
+}
+
+fn launcher_workspace_options() -> Vec<WorkspaceOption> {
+    let cfg = config::ensure_loaded();
+    let builtin = config::builtin_workspaces_dir();
+    let home = terminal::launch_home_dir().unwrap_or_else(|_| config::data_dir());
+    let selected = terminal::resolve_workspace_preference().ok();
+    let default_workspace = cfg
+        .default_workspace
+        .clone()
+        .unwrap_or_else(|| builtin.clone());
+
+    let mut out = Vec::new();
+    push_workspace_option(&mut out, &home, "Home", "home", false);
+    for workspace in cfg.all_workspaces() {
+        let is_default = paths_equal(&workspace, &default_workspace);
+        let kind = if paths_equal(&workspace, &builtin) {
+            "built-in"
+        } else {
+            "workspace"
+        };
+        let label = if is_default {
+            "Default workspace".to_string()
+        } else {
+            path_label(&workspace)
+        };
+        push_workspace_option(&mut out, &workspace, &label, kind, is_default);
+    }
+    if let Some(path) = selected {
+        if !out
+            .iter()
+            .any(|option| paths_equal(Path::new(&option.path), &path))
+        {
+            let label = path_label(&path);
+            push_workspace_option(&mut out, &path, &label, "selected", false);
+        }
+    }
+    out
+}
+
+fn push_workspace_option(
+    out: &mut Vec<WorkspaceOption>,
+    path: &Path,
+    label: &str,
+    kind: &str,
+    is_default: bool,
+) {
+    if out
+        .iter()
+        .any(|option| paths_equal(Path::new(&option.path), path))
+    {
+        return;
+    }
+    out.push(WorkspaceOption {
+        path: path.to_string_lossy().to_string(),
+        label: label.to_string(),
+        detail: path.to_string_lossy().to_string(),
+        kind: kind.to_string(),
+        is_default,
+    });
+}
+
+fn path_label(path: &Path) -> String {
+    if let Some(name) = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+    {
+        name.to_string()
+    } else {
+        path.to_string_lossy().to_string()
+    }
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    left == right
+        || std::fs::canonicalize(left)
+            .ok()
+            .zip(std::fs::canonicalize(right).ok())
+            .map(|(left, right)| left == right)
+            .unwrap_or(false)
 }

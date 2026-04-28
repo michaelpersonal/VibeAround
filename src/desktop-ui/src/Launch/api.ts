@@ -48,6 +48,16 @@ export interface TerminalOption {
 export interface LauncherPreferences {
   terminal: string;
   options: TerminalOption[];
+  workspace: string;
+  workspaceOptions: WorkspaceOption[];
+}
+
+export interface WorkspaceOption {
+  path: string;
+  label: string;
+  detail: string;
+  kind: string;
+  isDefault: boolean;
 }
 
 export function getLauncherPreferences(): Promise<LauncherPreferences> {
@@ -56,6 +66,10 @@ export function getLauncherPreferences(): Promise<LauncherPreferences> {
 
 export function setLauncherTerminal(terminalId: string): Promise<void> {
   return invoke<void>("launcher_set_terminal", { terminalId });
+}
+
+export function setLauncherWorkspace(workspacePath: string): Promise<void> {
+  return invoke<void>("launcher_set_workspace", { workspacePath });
 }
 
 export function listCatalog(): Promise<CatalogEntry[]> {
