@@ -677,7 +677,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.0.1"
+version = "0.5.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -4477,7 +4477,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.0.1"
+version = "0.5.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
