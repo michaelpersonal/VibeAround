@@ -13,8 +13,7 @@ import { ChatInput } from "./ChatInput";
 
 import { getWebSocketUrl } from "@/lib/ws-url";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
-import type { AgentInfo } from "@/api/agents";
-import { ChatEventSchema } from "@va/client";
+import { ChatEventSchema, type AgentInfo } from "@va/client";
 import type { SessionNotification } from "@agentclientprotocol/sdk";
 
 export type ChatMessage = {

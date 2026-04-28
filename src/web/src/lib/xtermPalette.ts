@@ -17,7 +17,7 @@ interface XtermPalette {
   brightBlue: string;  brightMagenta: string; brightCyan: string; brightWhite: string;
 }
 
-export const XTERM_PALETTE_DARK: XtermPalette = {
+const XTERM_PALETTE_DARK: XtermPalette = {
   foreground:    "#c8c8d8",
   black:         "#1a1a2e", red:           "#f87171", green:        "#4ade80", yellow:       "#fbbf24",
   blue:          "#60a5fa", magenta:       "#c084fc", cyan:         "#4fd1c5", white:        "#c8c8d8",
@@ -25,7 +25,7 @@ export const XTERM_PALETTE_DARK: XtermPalette = {
   brightBlue:    "#93c5fd", brightMagenta: "#d8b4fe", brightCyan:   "#5eead4", brightWhite:  "#f0f0f8",
 };
 
-export const XTERM_PALETTE_LIGHT: XtermPalette = {
+const XTERM_PALETTE_LIGHT: XtermPalette = {
   foreground:    "#1e293b",
   black:         "#475569", red:           "#dc2626", green:        "#16a34a", yellow:       "#ca8a04",
   blue:          "#2563eb", magenta:       "#9333ea", cyan:         "#0891b2", white:        "#64748b",

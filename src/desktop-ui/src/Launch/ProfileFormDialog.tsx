@@ -57,7 +57,7 @@ interface Props {
  * actual render templates; this client-side copy is only used to drive
  * the form (fields list, empty models, empty default base_url).
  */
-export const CUSTOM_PROVIDER: CatalogEntry = {
+const CUSTOM_PROVIDER: CatalogEntry = {
   id: "custom",
   label: "Custom endpoint",
   icon: "✨",
