@@ -200,6 +200,12 @@ impl ConversationManager {
     }
 }
 
+impl Default for ConversationManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl crate::state::StateSource for ConversationManager {
     type Entry = Arc<Conversation>;
 

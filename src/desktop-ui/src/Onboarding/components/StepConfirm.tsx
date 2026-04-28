@@ -10,6 +10,13 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+
 import type { InstallTaskProgress, StepConfirmProps } from "../types";
 
 export function StepConfirm({
@@ -149,7 +156,11 @@ function TaskRow({ task }: { task: InstallTaskProgress }) {
   const latest = task.message ?? logs.at(-1);
 
   return (
-    <div className="rounded-md bg-muted/30">
+    <Collapsible
+      open={expanded}
+      onOpenChange={setExpanded}
+      className="rounded-md bg-muted/30"
+    >
       <div className="flex items-start gap-2.5 py-2 px-3">
         <div className="mt-0.5 shrink-0">
           <StatusIcon status={task.status} />
@@ -182,27 +193,30 @@ function TaskRow({ task }: { task: InstallTaskProgress }) {
           )}
         </div>
         {hasLogs && (
-          <button
-            type="button"
-            onClick={() => setExpanded((value) => !value)}
-            className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label={expanded ? "Collapse install log" : "Expand install log"}
-          >
-            {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
-            )}
-          </button>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label={expanded ? "Collapse install log" : "Expand install log"}
+            >
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
         )}
       </div>
 
-      {expanded && hasLogs && (
+      <CollapsibleContent>
         <pre className="mx-3 mb-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
           {logs.join("\n\n")}
         </pre>
-      )}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

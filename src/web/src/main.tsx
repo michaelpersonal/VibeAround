@@ -70,7 +70,7 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
   return res;
 };
 
-// Auth gate: render the Unauthorized page if we have no token to send.
+// Auth gate: render the pairing page if we have no token to send.
 // The SPA bundle is fetched through the public `/` + `/assets/*` routes
 // regardless — this only changes what we render once React boots, so
 // anyone who loads the page without a token sees a clear explanation

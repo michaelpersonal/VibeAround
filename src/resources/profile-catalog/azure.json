@@ -36,36 +36,6 @@
           }
         }
       ]
-    },
-    {
-      "api_type": "openai-chat",
-      "default_base_url": "",
-      "models": [],
-      "auth_modes": [
-        {
-          "mode": "api_key",
-          "label": "Use Azure OpenAI key",
-          "fields": [
-            {
-              "name": "api_key",
-              "label": "Azure OpenAI API key",
-              "secret": true,
-              "required": true
-            }
-          ],
-          "render": {
-            "env": {
-              "AZURE_OPENAI_API_KEY": "{{api_key}}"
-            },
-            "settings_files": [
-              {
-                "rel_path": "config.toml",
-                "template": "model = \"{{model}}\"\nmodel_provider = \"azure\"\n\n[model_providers.azure]\nname = \"Azure OpenAI\"\nbase_url = \"{{base_url}}\"\nenv_key = \"AZURE_OPENAI_API_KEY\"\nwire_api = \"chat\"\n"
-              }
-            ]
-          }
-        }
-      ]
     }
   ]
 }

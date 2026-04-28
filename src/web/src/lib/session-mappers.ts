@@ -33,13 +33,13 @@ export function sessionToName(tool: string): string {
   return getToolDisplayName(tool);
 }
 
-export function mapApiStatus(s: string): TerminalStatus {
+function mapApiStatus(s: string): TerminalStatus {
   if (s === "running") return "running";
   if (s === "exited") return "stopped";
   return "idle";
 }
 
-export function mapApiTool(s: string): ToolType {
+function mapApiTool(s: string): ToolType {
   const t = s.toLowerCase();
   if (t === "claude" || t === "codex" || t === "gemini" || t === "opencode" || t === "generic") {
     return t as ToolType;

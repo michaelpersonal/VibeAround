@@ -71,16 +71,10 @@ fn ensure_rustls_provider() {
 }
 
 /// Per-channel verbose/output settings for IM.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ImVerboseConfig {
     pub show_thinking: bool,
     pub show_tool_use: bool,
-}
-
-impl Default for ImVerboseConfig {
-    fn default() -> Self {
-        Self { show_thinking: false, show_tool_use: false }
-    }
 }
 
 /// Cached config from settings.json.

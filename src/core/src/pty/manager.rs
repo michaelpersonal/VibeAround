@@ -171,3 +171,9 @@ impl PtySessionManager {
         })
     }
 }
+
+impl Default for PtySessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

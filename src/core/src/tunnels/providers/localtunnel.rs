@@ -19,7 +19,7 @@ fn parse_url_from_line(line: &str) -> Option<String> {
         let end = rest
             .find(|c: char| c.is_whitespace() || c == '\r' || c == '\n')
             .unwrap_or(rest.len());
-        let url = rest[..end].trim_end_matches(|c| c == '.' || c == ',');
+        let url = rest[..end].trim_end_matches(['.', ',']);
         if url.starts_with("https://") && (url.contains("loca.lt") || url.contains("localtunnel")) {
             return Some(url.to_string());
         }
@@ -29,7 +29,7 @@ fn parse_url_from_line(line: &str) -> Option<String> {
         let end = rest
             .find(|c: char| c.is_whitespace() || c == '\r' || c == '\n')
             .unwrap_or(rest.len());
-        let url = rest[..end].trim_end_matches(|c| c == '.' || c == ',');
+        let url = rest[..end].trim_end_matches(['.', ',']);
         if url.contains("loca.lt") || url.contains("localtunnel") {
             return Some(url.to_string());
         }

@@ -338,6 +338,17 @@ mod tests {
     }
 
     #[test]
+    fn azure_supports_responses_only() {
+        let provider = get("azure").expect("azure must exist");
+        let api_types: Vec<_> = provider
+            .endpoints
+            .iter()
+            .map(|e| e.api_type.as_str())
+            .collect();
+        assert_eq!(api_types, vec!["openai-responses"]);
+    }
+
+    #[test]
     fn gemini_supports_api_key_launch() {
         let provider = get("gemini").expect("gemini must exist");
         let endpoint = provider

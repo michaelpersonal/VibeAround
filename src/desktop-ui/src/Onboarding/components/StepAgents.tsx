@@ -1,11 +1,12 @@
-import { Bot, Check, FolderOpen, Plus, Star, Trash2 } from "lucide-react";
+import { Bot, FolderOpen, Plus, Star, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { BrandIcon } from "@/components/brand-icon";
 import type { AgentSummary, StepAgentsProps } from "../types";
 
 const RECOMMENDED_AGENT_IDS = new Set(["claude", "codex"]);
-const NO_HANDOVER_AGENTS = new Set(["opencode"]);
 
 export function StepAgents({
   agents,
@@ -30,7 +31,7 @@ export function StepAgents({
         </p>
       </div>
 
-      <section className="rounded-lg border border-border bg-card p-3 space-y-3">
+      <Card className="p-3 space-y-3">
         <div className="flex items-center gap-2 text-xs font-medium">
           <Star className="w-3.5 h-3.5 text-primary" />
           Best recommended
@@ -40,20 +41,20 @@ export function StepAgents({
           enabled={enabled}
           onToggle={onToggle}
         />
-      </section>
+      </Card>
 
       {others.length > 0 && (
-        <section className="rounded-lg border border-border bg-card p-3 space-y-3">
+        <Card className="p-3 space-y-3">
           <div className="text-xs font-medium text-muted-foreground">Other CLIs</div>
           <AgentGrid
             agents={others}
             enabled={enabled}
             onToggle={onToggle}
           />
-        </section>
+        </Card>
       )}
 
-      <section className="rounded-lg border border-border bg-card p-3 space-y-3">
+      <Card className="p-3 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-xs font-medium">API profiles</div>
@@ -113,9 +114,9 @@ export function StepAgents({
             No API profiles yet. You can add one now or skip this step.
           </p>
         )}
-      </section>
+      </Card>
 
-      <section className="rounded-lg border border-border bg-card p-3">
+      <Card className="p-3">
         <div className="flex items-center gap-2">
           <FolderOpen className="w-4 h-4 text-primary" />
           <div>
@@ -125,7 +126,7 @@ export function StepAgents({
             </div>
           </div>
         </div>
-      </section>
+      </Card>
     </div>
   );
 }
@@ -143,16 +144,24 @@ function AgentGrid({
     <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
       {agents.map((agent) => {
         const isEnabled = enabled.has(agent.id);
-        const noHandover = NO_HANDOVER_AGENTS.has(agent.id);
         return (
           <div
             key={agent.id}
-            className={`relative flex min-h-[68px] cursor-pointer gap-2 rounded-md border p-2 pr-8 text-left transition-colors ${
+            role="checkbox"
+            aria-checked={isEnabled}
+            tabIndex={0}
+            className={`relative flex min-h-[54px] cursor-pointer items-center gap-2 rounded-md border p-2 pr-8 text-left transition-colors ${
               isEnabled
                 ? "border-primary/40 bg-primary/5"
                 : "border-border hover:border-border/80"
             }`}
             onClick={() => onToggle(agent.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onToggle(agent.id);
+              }
+            }}
           >
             <BrandIcon
               kind="cli"
@@ -160,7 +169,7 @@ function AgentGrid({
               label={agent.display_name}
               className="h-7 w-7"
             />
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 items-center">
               <div
                 className={`truncate text-[13px] font-medium ${
                   isEnabled ? "text-foreground" : "text-muted-foreground"
@@ -168,21 +177,13 @@ function AgentGrid({
               >
                 {agent.display_name}
               </div>
-              {noHandover && (
-                <div className="mt-1">
-                  <span className="rounded bg-muted px-1 py-0.5 font-mono text-[9px] leading-none text-muted-foreground/60">
-                    no handover
-                  </span>
-                </div>
-              )}
             </div>
-            <div
-              className={`absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                isEnabled ? "border-primary bg-primary" : "border-muted-foreground/30"
-              }`}
-            >
-              {isEnabled && <Check className="h-3 w-3 text-primary-foreground" />}
-            </div>
+            <Checkbox
+              checked={isEnabled}
+              aria-hidden="true"
+              tabIndex={-1}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"
+            />
           </div>
         );
       })}

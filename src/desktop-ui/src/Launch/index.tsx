@@ -174,7 +174,7 @@ export function Launch() {
             onClick={handleLaunchDefault}
             size="sm"
             disabled={directBusy}
-            className="h-8 text-xs font-semibold shadow-sm"
+            className="h-8 text-xs font-semibold"
             title={quickLaunchTitle(prefs, profiles)}
           >
             <Rocket className="w-3.5 h-3.5" /> Quick launch

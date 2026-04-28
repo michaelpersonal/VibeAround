@@ -69,6 +69,12 @@ impl CircularBuffer {
     }
 }
 
+impl Default for CircularBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Live output broadcast capacity (number of messages to buffer per subscriber).
 pub const LIVE_BROADCAST_CAP: usize = 256;
 

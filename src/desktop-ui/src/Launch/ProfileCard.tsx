@@ -114,14 +114,16 @@ export function ProfileCard({
           const isDefault =
             defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
           return (
-            <span key={target.id} className="inline-flex items-center gap-0.5">
+            <span key={target.id} className="inline-flex h-7 overflow-hidden rounded-md bg-primary/10 text-primary">
               <Button
                 type="button"
-                variant="secondary"
+                variant="ghost"
                 size="xs"
                 onClick={() => handleLaunch(target.id)}
                 disabled={busy}
-                className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
+                className={`h-7 rounded-none bg-transparent px-2 font-mono text-[11px] text-primary hover:bg-primary/15 hover:text-primary ${
+                  isDefault ? "" : "pr-1.5"
+                }`}
                 title={
                   warning
                     ? `⚠ ${warning}\n\n(Click to launch ${target.label} via ${apiTypeShort(target.apiType)} anyway.)`
@@ -157,9 +159,9 @@ export function ProfileCard({
                     }
                   }}
                   title={`Use ${target.label} with ${profile.label} as Quick Launch default`}
-                  className="h-7 w-7 text-muted-foreground hover:text-primary"
+                  className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
                 >
-                  <Star className="w-3.5 h-3.5" />
+                  <Star className="w-3 h-3" />
                 </Button>
               )}
             </span>

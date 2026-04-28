@@ -101,9 +101,7 @@ async fn npm_process(
             .join("npm")
             .join("bin")
             .join("npm-cli.js"),
-        node_dir
-            .join("../lib/node_modules/npm/bin/npm-cli.js")
-            .into(),
+        node_dir.join("../lib/node_modules/npm/bin/npm-cli.js"),
         std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
         std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
     ];

@@ -110,7 +110,13 @@ export function Workspaces() {
                 className={`w-3.5 h-3.5 text-muted-foreground ${loading ? "animate-spin" : ""}`}
               />
             </Button>
-            <Button type="button" size="sm" onClick={addWorkspace} disabled={adding}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={addWorkspace}
+              disabled={adding}
+              className="text-xs font-semibold"
+            >
               <Plus className="w-3.5 h-3.5" />
               {adding ? "Selecting…" : "Add Folder"}
             </Button>

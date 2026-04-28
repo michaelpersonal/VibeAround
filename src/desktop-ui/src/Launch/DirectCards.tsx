@@ -60,14 +60,16 @@ export function DirectCards({
           {(agents ?? []).map((a) => {
             const isDefault = defaultAgent === a.id && !defaultProfiles[a.id];
             return (
-              <span key={a.id} className="inline-flex items-center gap-0.5">
+              <span key={a.id} className="inline-flex h-7 overflow-hidden rounded-md bg-primary/10 text-primary">
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="ghost"
                   size="xs"
                   onClick={() => onLaunch(a.id)}
                   disabled={busy}
-                  className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
+                  className={`h-7 rounded-none bg-transparent px-2 font-mono text-[11px] text-primary hover:bg-primary/15 hover:text-primary ${
+                    isDefault ? "" : "pr-1.5"
+                  }`}
                   title={`${a.display_name} — ${a.description}`}
                 >
                   <BrandIcon
@@ -95,9 +97,9 @@ export function DirectCards({
                       }
                     }}
                     title={`Use ${a.display_name} as Quick Launch default without a profile`}
-                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                    className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
                   >
-                    <Star className="w-3.5 h-3.5" />
+                    <Star className="w-3 h-3" />
                   </Button>
                 )}
               </span>

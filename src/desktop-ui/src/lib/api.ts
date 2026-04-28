@@ -16,7 +16,7 @@ import { loopbackBaseUrl, loopbackWsBaseUrl } from "@va/client";
 
 export const DAEMON_PORT = 12358;
 export const API_BASE = loopbackBaseUrl(DAEMON_PORT);
-export const WS_BASE = loopbackWsBaseUrl(DAEMON_PORT);
+const WS_BASE = loopbackWsBaseUrl(DAEMON_PORT);
 
 interface AuthFile {
   port: number;
@@ -86,7 +86,7 @@ export async function authedWsUrl(path: string): Promise<string> {
  * tunnel URLs. The token is identical in both cases because the server
  * validates it regardless of which host it was reached on.
  */
-export async function authedDashboardUrl(url: string): Promise<string> {
+async function authedDashboardUrl(url: string): Promise<string> {
   const token = await getToken();
   if (!token) return url;
   const sep = url.includes("?") ? "&" : "?";

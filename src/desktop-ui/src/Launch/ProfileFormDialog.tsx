@@ -57,7 +57,7 @@ interface Props {
  * actual render templates; this client-side copy is only used to drive
  * the form (fields list, empty models, empty default base_url).
  */
-export const CUSTOM_PROVIDER: CatalogEntry = {
+const CUSTOM_PROVIDER: CatalogEntry = {
   id: "custom",
   label: "Custom endpoint",
   icon: "✨",
@@ -336,25 +336,29 @@ export function ProfileFormDialog({
           </div>
         )}
 
-        <DialogFooter className="border-t border-border">
-          {step === "fill-form" && !editing && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setStep("pick-provider")}
-            >
-              Back
+        <DialogFooter className="justify-between border-t border-border">
+          <div>
+            {step === "fill-form" && !editing && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep("pick-provider")}
+              >
+                Back
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+              Cancel
             </Button>
-          )}
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-            Cancel
-          </Button>
-          {step === "fill-form" && (
-            <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : editing ? "Save changes" : "Create profile"}
-            </Button>
-          )}
+            {step === "fill-form" && (
+              <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? "Saving…" : editing ? "Save changes" : "Create profile"}
+              </Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
