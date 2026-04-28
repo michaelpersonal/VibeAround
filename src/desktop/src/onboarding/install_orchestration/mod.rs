@@ -35,6 +35,8 @@ use util::{emit_progress, log_line, resolve_enabled_agents};
 pub fn get_install_manifest(settings: &Value) -> Vec<InstallTaskInfo> {
     let all_agents = common::resources::agent_ids();
     let enabled_agents = resolve_enabled_agents(settings, &all_agents);
+    let enabled_channels = enabled_channel_ids(settings);
+    let needs_acp_agents = !enabled_channels.is_empty();
 
     let mut tasks = Vec::new();
 
@@ -63,9 +65,9 @@ pub fn get_install_manifest(settings: &Value) -> Vec<InstallTaskInfo> {
             }
         }
 
-        // ACP agent install (npm or script) — only for installable types
+        // ACP agent install is only needed when at least one IM/channel is enabled.
         let install_type = agent_def.install.as_ref().map(|i| i.install_type.as_str());
-        if matches!(install_type, Some("npm") | Some("script")) {
+        if needs_acp_agents && matches!(install_type, Some("npm") | Some("script")) {
             tasks.push(InstallTaskInfo {
                 id: format!("agent:{}:acp", agent_id),
                 label: format!("{} — CLI install", agent_def.display_name),
@@ -74,12 +76,6 @@ pub fn get_install_manifest(settings: &Value) -> Vec<InstallTaskInfo> {
     }
 
     // Channel plugins
-    let enabled_channels = settings
-        .get("channels")
-        .and_then(|v| v.as_object())
-        .map(|obj| obj.keys().cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
-
     for channel_id in &enabled_channels {
         let plugin_def = common::resources::plugin_by_id(channel_id);
         let label = plugin_def
@@ -154,6 +150,8 @@ async fn run_install<R: Runtime>(
 ) {
     let all_agents = common::resources::agent_ids();
     let enabled_agents = resolve_enabled_agents(&settings, &all_agents);
+    let enabled_channels = enabled_channel_ids(&settings);
+    let needs_acp_agents = !enabled_channels.is_empty();
     let mut had_error = false;
 
     // Install MCP config + skill files for all enabled agents in one global
@@ -224,9 +222,9 @@ async fn run_install<R: Runtime>(
             break;
         }
 
-        // ACP agent install (npm or script)
+        // ACP agent install (npm or script) is only needed for IM/channel use.
         let install_type = agent_def.install.as_ref().map(|i| i.install_type.as_str());
-        match install_type {
+        match if needs_acp_agents { install_type } else { None } {
             Some("npm") => {
                 install_npm_agent(
                     &app,
@@ -246,12 +244,6 @@ async fn run_install<R: Runtime>(
     }
 
     // --- Channel plugin installs ---
-    let enabled_channels = settings
-        .get("channels")
-        .and_then(|v| v.as_object())
-        .map(|obj| obj.keys().cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
-
     for channel_id in &enabled_channels {
         if cancelled.load(Ordering::Relaxed) {
             break;
@@ -277,4 +269,12 @@ async fn run_install<R: Runtime>(
 
     let mut lf = log_file.lock().await;
     *lf = None;
+}
+
+fn enabled_channel_ids(settings: &Value) -> Vec<String> {
+    settings
+        .get("channels")
+        .and_then(|v| v.as_object())
+        .map(|obj| obj.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default()
 }

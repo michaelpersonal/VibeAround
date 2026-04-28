@@ -263,6 +263,11 @@ pub fn is_program_available(program: &str) -> bool {
 
 /// Pre-install all ACP agent packages (npm or binary) for enabled agents.
 pub async fn install_acp_agents(settings: &serde_json::Value) {
+    if !has_enabled_channels(settings) {
+        tracing::info!("[agent] no IM channels enabled; skipping ACP agent preinstall");
+        return;
+    }
+
     let all_agents = resources::agent_ids();
     let enabled_agents = super::resolve_enabled_agents(settings, &all_agents);
 
@@ -293,4 +298,12 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
             }
         }
     }
+}
+
+fn has_enabled_channels(settings: &serde_json::Value) -> bool {
+    settings
+        .get("channels")
+        .and_then(|v| v.as_object())
+        .map(|channels| !channels.is_empty())
+        .unwrap_or(false)
 }
