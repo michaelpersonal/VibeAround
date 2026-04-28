@@ -1,0 +1,19 @@
+{
+  "name": "@va/ui",
+  "private": true,
+  "version": "0.5.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.575.0",
+    "radix-ui": "^1.4.3",
+    "react": "^19.0.0",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
+  }
+}

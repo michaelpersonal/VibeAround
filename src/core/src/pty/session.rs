@@ -18,12 +18,6 @@ impl SessionId {
     }
 }
 
-impl Default for SessionId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl std::fmt::Display for SessionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)

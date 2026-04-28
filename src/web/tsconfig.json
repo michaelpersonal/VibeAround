@@ -19,8 +19,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@va/client": ["../shared/client-ts/src/index.ts"]
+      "@va/client": ["../shared/client-ts/src/index.ts"],
+      "@va/ui": ["../shared/ui/src/index.ts"],
+      "@va/ui/*": ["../shared/ui/src/*"]
     }
   },
-  "include": ["src", "../shared/client-ts/src"]
+  "include": ["src", "../shared/client-ts/src", "../shared/ui/src"]
 }

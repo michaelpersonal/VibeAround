@@ -150,7 +150,8 @@ function AgentGrid({
         return (
           <div
             key={agent.id}
-            role="button"
+            role="checkbox"
+            aria-checked={isEnabled}
             tabIndex={0}
             className={`relative flex min-h-[68px] cursor-pointer gap-2 rounded-md border p-2 pr-8 text-left transition-colors ${
               isEnabled
