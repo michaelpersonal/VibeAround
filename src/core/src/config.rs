@@ -357,8 +357,10 @@ fn parse_verbose_config(channel_obj: Option<&serde_json::Value>) -> ImVerboseCon
 
 /// Expand ~ to home directory in a path string.
 fn expand_home(s: &str) -> PathBuf {
-    if s.starts_with("~/") || s == "~" {
-        home_dir().join(&s[2..])
+    if s == "~" {
+        home_dir()
+    } else if let Some(rest) = s.strip_prefix("~/") {
+        home_dir().join(rest)
     } else {
         PathBuf::from(s)
     }
@@ -369,7 +371,7 @@ pub fn builtin_workspaces_dir() -> PathBuf {
     data_dir().join("workspaces")
 }
 
-/// Read + write settings.json atomically (for API-driven updates).
+/// Read + write settings.json (for API-driven updates).
 /// Automatically reloads the in-memory config cache after writing.
 pub fn update_settings_json(mutator: impl FnOnce(&mut serde_json::Value)) -> Result<(), String> {
     let path = data_dir().join("settings.json");
@@ -398,17 +400,12 @@ fn write_settings_json_locked(root: &serde_json::Value) -> Result<(), String> {
 }
 
 fn write_settings_json_to_path(path: &Path, root: &serde_json::Value) -> Result<(), String> {
-    let tmp_path = path.with_extension("json.tmp");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let pretty = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
-    fs::write(&tmp_path, pretty).map_err(|e| e.to_string())?;
-    crate::auth::set_owner_only(&tmp_path).map_err(|e| e.to_string())?;
-    fs::rename(&tmp_path, &path).map_err(|e| {
-        let _ = fs::remove_file(&tmp_path);
-        e.to_string()
-    })
+    fs::write(path, pretty).map_err(|e| e.to_string())?;
+    crate::auth::set_owner_only(path).map_err(|e| e.to_string())
 }
 
 impl Default for Config {
@@ -447,8 +444,8 @@ mod tests {
     }
 
     #[test]
-    fn atomic_write_replaces_file_and_removes_temp() {
-        let dir = unique_test_dir("atomic");
+    fn settings_write_replaces_file() {
+        let dir = unique_test_dir("write");
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.json");
         fs::write(&path, "{}").unwrap();
@@ -459,7 +456,6 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
             serde_json::json!({ "workspaces": [] })
         );
-        assert!(!dir.join("settings.json.tmp").exists());
 
         #[cfg(unix)]
         {
@@ -474,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn atomic_write_creates_parent_dir() {
+    fn settings_write_creates_parent_dir() {
         let dir = unique_test_dir("parent");
         let path = dir.join("nested").join("settings.json");
 
@@ -485,5 +481,11 @@ mod tests {
             serde_json::json!({ "onboarded": true })
         );
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn expand_home_handles_bare_home() {
+        assert_eq!(expand_home("~"), home_dir());
+        assert_eq!(expand_home("~/project"), home_dir().join("project"));
     }
 }

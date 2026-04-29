@@ -27,13 +27,10 @@ use common::state::StateSource;
 use super::AppState;
 
 /// GET /api/tmux/sessions — list active tmux sessions and whether tmux is available.
-pub async fn list_tmux_sessions_handler() -> Json<serde_json::Value> {
+pub async fn list_tmux_sessions_handler() -> Json<crate::api_types::TmuxSessionsResponse> {
     let available = tmux_available();
     let sessions = if available { list_tmux_sessions() } else { vec![] };
-    Json(serde_json::json!({
-        "available": available,
-        "sessions": sessions,
-    }))
+    Json(crate::api_types::TmuxSessionsResponse { available, sessions })
 }
 
 /// GET /api/agents — list enabled agents and default agent for frontend agent selector.
@@ -217,19 +214,21 @@ pub(crate) struct CreateSessionBody {
 }
 
 /// GET /api/sessions — list all active sessions.
-pub async fn list_sessions_handler(State(state): State<AppState>) -> Json<Vec<serde_json::Value>> {
+pub async fn list_sessions_handler(
+    State(state): State<AppState>,
+) -> Json<Vec<crate::api_types::SessionListItem>> {
     let items = state
         .pty_manager
         .list_sessions()
         .into_iter()
-        .map(|item| serde_json::json!({
-            "session_id": item.session_id,
-            "tool": item.tool,
-            "status": item.status,
-            "created_at": item.created_at,
-            "project_path": item.project_path,
-            "tmux_session": item.tmux_session,
-        }))
+        .map(|item| crate::api_types::SessionListItem {
+            session_id: item.session_id,
+            tool: item.tool,
+            status: item.status,
+            created_at: item.created_at,
+            project_path: item.project_path,
+            tmux_session: item.tmux_session,
+        })
         .collect();
     Json(items)
 }
@@ -238,7 +237,7 @@ pub async fn list_sessions_handler(State(state): State<AppState>) -> Json<Vec<se
 pub async fn create_session_handler(
     State(state): State<AppState>,
     Json(body): Json<CreateSessionBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<crate::api_types::CreateSessionResponse>, (StatusCode, String)> {
     let initial_size = match (body.cols, body.rows) {
         (Some(c), Some(r)) => Some((c, r)),
         _ => None,
@@ -255,12 +254,12 @@ pub async fn create_session_handler(
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(serde_json::json!({
-        "session_id": created.session_id,
-        "tool": created.tool,
-        "created_at": created.created_at,
-        "project_path": created.project_path,
-    })))
+    Ok(Json(crate::api_types::CreateSessionResponse {
+        session_id: created.session_id,
+        tool: created.tool,
+        created_at: created.created_at,
+        project_path: created.project_path,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -268,30 +267,33 @@ pub async fn create_session_handler(
 // ---------------------------------------------------------------------------
 
 /// GET /api/workspaces — list all workspaces.
-pub async fn list_workspaces_handler() -> Json<serde_json::Value> {
+pub async fn list_workspaces_handler() -> Json<crate::api_types::WorkspacesResponse> {
     let cfg = config::ensure_loaded();
     let builtin = config::builtin_workspaces_dir();
     let all = cfg.all_workspaces();
 
-    let items: Vec<serde_json::Value> = all
+    let items = all
         .iter()
         .map(|ws| {
             let is_builtin = *ws == builtin;
             let is_default = cfg.default_workspace.as_ref() == Some(ws)
                 || (cfg.default_workspace.is_none() && is_builtin);
-            serde_json::json!({
-                "path": ws.to_string_lossy(),
-                "is_default": is_default,
-                "is_builtin": is_builtin,
-            })
+            crate::api_types::WorkspaceItem {
+                path: ws.to_string_lossy().to_string(),
+                is_default,
+                is_builtin,
+            }
         })
         .collect();
 
-    Json(serde_json::json!({
-        "workspaces": items,
-        "default_workspace": cfg.default_workspace.as_ref().map(|p| p.to_string_lossy().to_string())
+    Json(crate::api_types::WorkspacesResponse {
+        workspaces: items,
+        default_workspace: cfg
+            .default_workspace
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| builtin.to_string_lossy().to_string()),
-    }))
+    })
 }
 
 #[derive(serde::Deserialize)]
@@ -372,13 +374,15 @@ pub async fn set_default_workspace_handler(
 }
 
 /// GET /api/previews — list all live preview sessions and the active tunnel URL.
-pub async fn list_previews_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
+pub async fn list_previews_handler(
+    State(state): State<AppState>,
+) -> Json<crate::api_types::PreviewsResponse> {
     let previews = common::previews::list_snapshots();
     let tunnel_url = state.tunnels.first_url();
-    Json(serde_json::json!({
-        "previews": previews,
-        "tunnel_url": tunnel_url,
-    }))
+    Json(crate::api_types::PreviewsResponse {
+        previews,
+        tunnel_url,
+    })
 }
 
 /// DELETE /api/previews/:slug — close one preview and kill its dev-server port.

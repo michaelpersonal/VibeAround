@@ -31,15 +31,20 @@ impl Conversation {
         resume_cwd: Option<String>,
         downstream_handler: Arc<dyn AgentClientHandler>,
     ) -> anyhow::Result<Arc<Agent>> {
+        let requested_cli_kind = cli_kind
+            .as_deref()
+            .map(crate::resources::resolve_agent_id)
+            .transpose()
+            .map_err(anyhow::Error::msg)?;
         let stored_cli_kind = self.cli_kind.lock().await.clone();
         let resolved_cli_kind = stored_cli_kind
             .clone()
-            .or(cli_kind.clone())
+            .or(requested_cli_kind.clone())
             .unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
 
         // If an Agent exists, check if caller requested a different kind (implicit switch).
         if let Some(existing) = self.agent.lock().await.clone() {
-            let needs_switch = cli_kind
+            let needs_switch = requested_cli_kind
                 .as_ref()
                 .map(|requested| {
                     stored_cli_kind
@@ -50,7 +55,7 @@ impl Conversation {
                 .unwrap_or(false);
 
             if needs_switch {
-                let new_kind = cli_kind.unwrap();
+                let new_kind = requested_cli_kind.unwrap();
                 tracing::info!(
                     route = %self.route,
                     from = %resolved_cli_kind,
@@ -72,6 +77,8 @@ impl Conversation {
             .await
             .clone()
             .unwrap_or_else(|| cfg.default_agent.clone());
+        let agent_id = crate::resources::resolve_agent_id(&cli_kind).map_err(anyhow::Error::msg)?;
+        let cli_kind = agent_id.clone();
         tracing::info!(route = %self.route, cli_kind = %cli_kind, "spawning new agent");
         let explicit_profile = self.profile.lock().await.clone();
         let mut profile = explicit_profile
@@ -107,10 +114,6 @@ impl Conversation {
         // can resolve which conversation they belong to.
         std::fs::create_dir_all(&workspace)
             .with_context(|| format!("Failed to create workspace {:?}", &workspace))?;
-
-        let agent_id = crate::resources::agent_by_alias(&cli_kind)
-            .map(|def| def.id.clone())
-            .unwrap_or_else(|| "claude".to_string());
 
         let mut env_vars = vec![
             (

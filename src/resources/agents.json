@@ -23,6 +23,29 @@
     }
   },
   {
+    "id": "codex",
+    "display_name": "Codex CLI",
+    "description": "OpenAI Codex CLI",
+    "aliases": ["codex", "openai-codex"],
+    "install": { "type": "npm" },
+    "acp": {
+      "program": "node",
+      "npm_package": "@zed-industries/codex-acp",
+      "bin_name": "codex-acp"
+    },
+    "pty": {
+      "command": "codex"
+    },
+    "resume_template": "cd {cwd} && codex resume {session_id}",
+    "global_config": {
+      "settings_path": ".codex/config.toml",
+      "settings_format": "toml",
+      "mcp_key": "mcp_servers",
+      "mcp_entry": { "url": "{mcp_url}" },
+      "skill_dir": ".codex/skills/vibearound"
+    }
+  },
+  {
     "id": "gemini",
     "display_name": "Gemini CLI",
     "description": "Google Gemini CLI",
@@ -55,29 +78,6 @@
     },
     "pty": {
       "command": "opencode"
-    }
-  },
-  {
-    "id": "codex",
-    "display_name": "Codex CLI",
-    "description": "OpenAI Codex CLI",
-    "aliases": ["codex", "openai-codex"],
-    "install": { "type": "npm" },
-    "acp": {
-      "program": "node",
-      "npm_package": "@zed-industries/codex-acp",
-      "bin_name": "codex-acp"
-    },
-    "pty": {
-      "command": "codex"
-    },
-    "resume_template": "cd {cwd} && codex resume {session_id}",
-    "global_config": {
-      "settings_path": ".codex/config.toml",
-      "settings_format": "toml",
-      "mcp_key": "mcp_servers",
-      "mcp_entry": { "url": "{mcp_url}" },
-      "skill_dir": ".codex/skills/vibearound"
     }
   },
   {

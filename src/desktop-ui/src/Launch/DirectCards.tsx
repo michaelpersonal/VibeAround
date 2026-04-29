@@ -5,6 +5,8 @@ import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { listAgents, type AgentSummary } from "./api";
 
+const AGENT_DISPLAY_ORDER = ["claude", "codex", "gemini", "opencode", "cursor", "kiro", "qwen-code"];
+
 interface Props {
   onLaunch: (agentId: string) => Promise<void>;
   onSetDefault: (agentId: string) => Promise<void>;
@@ -35,7 +37,10 @@ export function DirectCards({
 
   useEffect(() => {
     void listAgents()
-      .then(setAgents)
+      .then((items) => {
+        const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
+        setAgents([...items].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999)));
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
@@ -67,7 +72,7 @@ export function DirectCards({
                   size="xs"
                   onClick={() => onLaunch(a.id)}
                   disabled={busy}
-                  className={`h-7 rounded-none bg-transparent px-2 font-mono text-[11px] text-primary hover:bg-primary/15 hover:text-primary ${
+                  className={`h-7 rounded-none bg-transparent px-2 text-[11px] text-primary hover:bg-primary/15 hover:text-primary ${
                     isDefault ? "" : "pr-1.5"
                   }`}
                   title={`${a.display_name} — ${a.description}`}
@@ -79,7 +84,7 @@ export function DirectCards({
                     framed={false}
                     className="h-3.5 w-3.5"
                   />
-                  {a.id}
+                  {a.display_name}
                   {isDefault && <Star className="w-3 h-3 fill-current" />}
                 </Button>
                 {!isDefault && (

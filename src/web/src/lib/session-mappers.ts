@@ -5,7 +5,7 @@ import type {
   ToolType,
 } from "./terminal-types";
 import { getToolDisplayName } from "./agents";
-import type { SessionListItem } from "@/api/sessions";
+import type { PtyRunState, SessionListItem } from "@va/client";
 
 export const DEFAULT_GROUP_ID = "default";
 
@@ -33,9 +33,9 @@ export function sessionToName(tool: string): string {
   return getToolDisplayName(tool);
 }
 
-function mapApiStatus(s: string): TerminalStatus {
-  if (s === "running") return "running";
-  if (s === "exited") return "stopped";
+function mapApiStatus(s: PtyRunState): TerminalStatus {
+  if (s.type === "running") return "running";
+  if (s.type === "exited") return s.exit_code === 0 ? "stopped" : "error";
   return "idle";
 }
 
@@ -58,6 +58,6 @@ export function sessionListItemToSession(item: SessionListItem): TerminalSession
     cwd: item.project_path ?? "—",
     startedAt: item.created_at * 1000,
     createdAt: item.created_at,
-    tmuxSession: item.tmux_session,
+    tmuxSession: item.tmux_session ?? undefined,
   };
 }

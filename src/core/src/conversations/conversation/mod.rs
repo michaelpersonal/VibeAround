@@ -106,11 +106,13 @@ impl Conversation {
         cli_kind: String,
         resume_session_id: String,
         cwd: Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
+        let cli_kind = crate::resources::resolve_agent_id(&cli_kind).map_err(anyhow::Error::msg)?;
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(cli_kind);
         *self.handover_resume_session_id.lock().await = Some(resume_session_id);
         *self.handover_cwd.lock().await = cwd;
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -256,7 +258,9 @@ impl Conversation {
     }
 
     /// Switch agent kind — kill current agent, next prompt spawns a new one.
-    pub async fn switch_agent(&self, agent_kind: String) {
+    pub async fn switch_agent(&self, agent_kind: String) -> anyhow::Result<String> {
+        let agent_kind =
+            crate::resources::resolve_agent_id(&agent_kind).map_err(anyhow::Error::msg)?;
         tracing::info!(
             "[Conversation] switch_agent route={} new_kind={}",
             self.route, agent_kind
@@ -268,6 +272,7 @@ impl Conversation {
             "[Conversation] switch_agent done route={} cli_kind={:?}",
             self.route, agent_kind
         );
+        Ok(agent_kind)
     }
 
     /// Switch profile — kill current agent, next prompt spawns a new one.

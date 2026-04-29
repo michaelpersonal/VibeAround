@@ -200,6 +200,14 @@ pub fn agent_by_alias(alias: &str) -> Option<&'static AgentDef> {
     })
 }
 
+/// Resolve an agent alias to the canonical agent ID.
+pub fn resolve_agent_id(alias: &str) -> Result<String, String> {
+    let trimmed = alias.trim();
+    agent_by_alias(trimmed)
+        .map(|def| def.id.clone())
+        .ok_or_else(|| format!("Unknown agent '{}'", trimmed))
+}
+
 /// Get all agent IDs.
 pub fn agent_ids() -> Vec<&'static str> {
     AGENTS.iter().map(|a| a.id.as_str()).collect()
