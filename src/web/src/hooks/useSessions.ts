@@ -94,9 +94,10 @@ export function useSessions({ active, theme, onTmuxAttached }: UseSessionsInput)
         const session = sessionListItemToSession({
           session_id: res.session_id,
           tool: res.tool,
-          status: "running",
+          status: { type: "running", tool: res.tool },
           created_at: res.created_at,
           project_path: res.project_path,
+          tmux_session: null,
         });
         setGroups((prev) =>
           prev.map((g) =>
@@ -134,7 +135,7 @@ export function useSessions({ active, theme, onTmuxAttached }: UseSessionsInput)
         const session = sessionListItemToSession({
           session_id: res.session_id,
           tool: "generic",
-          status: "running",
+          status: { type: "running", tool: "generic" },
           created_at: res.created_at,
           project_path: res.project_path,
           tmux_session: sessionName,

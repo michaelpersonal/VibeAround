@@ -31,6 +31,12 @@ import type {
 import type { AgentId, TunnelProvider } from "./constants";
 
 const DEFAULT_ENABLED_AGENT_IDS = new Set<AgentId>(["claude", "codex"]);
+const AGENT_DISPLAY_ORDER = ["claude", "codex", "gemini", "opencode", "cursor", "kiro", "qwen-code"];
+
+function orderAgents(agentDefs: AgentSummary[]): AgentSummary[] {
+  const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
+  return [...agentDefs].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
+}
 
 export default function Onboarding() {
   const [step, setStep] = useState(0);
@@ -72,9 +78,10 @@ export default function Onboarding() {
       listProfiles(),
     ])
       .then(([loadedSettings, plugins, agentDefs, tunnelDefs, pluginDefs, catalogDefs, profileDefs]) => {
+        const orderedAgents = orderAgents(agentDefs);
         setSettings(loadedSettings);
         setDiscoveredPlugins(plugins);
-        setAgents(agentDefs);
+        setAgents(orderedAgents);
         setTunnels(tunnelDefs);
         setPluginRegistry(pluginDefs);
         setCatalog(catalogDefs);
@@ -85,7 +92,7 @@ export default function Onboarding() {
         } else {
           setEnabledAgents(
             new Set(
-              agentDefs
+              orderedAgents
                 .map((agent) => agent.id)
                 .filter((id) => DEFAULT_ENABLED_AGENT_IDS.has(id)),
             ),

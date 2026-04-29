@@ -103,9 +103,15 @@ impl ConversationManager {
     }
 
     /// Switch agent kind on a route (creates conversation if needed).
-    pub async fn switch_agent(&self, route: &RouteKey, agent_kind: String) {
+    pub async fn switch_agent(
+        &self,
+        route: &RouteKey,
+        agent_kind: String,
+    ) -> anyhow::Result<String> {
+        let agent_kind =
+            crate::resources::resolve_agent_id(&agent_kind).map_err(anyhow::Error::msg)?;
         let conv = self.get_or_create(route.clone());
-        conv.switch_agent(agent_kind).await;
+        conv.switch_agent(agent_kind).await
     }
 
     /// Switch profile on a route (creates conversation if needed).
@@ -170,9 +176,9 @@ impl ConversationManager {
         cli_kind: String,
         resume_session_id: String,
         cwd: Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
         let conv = self.get_or_create(route);
-        conv.set_handover(cli_kind, resume_session_id, cwd).await;
+        conv.set_handover(cli_kind, resume_session_id, cwd).await
     }
 
     // -----------------------------------------------------------------------

@@ -79,7 +79,10 @@ pub async fn handle_channel_input(
             conversation_manager.close(&route, reason).await;
         }
         ChannelInput::SwitchAgent { route, agent_kind } => {
-            conversation_manager.switch_agent(&route, agent_kind).await;
+            if let Err(e) = conversation_manager.switch_agent(&route, agent_kind).await {
+                tracing::warn!(route = %route, error = %e, "switch agent failed");
+                send_system_text(plugin_host, &route, &format!("❌ {}", e)).await;
+            }
         }
         ChannelInput::Log { level, message } => {
             tracing::info!(

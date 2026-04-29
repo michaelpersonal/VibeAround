@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Eye, ExternalLink, Globe, Trash2, RefreshCw, FileText, Server,
 } from "lucide-react";
-import { PREVIEW_SHARE_TTL_SECS } from "@va/client";
+import {
+  PREVIEW_SHARE_TTL_SECS,
+  PreviewsResponseSchema,
+  type PreviewSnapshot,
+  type PreviewsResponse,
+} from "@va/client";
 
 import { EmptyBlock, PageHeader, PageShell, StatusBanner } from "@/components/page";
 import { Badge } from "@/components/ui/badge";
@@ -10,23 +15,6 @@ import { Button } from "@/components/ui/button";
 import { apiFetch, openDashboardUrl, API_BASE } from "./lib/api";
 
 const PREVIEW_SHARE_TTL_MINUTES = Math.round(PREVIEW_SHARE_TTL_SECS / 60);
-
-interface PreviewSnapshot {
-  slug: string;
-  id: string;
-  workspace: string;
-  title: string;
-  kind: "server" | "file";
-  port: number | null;
-  share_key: string | null;
-  share_expires_at_ms: number | null;
-  created_at_ms: number;
-}
-
-interface PreviewsResponse {
-  previews: PreviewSnapshot[];
-  tunnel_url: string | null;
-}
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -40,7 +28,7 @@ export function Previews() {
     try {
       const res = await apiFetch(`/api/previews`);
       if (!res.ok) throw new Error(await res.text());
-      setData(await res.json());
+      setData(PreviewsResponseSchema.parse(await res.json()));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
