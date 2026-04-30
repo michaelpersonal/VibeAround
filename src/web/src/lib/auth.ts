@@ -17,6 +17,11 @@
 
 const STORAGE_KEY = "vibearound.auth.token";
 
+export function isLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+}
+
 export function initAuthFromUrl(): void {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
@@ -37,4 +42,10 @@ export function initAuthFromUrl(): void {
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   return window.sessionStorage.getItem(STORAGE_KEY);
+}
+
+/** Local loopback dashboards are trusted without browser pairing. */
+export function isLocalDashboard(): boolean {
+  if (typeof window === "undefined") return false;
+  return isLoopbackHost(window.location.hostname);
 }
