@@ -29,8 +29,15 @@ use super::AppState;
 /// GET /api/tmux/sessions — list active tmux sessions and whether tmux is available.
 pub async fn list_tmux_sessions_handler() -> Json<crate::api_types::TmuxSessionsResponse> {
     let available = tmux_available();
-    let sessions = if available { list_tmux_sessions() } else { vec![] };
-    Json(crate::api_types::TmuxSessionsResponse { available, sessions })
+    let sessions = if available {
+        list_tmux_sessions()
+    } else {
+        vec![]
+    };
+    Json(crate::api_types::TmuxSessionsResponse {
+        available,
+        sessions,
+    })
 }
 
 /// GET /api/agents — list enabled agents and default agent for frontend agent selector.
@@ -55,11 +62,13 @@ pub async fn list_profiles_handler() -> Json<Vec<crate::api_types::ProfileLaunch
                 &profile.api_types,
             )
             .into_iter()
-            .map(|(id, label, api_type)| crate::api_types::ProfileLaunchTarget {
-                id: id.to_string(),
-                label: label.to_string(),
-                api_type: api_type.to_string(),
-            })
+            .map(
+                |(id, label, api_type)| crate::api_types::ProfileLaunchTarget {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    api_type: api_type.to_string(),
+                },
+            )
             .collect(),
         })
         .collect();
@@ -78,7 +87,11 @@ pub async fn list_channels_handler(
             .map(|s| crate::api_types::ChannelRuntime {
                 kind: s.kind,
                 status: s.status.as_str(),
-                reason: if s.reason.is_empty() { None } else { Some(s.reason) },
+                reason: if s.reason.is_empty() {
+                    None
+                } else {
+                    Some(s.reason)
+                },
                 crash_count: s.crash_count,
                 last_seen_age_secs: s.last_seen_age_secs,
                 restart_in_secs: s.restart_in_secs,
@@ -119,7 +132,13 @@ pub async fn list_agents_runtime_handler(
             .initialize
             .as_ref()
             .and_then(|i| i.agent_info.as_ref())
-            .map(|info| (Some(info.name.clone()), info.title.clone(), Some(info.version.clone())))
+            .map(|info| {
+                (
+                    Some(info.name.clone()),
+                    info.title.clone(),
+                    Some(info.version.clone()),
+                )
+            })
             .unwrap_or((None, None, None));
         out.push(crate::api_types::AgentRuntime {
             route_key: pod.route.as_key(),
@@ -184,7 +203,10 @@ pub async fn kill_tunnel_handler(
     if state.tunnels.kill(&provider) {
         (StatusCode::OK, format!("Killed tunnel {}", provider))
     } else {
-        (StatusCode::NOT_FOUND, format!("Tunnel {} not found", provider))
+        (
+            StatusCode::NOT_FOUND,
+            format!("Tunnel {} not found", provider),
+        )
     }
 }
 
@@ -198,7 +220,10 @@ pub async fn kill_agent_handler(
     Path(route_key): Path<String>,
 ) -> impl IntoResponse {
     let Some(route) = common::routing::RouteKey::from_key(&route_key) else {
-        return (StatusCode::NOT_FOUND, format!("Invalid agent route key: {}", route_key));
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Invalid agent route key: {}", route_key),
+        );
     };
     state
         .channel_hub
@@ -217,12 +242,18 @@ pub async fn kill_pty_handler(
     Path(session_id): Path<String>,
 ) -> impl IntoResponse {
     let Ok(uuid) = uuid::Uuid::parse_str(&session_id) else {
-        return (StatusCode::BAD_REQUEST, format!("Invalid session id: {}", session_id));
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid session id: {}", session_id),
+        );
     };
     if state.pty_manager.delete_session(SessionId(uuid)) {
         (StatusCode::OK, format!("Killed pty {}", session_id))
     } else {
-        (StatusCode::NOT_FOUND, format!("PTY session {} not found", session_id))
+        (
+            StatusCode::NOT_FOUND,
+            format!("PTY session {} not found", session_id),
+        )
     }
 }
 
@@ -274,17 +305,34 @@ pub async fn create_session_handler(
 
     let created = match (body.profile_id.as_deref(), body.launch_target.as_deref()) {
         (Some(profile_id), Some(launch_target)) => {
+            if body.tool.is_some() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "profile sessions cannot also specify tool".to_string(),
+                ));
+            }
             if body.tmux_session.is_some() {
-                return Err((StatusCode::BAD_REQUEST, "profile sessions cannot attach tmux".to_string()));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "profile sessions cannot attach tmux".to_string(),
+                ));
             }
             let profile = common::profiles::schema::load(profile_id)
                 .map(common::profiles::normalize_legacy_profile)
-                .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("profile '{}' not found", profile_id)))?;
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        format!("profile '{}' not found", profile_id),
+                    )
+                })?;
             if !common::profiles::runtime::launch_targets_for_api_types(&profile.api_types)
                 .iter()
                 .any(|(target, _, _)| *target == launch_target)
             {
-                return Err((StatusCode::BAD_REQUEST, format!("profile '{}' cannot launch '{}'", profile.id, launch_target)));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("profile '{}' cannot launch '{}'", profile.id, launch_target),
+                ));
             }
             let rendered = common::profiles::runtime::render_for_launch(&profile, launch_target)
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
@@ -293,12 +341,22 @@ pub async fn create_session_handler(
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
             let agent_id = common::profiles::runtime::agent_id_for(launch_target)
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-            let agent = common::resources::agent_by_id(agent_id)
-                .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("agent '{}' not found", agent_id)))?;
+            let agent = common::resources::agent_by_id(agent_id).ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("agent '{}' not found", agent_id),
+                )
+            })?;
+            let pty_tool = PtyTool::from_agent_id(agent_id).ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("agent '{}' cannot be launched in a PTY", agent_id),
+                )
+            })?;
             state
                 .pty_manager
                 .create_profile_session(
-                    pty_tool_for_launch_target(launch_target).map_err(|e| (StatusCode::BAD_REQUEST, e))?,
+                    pty_tool,
                     command_with_args(&agent.pty.command, &command_args),
                     env,
                     profile.id.clone(),
@@ -311,7 +369,18 @@ pub async fn create_session_handler(
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         }
         (None, None) => {
-            let tool = body.tool.ok_or_else(|| (StatusCode::BAD_REQUEST, "missing tool for direct session".to_string()))?;
+            let tool = body.tool.ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "missing tool for direct session".to_string(),
+                )
+            })?;
+            if body.tmux_session.is_some() && tool != PtyTool::Generic {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "tmux sessions must use the generic tool".to_string(),
+                ));
+            }
             state
                 .pty_manager
                 .create_session(
@@ -324,7 +393,10 @@ pub async fn create_session_handler(
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         }
         _ => {
-            return Err((StatusCode::BAD_REQUEST, "profile_id and launch_target must be provided together".to_string()));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "profile_id and launch_target must be provided together".to_string(),
+            ));
         }
     };
 
@@ -337,16 +409,6 @@ pub async fn create_session_handler(
         profile_label: created.profile_label,
         launch_target: created.launch_target,
     }))
-}
-
-fn pty_tool_for_launch_target(launch_target: &str) -> Result<PtyTool, String> {
-    match launch_target {
-        "claude" => Ok(PtyTool::Claude),
-        "codex" => Ok(PtyTool::Codex),
-        "gemini" => Ok(PtyTool::Gemini),
-        "opencode" => Ok(PtyTool::OpenCode),
-        other => Err(format!("unsupported PTY launch target '{}'", other)),
-    }
 }
 
 fn command_with_args(command: &str, args: &[String]) -> String {
@@ -410,7 +472,10 @@ pub async fn add_workspace_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let path = std::path::PathBuf::from(&body.path);
     if !path.exists() || !path.is_dir() {
-        return Err((StatusCode::BAD_REQUEST, format!("Path does not exist or is not a directory: {}", body.path)));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("Path does not exist or is not a directory: {}", body.path),
+        ));
     }
     config::update_settings_json(|root| {
         if let Some(obj) = root.as_object_mut() {
@@ -436,7 +501,10 @@ pub async fn remove_workspace_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let builtin = config::builtin_workspaces_dir();
     if std::path::PathBuf::from(&body.path) == builtin {
-        return Err((StatusCode::BAD_REQUEST, "Cannot remove the built-in workspace".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Cannot remove the built-in workspace".into(),
+        ));
     }
     config::update_settings_json(|root| {
         if let Some(arr) = root.get_mut("workspaces").and_then(|v| v.as_array_mut()) {
@@ -460,7 +528,10 @@ pub async fn set_default_workspace_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let path = std::path::PathBuf::from(&body.path);
     if !path.exists() || !path.is_dir() {
-        return Err((StatusCode::BAD_REQUEST, format!("Path does not exist: {}", body.path)));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("Path does not exist: {}", body.path),
+        ));
     }
     config::update_settings_json(|root| {
         if let Some(obj) = root.as_object_mut() {
@@ -510,6 +581,9 @@ pub async fn delete_session_handler(
     if state.pty_manager.delete_session(sid) {
         (StatusCode::OK, format!("Session {} deleted", session_id))
     } else {
-        (StatusCode::NOT_FOUND, format!("Session {} not found", session_id))
+        (
+            StatusCode::NOT_FOUND,
+            format!("Session {} not found", session_id),
+        )
     }
 }

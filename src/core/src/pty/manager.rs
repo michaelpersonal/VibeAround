@@ -7,9 +7,11 @@ use anyhow::Context;
 
 use bytes::Bytes;
 use serde::Serialize;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
-use super::runtime::{spawn_pty, spawn_pty_with_command, PtyRunState, PtyTool, ResizeSender};
+use super::runtime::{
+    spawn_pty, spawn_pty_with_command, PtyBridge, PtyRunState, PtyTool, ResizeSender,
+};
 use super::session::{
     unix_now_secs, CircularBuffer, Registry, SessionContext, SessionId, SessionMetadata,
     LIVE_BROADCAST_CAP,
@@ -93,40 +95,37 @@ impl PtySessionManager {
         items
     }
 
-    pub fn create_session(
+    fn register_session(
         &self,
-        tool: PtyTool,
-        project_path: Option<String>,
-        tmux_session: Option<String>,
-        theme: Option<String>,
-        initial_size: Option<(u16, u16)>,
-    ) -> anyhow::Result<PtySessionCreated> {
-        let cwd = project_path.as_ref().map(std::path::PathBuf::from);
-        let (bridge, mut pty_rx, resize_tx, mut state_rx) =
-            spawn_pty(tool, cwd, tmux_session.clone(), theme, initial_size)
-                .context("Failed to spawn PTY")?;
-
+        metadata: SessionMetadata,
+        bridge: PtyBridge,
+        mut pty_rx: mpsc::Receiver<Vec<u8>>,
+        resize_tx: ResizeSender,
+        mut state_rx: mpsc::Receiver<PtyRunState>,
+    ) -> PtySessionCreated {
         let session_id = SessionId::new();
-        let metadata = SessionMetadata {
-            created_at: unix_now_secs(),
-            project_path: project_path.clone(),
-            tool,
-            profile_id: None,
-            profile_label: None,
-            launch_target: None,
-            tmux_session,
-        };
-
         let buffer = Arc::new(CircularBuffer::new());
         let (live_tx, _) = broadcast::channel(LIVE_BROADCAST_CAP);
         let run_state: Arc<std::sync::RwLock<PtyRunState>> =
-            Arc::new(std::sync::RwLock::new(PtyRunState::Running { tool }));
+            Arc::new(std::sync::RwLock::new(PtyRunState::Running {
+                tool: metadata.tool,
+            }));
+
+        let created = PtySessionCreated {
+            session_id: session_id.0.to_string(),
+            tool: metadata.tool,
+            created_at: metadata.created_at,
+            project_path: metadata.project_path.clone(),
+            profile_id: metadata.profile_id.clone(),
+            profile_label: metadata.profile_label.clone(),
+            launch_target: metadata.launch_target.clone(),
+        };
 
         let ctx = SessionContext {
             bridge,
             resize_tx,
             state: Arc::clone(&run_state),
-            metadata: metadata.clone(),
+            metadata,
             buffer: Arc::clone(&buffer),
             live_tx: live_tx.clone(),
         };
@@ -150,15 +149,33 @@ impl PtySessionManager {
             }
         });
 
-        Ok(PtySessionCreated {
-            session_id: session_id.0.to_string(),
-            tool: metadata.tool,
-            created_at: metadata.created_at,
-            project_path: metadata.project_path,
-            profile_id: metadata.profile_id,
-            profile_label: metadata.profile_label,
-            launch_target: metadata.launch_target,
-        })
+        created
+    }
+
+    pub fn create_session(
+        &self,
+        tool: PtyTool,
+        project_path: Option<String>,
+        tmux_session: Option<String>,
+        theme: Option<String>,
+        initial_size: Option<(u16, u16)>,
+    ) -> anyhow::Result<PtySessionCreated> {
+        let cwd = project_path.as_ref().map(std::path::PathBuf::from);
+        let (bridge, pty_rx, resize_tx, state_rx) =
+            spawn_pty(tool, cwd, tmux_session.clone(), theme, initial_size)
+                .context("Failed to spawn PTY")?;
+
+        let metadata = SessionMetadata {
+            created_at: unix_now_secs(),
+            project_path: project_path.clone(),
+            tool,
+            profile_id: None,
+            profile_label: None,
+            launch_target: None,
+            tmux_session,
+        };
+
+        Ok(self.register_session(metadata, bridge, pty_rx, resize_tx, state_rx))
     }
 
     pub fn create_profile_session(
@@ -174,11 +191,10 @@ impl PtySessionManager {
         initial_size: Option<(u16, u16)>,
     ) -> anyhow::Result<PtySessionCreated> {
         let cwd = project_path.as_ref().map(std::path::PathBuf::from);
-        let (bridge, mut pty_rx, resize_tx, mut state_rx) =
+        let (bridge, pty_rx, resize_tx, state_rx) =
             spawn_pty_with_command(tool, cwd, None, theme, initial_size, Some(command), env)
                 .context("Failed to spawn profile PTY")?;
 
-        let session_id = SessionId::new();
         let metadata = SessionMetadata {
             created_at: unix_now_secs(),
             project_path: project_path.clone(),
@@ -189,48 +205,7 @@ impl PtySessionManager {
             tmux_session: None,
         };
 
-        let buffer = Arc::new(CircularBuffer::new());
-        let (live_tx, _) = broadcast::channel(LIVE_BROADCAST_CAP);
-        let run_state: Arc<std::sync::RwLock<PtyRunState>> =
-            Arc::new(std::sync::RwLock::new(PtyRunState::Running { tool }));
-
-        let ctx = SessionContext {
-            bridge,
-            resize_tx,
-            state: Arc::clone(&run_state),
-            metadata: metadata.clone(),
-            buffer: Arc::clone(&buffer),
-            live_tx: live_tx.clone(),
-        };
-        self.registry.insert(session_id, ctx);
-
-        let buf_clone = Arc::clone(&buffer);
-        let tx_clone = live_tx.clone();
-        tokio::spawn(async move {
-            while let Some(data) = pty_rx.recv().await {
-                buf_clone.push(&data);
-                let _ = tx_clone.send(Bytes::from(data));
-            }
-        });
-
-        let rs = Arc::clone(&run_state);
-        tokio::spawn(async move {
-            while let Some(new_state) = state_rx.recv().await {
-                if let Ok(mut g) = rs.write() {
-                    *g = new_state;
-                }
-            }
-        });
-
-        Ok(PtySessionCreated {
-            session_id: session_id.0.to_string(),
-            tool: metadata.tool,
-            created_at: metadata.created_at,
-            project_path: metadata.project_path,
-            profile_id: metadata.profile_id,
-            profile_label: metadata.profile_label,
-            launch_target: metadata.launch_target,
-        })
+        Ok(self.register_session(metadata, bridge, pty_rx, resize_tx, state_rx))
     }
 
     pub fn delete_session(&self, session_id: SessionId) -> bool {

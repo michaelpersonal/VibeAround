@@ -22,39 +22,6 @@ fn shell_command() -> CommandBuilder {
     c
 }
 
-/// Exec string for each tool when wrapping with cd.
-fn tool_exec_argv(tool: PtyTool, tmux_session: Option<&str>) -> String {
-    if let Some(name) = tmux_session {
-        let escaped = name.replace('\'', "'\"'\"'");
-        let detach = crate::config::ensure_loaded().tmux_detach_others;
-        return if detach {
-            format!(
-                "tmux has-session -t '{}' 2>/dev/null && exec tmux attach -d -t '{}' || exec tmux new-session -s '{}'",
-                escaped, escaped, escaped
-            )
-        } else {
-            format!(
-                "tmux has-session -t '{}' 2>/dev/null && exec tmux attach -t '{}' || exec tmux new-session -s '{}'",
-                escaped, escaped, escaped
-            )
-        };
-    }
-    // Map PtyTool to agent ID for resource lookup
-    let agent_id = match tool {
-        PtyTool::Generic => return "bash -l".to_string(),
-        PtyTool::Claude => "claude",
-        PtyTool::Gemini => "gemini",
-        PtyTool::Codex => "codex",
-        PtyTool::OpenCode => "opencode",
-        PtyTool::Cursor => "cursor",
-        PtyTool::Kiro => "kiro",
-        PtyTool::QwenCode => "qwen-code",
-    };
-    crate::resources::agent_by_id(agent_id)
-        .map(|a| a.pty.command.clone())
-        .unwrap_or_else(|| agent_id.to_string())
-}
-
 fn set_pty_env(c: &mut CommandBuilder, theme: Option<&str>, extra_env: &[(String, String)]) {
     for (key, val) in crate::process::env::enriched_env() {
         c.env(key, val);
@@ -94,6 +61,30 @@ fn bash_wrapper(
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+/// Exec string for each tool when wrapping with cd/tmux.
+fn tool_exec_argv(tool: PtyTool, tmux_session: Option<&str>) -> String {
+    if let Some(name) = tmux_session {
+        let session = shell_quote(name);
+        let detach = crate::config::ensure_loaded().tmux_detach_others;
+        return if detach {
+            format!(
+                "tmux has-session -t {session} 2>/dev/null && exec tmux attach -d -t {session} || exec tmux new-session -s {session}"
+            )
+        } else {
+            format!(
+                "tmux has-session -t {session} 2>/dev/null && exec tmux attach -t {session} || exec tmux new-session -s {session}"
+            )
+        };
+    }
+
+    let Some(agent_id) = tool.agent_id() else {
+        return "bash -l".to_string();
+    };
+    crate::resources::agent_by_id(agent_id)
+        .map(|a| a.pty.command.clone())
+        .unwrap_or_else(|| agent_id.to_string())
 }
 
 fn command_for_tool(
@@ -178,6 +169,63 @@ pub enum PtyTool {
     Kiro,
     #[serde(rename = "qwen-code")]
     QwenCode,
+}
+
+impl PtyTool {
+    pub fn agent_id(self) -> Option<&'static str> {
+        match self {
+            PtyTool::Generic => None,
+            PtyTool::Claude => Some("claude"),
+            PtyTool::Gemini => Some("gemini"),
+            PtyTool::Codex => Some("codex"),
+            PtyTool::OpenCode => Some("opencode"),
+            PtyTool::Cursor => Some("cursor"),
+            PtyTool::Kiro => Some("kiro"),
+            PtyTool::QwenCode => Some("qwen-code"),
+        }
+    }
+
+    pub fn from_agent_id(agent_id: &str) -> Option<Self> {
+        match agent_id {
+            "claude" => Some(PtyTool::Claude),
+            "gemini" => Some(PtyTool::Gemini),
+            "codex" => Some(PtyTool::Codex),
+            "opencode" => Some(PtyTool::OpenCode),
+            "cursor" => Some(PtyTool::Cursor),
+            "kiro" => Some(PtyTool::Kiro),
+            "qwen-code" => Some(PtyTool::QwenCode),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pty_tool_agent_ids_round_trip() {
+        for tool in [
+            PtyTool::Claude,
+            PtyTool::Gemini,
+            PtyTool::Codex,
+            PtyTool::OpenCode,
+            PtyTool::Cursor,
+            PtyTool::Kiro,
+            PtyTool::QwenCode,
+        ] {
+            let agent_id = tool.agent_id().expect("tool should map to an agent");
+            assert_eq!(PtyTool::from_agent_id(agent_id), Some(tool));
+        }
+        assert_eq!(PtyTool::Generic.agent_id(), None);
+        assert_eq!(PtyTool::from_agent_id("missing"), None);
+    }
+
+    #[test]
+    fn shell_quote_handles_single_quotes() {
+        assert_eq!(shell_quote("plain"), "'plain'");
+        assert_eq!(shell_quote("team's session"), "'team'\"'\"'s session'");
+    }
 }
 
 pub struct PtyBridge {
@@ -265,7 +313,7 @@ pub fn spawn_pty(
     )
 }
 
-pub fn spawn_pty_with_command(
+pub(super) fn spawn_pty_with_command(
     tool: PtyTool,
     cwd: Option<std::path::PathBuf>,
     tmux_session: Option<String>,
