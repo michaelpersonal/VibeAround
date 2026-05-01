@@ -333,7 +333,7 @@ function SortableProfileCard({
     <div
       ref={ref}
       className={`relative rounded-md transition-shadow ${
-        isDropTarget ? "ring-2 ring-primary/35" : ""
+        isDropTarget ? "ring-2 ring-primary/35 shadow-lg shadow-primary/20" : ""
       }`}
     >
       <ProfileCard

@@ -78,7 +78,7 @@ export function ProfileCard({
       className={`border rounded-md p-2.5 flex flex-col gap-1.5 transition-colors ${
         isDefaultProfile
           ? "border-emerald-500/70 bg-emerald-500/5 hover:border-emerald-500"
-          : "border-border hover:border-primary/40"
+          : "border-border bg-card hover:border-primary/40"
       } ${
         isDragging ? "opacity-55" : ""
       }`}

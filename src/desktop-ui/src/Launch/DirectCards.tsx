@@ -34,6 +34,7 @@ export function DirectCards({
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
+  const isDefaultDirect = Boolean(defaultAgent && !defaultProfiles[defaultAgent]);
 
   useEffect(() => {
     void listAgents()
@@ -45,7 +46,13 @@ export function DirectCards({
   }, []);
 
   return (
-    <div className="border border-border rounded-md p-2.5 flex flex-col gap-1.5">
+    <div
+      className={`border rounded-md p-2.5 flex flex-col gap-1.5 transition-colors ${
+        isDefaultDirect
+          ? "border-emerald-500/70 bg-emerald-500/5 hover:border-emerald-500"
+          : "border-border bg-card hover:border-primary/40"
+      }`}
+    >
       <div className="flex items-start gap-2">
         <span
           className="mt-0.5 h-7 w-5 shrink-0 rounded text-muted-foreground/60 inline-flex items-center justify-center"
