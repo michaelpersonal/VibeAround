@@ -153,7 +153,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let launch_default_item = MenuItemBuilder::with_id(MENU_LAUNCH_DEFAULT, "Launch Default Agent")
         .enabled(launch_enabled)
         .build(app)?;
-    let launch_menu = build_launch_submenu(app, launch_enabled)?;
+    let launch_with_profile_menu = build_launch_with_profile_submenu(app, launch_enabled)?;
     let show_item = MenuItemBuilder::with_id(MENU_SHOW_WINDOW, "Show Window").build(app)?;
     let open_local_item = MenuItemBuilder::with_id(MENU_OPEN_LOCAL, "Open Local Dashboard")
         .enabled(launch_enabled)
@@ -165,7 +165,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     MenuBuilder::new(app)
         .item(&launch_default_item)
-        .item(&launch_menu)
+        .item(&launch_with_profile_menu)
         .separator()
         .item(&show_item)
         .item(&open_local_item)
@@ -175,19 +175,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build()
 }
 
-fn build_launch_submenu<R: Runtime>(
-    app: &AppHandle<R>,
-    launch_enabled: bool,
-) -> tauri::Result<tauri::menu::Submenu<R>> {
-    let profiles_menu = build_profiles_submenu(app, launch_enabled)?;
-
-    SubmenuBuilder::with_id(app, "launch", "Launch")
-        .enabled(launch_enabled)
-        .item(&profiles_menu)
-        .build()
-}
-
-fn build_profiles_submenu<R: Runtime>(
+fn build_launch_with_profile_submenu<R: Runtime>(
     app: &AppHandle<R>,
     launch_enabled: bool,
 ) -> tauri::Result<tauri::menu::Submenu<R>> {
@@ -196,7 +184,7 @@ fn build_profiles_submenu<R: Runtime>(
         .map(common::profiles::normalize_legacy_profile)
         .collect();
 
-    let mut builder = SubmenuBuilder::with_id(app, "launch_profiles", "Profiles")
+    let mut builder = SubmenuBuilder::with_id(app, "launch_with_profile", "Launch With Profile")
         .enabled(launch_enabled && !profiles.is_empty());
 
     if profiles.is_empty() {
