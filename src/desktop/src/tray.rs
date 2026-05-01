@@ -23,6 +23,7 @@ const MENU_SHOW_WINDOW: &str = "show_window";
 const MENU_OPEN_LOCAL: &str = "open_local";
 const MENU_OPEN_TUNNEL: &str = "open_tunnel";
 const MENU_QUIT: &str = "quit";
+const MENU_LAUNCH_DIRECT_PREFIX: &str = "launch_direct:";
 const MENU_LAUNCH_PROFILE_PREFIX: &str = "launch_profile:";
 
 /// Build the dashboard URL with the session auth token.
@@ -94,6 +95,11 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
             MENU_QUIT => {
                 app.exit(0);
             }
+            id if id.starts_with(MENU_LAUNCH_DIRECT_PREFIX) => {
+                if let Err(e) = handle_direct_launch_menu(id) {
+                    tracing::warn!("[tray] failed to direct launch menu item '{}': {}", id, e);
+                }
+            }
             id if id.starts_with(MENU_LAUNCH_PROFILE_PREFIX) => {
                 if let Err(e) = handle_profile_launch_menu(id) {
                     tracing::warn!("[tray] failed to launch profile menu item '{}': {}", id, e);
@@ -111,7 +117,7 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
         }
     });
 
-    // Profile/default changes alter the Launch -> Profiles tree.
+    // Profile/default changes alter the launch menu tree.
     let app_handle_launch_config = app_handle.clone();
     app.listen(LAUNCH_CONFIG_CHANGED_EVENT, move |_| {
         if let Err(e) = rebuild_menu(&app_handle_launch_config) {
@@ -150,11 +156,12 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .map(|state| state.0.has_url())
         .unwrap_or(false);
 
+    let show_item = MenuItemBuilder::with_id(MENU_SHOW_WINDOW, "Show Window").build(app)?;
     let launch_default_item = MenuItemBuilder::with_id(MENU_LAUNCH_DEFAULT, "Launch Default Agent")
         .enabled(launch_enabled)
         .build(app)?;
-    let launch_with_profile_menu = build_launch_with_profile_submenu(app, launch_enabled)?;
-    let show_item = MenuItemBuilder::with_id(MENU_SHOW_WINDOW, "Show Window").build(app)?;
+    let direct_launch_menu = build_direct_launch_submenu(app, launch_enabled)?;
+    let profile_menus = build_profile_submenus(app, launch_enabled)?;
     let open_local_item = MenuItemBuilder::with_id(MENU_OPEN_LOCAL, "Open Local Dashboard")
         .enabled(launch_enabled)
         .build(app)?;
@@ -163,11 +170,17 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build(app)?;
     let quit_item = MenuItemBuilder::with_id(MENU_QUIT, "Quit").build(app)?;
 
-    MenuBuilder::new(app)
-        .item(&launch_default_item)
-        .item(&launch_with_profile_menu)
-        .separator()
+    let mut builder = MenuBuilder::new(app)
         .item(&show_item)
+        .separator()
+        .item(&launch_default_item)
+        .item(&direct_launch_menu);
+    for profile_menu in &profile_menus {
+        builder = builder.item(profile_menu);
+    }
+
+    builder
+        .separator()
         .item(&open_local_item)
         .item(&open_tunnel_item)
         .separator()
@@ -175,31 +188,48 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build()
 }
 
-fn build_launch_with_profile_submenu<R: Runtime>(
+fn build_direct_launch_submenu<R: Runtime>(
     app: &AppHandle<R>,
     launch_enabled: bool,
 ) -> tauri::Result<tauri::menu::Submenu<R>> {
+    let mut builder =
+        SubmenuBuilder::with_id(app, "direct_launch", "Direct Launch").enabled(launch_enabled);
+
+    for agent in common::resources::AGENTS.iter() {
+        let item = MenuItemBuilder::with_id(
+            format!("{}{}", MENU_LAUNCH_DIRECT_PREFIX, agent.id),
+            menu_text(&agent.display_name),
+        )
+        .enabled(launch_enabled)
+        .build(app)?;
+        builder = builder.item(&item);
+    }
+
+    builder.build()
+}
+
+fn build_profile_submenus<R: Runtime>(
+    app: &AppHandle<R>,
+    launch_enabled: bool,
+) -> tauri::Result<Vec<tauri::menu::Submenu<R>>> {
     let profiles: Vec<_> = common::profiles::schema::list()
         .into_iter()
         .map(common::profiles::normalize_legacy_profile)
         .collect();
 
-    let mut builder = SubmenuBuilder::with_id(app, "launch_with_profile", "Launch With Profile")
-        .enabled(launch_enabled && !profiles.is_empty());
-
     if profiles.is_empty() {
-        let empty_item = MenuItemBuilder::with_id("launch_profiles_empty", "No Profiles")
-            .enabled(false)
-            .build(app)?;
-        return builder.item(&empty_item).build();
+        return Ok(Vec::new());
     }
 
-    for profile in profiles {
+    let provider_counts = profile_provider_counts(&profiles);
+    let mut out = Vec::new();
+    for profile in &profiles {
         let targets = common::profiles::runtime::launch_targets_for_api_types(&profile.api_types);
+        let title = profile_menu_title(profile, &provider_counts);
         let mut profile_builder = SubmenuBuilder::with_id(
             app,
             format!("launch_profile_menu:{}", profile.id),
-            menu_text(&profile.label),
+            menu_text(&title),
         )
         .enabled(launch_enabled && !targets.is_empty());
 
@@ -224,10 +254,10 @@ fn build_launch_with_profile_submenu<R: Runtime>(
         }
 
         let profile_menu = profile_builder.build()?;
-        builder = builder.item(&profile_menu);
+        out.push(profile_menu);
     }
 
-    builder.build()
+    Ok(out)
 }
 
 fn rebuild_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
@@ -256,6 +286,49 @@ fn handle_profile_launch_menu(menu_id: &str) -> Result<(), String> {
         .split_once(':')
         .ok_or_else(|| format!("invalid profile launch menu id: {menu_id}"))?;
     crate::profiles::profiles_launch(profile_id.to_string(), agent_id.to_string())
+}
+
+fn handle_direct_launch_menu(menu_id: &str) -> Result<(), String> {
+    let agent_id = menu_id
+        .strip_prefix(MENU_LAUNCH_DIRECT_PREFIX)
+        .ok_or_else(|| format!("invalid direct launch menu id: {menu_id}"))?;
+    crate::profiles::profiles_launch_direct(agent_id.to_string())
+}
+
+fn profile_provider_counts(
+    profiles: &[common::profiles::ProfileDef],
+) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for profile in profiles {
+        *counts.entry(profile.provider.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn profile_menu_title(
+    profile: &common::profiles::ProfileDef,
+    provider_counts: &std::collections::BTreeMap<String, usize>,
+) -> String {
+    let provider = common::profiles::catalog::get(&profile.provider);
+    let provider_label = provider
+        .map(|catalog| catalog.label.as_str())
+        .unwrap_or(profile.provider.as_str());
+    let icon = provider.and_then(|catalog| catalog.icon.as_deref());
+    let needs_profile_label = provider_counts
+        .get(&profile.provider)
+        .copied()
+        .unwrap_or_default()
+        > 1;
+    let label = if needs_profile_label {
+        format!("{} - {}", provider_label, profile.label)
+    } else {
+        provider_label.to_string()
+    };
+
+    match icon {
+        Some(icon) if !icon.trim().is_empty() => format!("{} {}", icon, label),
+        _ => label,
+    }
 }
 
 fn menu_text(text: &str) -> String {
