@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Star } from "lucide-react";
+import { Pin, Sparkles, Star } from "lucide-react";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,16 @@ export function DirectCards({
           <Sparkles className="w-3.5 h-3.5" />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-medium">Direct launch</div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-[13px] font-medium">Direct launch</div>
+            <span
+              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70"
+              title="Direct launch stays pinned above reorderable profiles"
+            >
+              <Pin className="w-3 h-3" />
+              Pinned first
+            </span>
+          </div>
           <div className="text-[11px] text-muted-foreground truncate">
             No profile — uses each CLI's existing login session
           </div>
