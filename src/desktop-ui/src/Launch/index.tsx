@@ -56,6 +56,9 @@ export function Launch() {
   const [directBusy, setDirectBusy] = useState(false);
   const [dragOverProfile, setDragOverProfile] = useState<DragOverProfile | null>(null);
   const [reorderBusy, setReorderBusy] = useState(false);
+  const profilesRef = useRef<ProfileSummary[]>([]);
+  const dragStartProfilesRef = useRef<ProfileSummary[] | null>(null);
+  const dragChangedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -78,6 +81,10 @@ export function Launch() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    profilesRef.current = profiles;
+  }, [profiles]);
 
   // Auto-clear the toast banner after 2.5s — keeps the page from
   // accumulating stale "Terminal opened" notices on rapid launches.
@@ -164,32 +171,56 @@ export function Launch() {
     await refresh();
   }
 
-  function handleProfileHover(targetProfileId: string, placeAfter: boolean) {
+  function handleProfileDragStart() {
+    dragStartProfilesRef.current = profilesRef.current;
+    dragChangedRef.current = false;
+  }
+
+  function handleProfileHover(
+    draggedId: string,
+    targetProfileId: string,
+    placeAfter: boolean,
+  ) {
+    if (draggedId === targetProfileId || reorderBusy) return;
+
     setDragOverProfile((current) => {
       if (current?.id === targetProfileId && current.placeAfter === placeAfter) {
         return current;
       }
       return { id: targetProfileId, placeAfter };
     });
+
+    setProfiles((current) => {
+      const nextProfiles = moveProfile(current, draggedId, targetProfileId, placeAfter);
+      if (sameProfileOrder(current, nextProfiles)) return current;
+      profilesRef.current = nextProfiles;
+      dragChangedRef.current = true;
+      return nextProfiles;
+    });
   }
 
-  function clearProfileDragState() {
+  function handleProfileDragEnd() {
+    const previousProfiles = dragStartProfilesRef.current;
+    const nextProfiles = profilesRef.current;
+    const changed =
+      dragChangedRef.current &&
+      previousProfiles !== null &&
+      !sameProfileOrder(previousProfiles, nextProfiles);
+
+    dragStartProfilesRef.current = null;
+    dragChangedRef.current = false;
     setDragOverProfile(null);
+
+    if (!changed || previousProfiles === null) return;
+    void persistProfileOrder(nextProfiles, previousProfiles);
   }
 
-  async function handleProfileDrop(
-    draggedId: string,
-    targetProfileId: string,
-    placeAfter: boolean,
+  async function persistProfileOrder(
+    nextProfiles: ProfileSummary[],
+    previousProfiles: ProfileSummary[],
   ) {
-    setDragOverProfile(null);
-    if (!draggedId || draggedId === targetProfileId || reorderBusy) return;
-
-    const nextProfiles = moveProfile(profiles, draggedId, targetProfileId, placeAfter);
-    if (nextProfiles === profiles) return;
-
-    const previousProfiles = profiles;
     setProfiles(nextProfiles);
+    profilesRef.current = nextProfiles;
     setError(null);
     setReorderBusy(true);
     try {
@@ -197,6 +228,7 @@ export function Launch() {
       setToast("Profile order updated");
     } catch (e) {
       setProfiles(previousProfiles);
+      profilesRef.current = previousProfiles;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setReorderBusy(false);
@@ -273,9 +305,9 @@ export function Launch() {
                     index={index}
                     reorderBusy={reorderBusy}
                     dragOverProfile={dragOverProfile}
+                    onDragStart={handleProfileDragStart}
                     onDragHover={handleProfileHover}
-                    onDragCancel={clearProfileDragState}
-                    onProfileDrop={handleProfileDrop}
+                    onDragEnd={handleProfileDragEnd}
                     onLaunch={(t) => handleLaunch(p, t)}
                     onSetDefault={(t) => handleSetDefault(t, p.id)}
                     onEdit={() => handleEdit(p)}
@@ -323,14 +355,18 @@ function moveProfile(
   return next;
 }
 
+function sameProfileOrder(a: ProfileSummary[], b: ProfileSummary[]): boolean {
+  return a.length === b.length && a.every((profile, index) => profile.id === b[index]?.id);
+}
+
 function SortableProfileCard({
   profile,
   index,
   reorderBusy,
   dragOverProfile,
+  onDragStart,
   onDragHover,
-  onDragCancel,
-  onProfileDrop,
+  onDragEnd,
   onLaunch,
   onSetDefault,
   onEdit,
@@ -342,9 +378,9 @@ function SortableProfileCard({
   index: number;
   reorderBusy: boolean;
   dragOverProfile: DragOverProfile | null;
-  onDragHover: (targetProfileId: string, placeAfter: boolean) => void;
-  onDragCancel: () => void;
-  onProfileDrop: (draggedId: string, targetProfileId: string, placeAfter: boolean) => Promise<void>;
+  onDragStart: () => void;
+  onDragHover: (draggedId: string, targetProfileId: string, placeAfter: boolean) => void;
+  onDragEnd: () => void;
   onLaunch: (launchTarget: string) => Promise<void>;
   onSetDefault: (launchTarget: string) => Promise<void>;
   onEdit: () => void;
@@ -358,16 +394,20 @@ function SortableProfileCard({
   const [{ isDragging }, drag, preview] = useDrag(
     () => ({
       type: PROFILE_DND_TYPE,
-      item: { id: profile.id, index },
+      item: () => {
+        onDragStart();
+        return { id: profile.id, index };
+      },
       canDrag: () => !reorderBusy,
+      isDragging: (monitor) => monitor.getItem<DragProfileItem>()?.id === profile.id,
       collect: (monitor) => ({
         isDragging: monitor.isDragging(),
       }),
       end: () => {
-        onDragCancel();
+        onDragEnd();
       },
     }),
-    [index, onDragCancel, profile.id, reorderBusy],
+    [index, onDragEnd, onDragStart, profile.id, reorderBusy],
   );
 
   const [{ canDrop, isOver }, drop] = useDrop(
@@ -378,24 +418,21 @@ function SortableProfileCard({
         if (item.id === profile.id || reorderBusy) return;
         const placeAfter = getDropPlacement(cardRef.current, monitor.getClientOffset());
         if (placeAfter === null) return;
-        onDragHover(profile.id, placeAfter);
+        onDragHover(item.id, profile.id, placeAfter);
       },
-      drop: (item: DragProfileItem, monitor) => {
-        if (item.id === profile.id || reorderBusy) return;
-        const placeAfter = getDropPlacement(cardRef.current, monitor.getClientOffset());
-        void onProfileDrop(item.id, profile.id, placeAfter ?? false);
+      drop: () => {
+        return { id: profile.id };
       },
       collect: (monitor) => ({
         canDrop: monitor.canDrop(),
         isOver: monitor.isOver({ shallow: true }),
       }),
     }),
-    [onDragHover, onProfileDrop, profile.id, reorderBusy],
+    [onDragHover, profile.id, reorderBusy],
   );
 
   drag(handleRef);
-  drop(cardRef);
-  preview(cardRef);
+  preview(drop(cardRef));
 
   const showDropCue = canDrop && isOver && dragOverProfile?.id === profile.id;
 
