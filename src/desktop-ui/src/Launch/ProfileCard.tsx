@@ -41,6 +41,9 @@ export function ProfileCard({
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
+  const isDefaultProfile = profile.launchTargets.some(
+    (target) => defaultAgent === target.id && defaultProfiles[target.id] === profile.id,
+  );
 
   async function handleLaunch(launchTarget: string) {
     setBusy(true);
@@ -72,7 +75,11 @@ export function ProfileCard({
 
   return (
     <div
-      className={`border border-border rounded-md p-2.5 flex flex-col gap-1.5 hover:border-primary/40 transition-colors ${
+      className={`border rounded-md p-2.5 flex flex-col gap-1.5 transition-colors ${
+        isDefaultProfile
+          ? "border-emerald-500/70 bg-emerald-500/5 hover:border-emerald-500"
+          : "border-border hover:border-primary/40"
+      } ${
         isDragging ? "opacity-55" : ""
       }`}
     >
