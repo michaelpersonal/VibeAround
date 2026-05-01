@@ -9,9 +9,10 @@ mod terminal;
 
 use std::path::{Path, PathBuf};
 
-use common::{config, resources};
 use common::profiles::{catalog, normalize_legacy_profile, runtime, schema};
+use common::{config, resources};
 use serde::Serialize;
+use tauri::Emitter;
 
 pub use common::profiles::{AuthMode, ProfileDef};
 
@@ -128,7 +129,7 @@ pub fn profiles_get(id: String) -> Result<ProfileDef, String> {
 }
 
 #[tauri::command]
-pub fn profiles_upsert(profile: ProfileDef) -> Result<(), String> {
+pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(), String> {
     schema::validate(&profile).map_err(|e| e.to_string())?;
     let provider = catalog::get(&profile.provider)
         .ok_or_else(|| format!("unknown provider '{}'", profile.provider))?;
@@ -140,13 +141,17 @@ pub fn profiles_upsert(profile: ProfileDef) -> Result<(), String> {
             ));
         }
     }
-    schema::save(&profile).map_err(|e| e.to_string())
+    schema::save(&profile).map_err(|e| e.to_string())?;
+    emit_launch_config_changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn profiles_delete(id: String) -> Result<(), String> {
+pub fn profiles_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     schema::delete(&id).map_err(|e| e.to_string())?;
-    clear_default_profile_references(&id)
+    clear_default_profile_references(&id)?;
+    emit_launch_config_changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -275,7 +280,11 @@ pub fn profiles_launch_default() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn launcher_set_default(agent_id: String, profile_id: Option<String>) -> Result<(), String> {
+pub fn launcher_set_default(
+    app: tauri::AppHandle,
+    agent_id: String,
+    profile_id: Option<String>,
+) -> Result<(), String> {
     let agent_id = resources::agent_by_alias(&agent_id)
         .map(|def| def.id.clone())
         .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
@@ -316,7 +325,9 @@ pub fn launcher_set_default(agent_id: String, profile_id: Option<String>) -> Res
             }
         }
     })
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    emit_launch_config_changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -392,6 +403,10 @@ fn clear_default_profile_references(profile_id: &str) -> Result<(), String> {
         }
     })
     .map_err(|e| e.to_string())
+}
+
+fn emit_launch_config_changed(app: &tauri::AppHandle) {
+    let _ = app.emit(crate::tray::LAUNCH_CONFIG_CHANGED_EVENT, ());
 }
 
 fn push_workspace_option(
