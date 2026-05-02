@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import { getGroupColor, STATUS_COLORS, type TerminalGroup, type ToolType } from "@/lib/terminal-types";
@@ -29,6 +30,8 @@ export function TabBar({
   onAttachTmux,
   onRefreshTmux,
 }: TabBarProps) {
+  const { t } = useI18n();
+
   return (
     <nav className="flex items-stretch overflow-x-auto scrollbar-none shrink-0 bg-muted/40 dark:bg-muted/60">
       <div className="flex items-stretch min-w-0">
@@ -91,8 +94,8 @@ export function TabBar({
                         onClose(session.id);
                       }}
                       className="absolute p-0 h-4 w-4 right-1 top-1/2 -translate-y-1/2 text-muted-foreground/30 hover:text-foreground opacity-0 group-hover:opacity-100"
-                      title="Close session"
-                      aria-label="Close session"
+                      title={t("Close session")}
+                      aria-label={t("Close session")}
                     >
                       <X className="h-2.5 w-2.5" />
                     </Button>

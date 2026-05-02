@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Eye, EyeOff, Globe } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { Input } from "@/components/ui/input";
 import {
@@ -55,6 +56,7 @@ export function FormBody({
   revealKeys,
   setRevealKeys,
 }: FormBodyProps) {
+  const { t } = useI18n();
   const fieldDefs = collectFields(provider, selectedApiTypes, "api_key");
   const apiKindEndpoints = provider.endpoints.filter((e) =>
     isProviderApiKind(e.api_type),
@@ -63,8 +65,8 @@ export function FormBody({
 
   return (
     <div className="space-y-3">
-      <FormSection title="Profile">
-        <FieldRow label="Label" hint="Visible name for this profile.">
+      <FormSection title={t("Profile")}>
+        <FieldRow label={t("Label")} hint={t("Visible name for this profile.")}>
           <Input
             type="text"
             value={label}
@@ -83,7 +85,7 @@ export function FormBody({
       </FormSection>
 
       {fieldDefs.length > 0 && (
-        <FormSection title="Credentials">
+        <FormSection title={t("Credentials")}>
           {fieldDefs.map((f) => (
             <CredentialField
               key={f.name}
@@ -100,7 +102,7 @@ export function FormBody({
       )}
 
       {selectedApiTypes.length > 0 && (
-        <FormSection title="Model settings">
+        <FormSection title={t("Model settings")}>
           <div className="space-y-2">
             {selectedApiTypes.map((apiType) => {
               const ep = provider.endpoints.find((e) => e.api_type === apiType);
@@ -123,10 +125,10 @@ export function FormBody({
                       required={ep.default_base_url === ""}
                       hint={
                         ep.default_base_url
-                          ? "Leave blank to use the catalog default."
+                          ? t("Leave blank to use the catalog default.")
                           : provider.id === "custom"
-                            ? "Required for custom endpoints."
-                            : "Endpoint URL from the provider dashboard."
+                            ? t("Required for custom endpoints.")
+                            : t("Endpoint URL from the provider dashboard.")
                       }
                     >
                       <Input
@@ -152,7 +154,7 @@ export function FormBody({
                     label={
                       provider.id === "azure" ? "Deployment name" : "Model"
                     }
-                    hint={apiKindHint(provider, apiType)}
+                    hint={apiKindHint(provider, apiType) ? t(apiKindHint(provider, apiType)!) : undefined}
                   >
                     {ep.models.length > 0 ? (
                       <Select
@@ -168,7 +170,7 @@ export function FormBody({
                           size="sm"
                           className="h-8 w-full text-[13px]"
                         >
-                          <SelectValue placeholder="Select a model" />
+                          <SelectValue placeholder={t("Select a model")} />
                         </SelectTrigger>
                         <SelectContent>
                           {ep.models.map((m) => (
@@ -192,13 +194,13 @@ export function FormBody({
                             [apiType]: { ...ov, model: e.target.value },
                           })
                         }
-                        placeholder="model id (e.g. gpt-4o, claude-sonnet-4-6)"
+                        placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
                         className={MONO_INPUT_CLASS}
                       />
                     )}
                   </FieldRow>
                   {ep.capabilities?.reasoning_effort && (
-                    <FieldRow label="Reasoning effort">
+                    <FieldRow label={t("Reasoning effort")}>
                       <Select
                         value={ov.reasoning_effort ?? "medium"}
                         onValueChange={(value) =>
@@ -239,7 +241,7 @@ export function FormBody({
       )}
 
       {provider.id === "deepseek" && selectedApiTypes.includes("openai-chat") && (
-        <FormSection title="DeepSeek proxy">
+        <FormSection title={t("DeepSeek proxy")}>
           <DeepSeekProxySettingsField
             settings={providerSettings}
             onChange={setProviderSettings}
@@ -312,6 +314,8 @@ function CheckRow({
   disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <label
       className={`h-8 flex items-center gap-2 px-2.5 border rounded-md text-xs ${
@@ -329,7 +333,7 @@ function CheckRow({
         onChange={(e) => onChange(e.target.checked)}
         className="h-3.5 w-3.5 accent-primary"
       />
-      <span>{label}</span>
+      <span>{t(label)}</span>
     </label>
   );
 }
@@ -360,10 +364,12 @@ function ApiKindsField({
   selectedApiTypes: string[];
   setSelectedApiTypes: (v: string[]) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div>
       <div className="text-[11px] font-medium text-muted-foreground mb-1">
-        API kinds
+        {t("API kinds")}
       </div>
       <div className="flex flex-wrap gap-1.5">
         {endpoints.map((ep) => {
@@ -394,7 +400,7 @@ function ApiKindsField({
                 />
                 <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
                 <span className="text-muted-foreground/70">
-                  · {apiTypeLabel(ep.api_type)}
+                  · {t(apiTypeLabel(ep.api_type))}
                 </span>
               </label>
             );
@@ -406,7 +412,7 @@ function ApiKindsField({
             >
               <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
               <span className="text-muted-foreground/70">
-                · {apiTypeLabel(ep.api_type)}
+                · {t(apiTypeLabel(ep.api_type))}
               </span>
             </div>
           );
@@ -414,7 +420,7 @@ function ApiKindsField({
       </div>
       {editable && (
         <p className="text-[10px] text-muted-foreground/60 mt-1">
-          Select every API shape this endpoint supports.
+          {t("Select every API shape this endpoint supports.")}
         </p>
       )}
     </div>
@@ -434,8 +440,10 @@ function CredentialField({
   onChange: (v: string) => void;
   onToggleReveal: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
-    <FieldRow label={field.label} required={field.required}>
+    <FieldRow label={t(field.label)} required={field.required}>
       <div className="relative">
         <Input
           type={field.secret && !reveal ? "password" : "text"}
@@ -449,7 +457,7 @@ function CredentialField({
             type="button"
             onClick={onToggleReveal}
             className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
-            aria-label={reveal ? "Hide" : "Reveal"}
+            aria-label={reveal ? t("Hide") : t("Reveal")}
           >
             {reveal ? (
               <EyeOff className="w-3 h-3" />
@@ -474,16 +482,18 @@ function FieldRow({
   required?: boolean;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
+
   return (
     <label className="block">
       <div className="text-[11px] font-medium text-muted-foreground mb-0.5">
-        {label}
+        {t(label)}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </div>
       {children}
       {hint && (
         <div className="text-[10px] text-muted-foreground/60 mt-0.5">
-          {hint}
+          {t(hint)}
         </div>
       )}
     </label>

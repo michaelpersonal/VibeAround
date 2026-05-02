@@ -1,5 +1,6 @@
 import type { ToolType } from "@/lib/terminal-types";
 import { AddCliDropdown } from "./AddCliDropdown";
+import { useI18n } from "@va/i18n";
 
 interface EmptyTerminalStateProps {
   tmuxAvailable: boolean | null;
@@ -18,9 +19,11 @@ export function EmptyTerminalState({
   onAttachTmux,
   onRefreshTmux,
 }: EmptyTerminalStateProps) {
+  const { t } = useI18n();
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3">
-      <p className="text-sm text-muted-foreground/40 font-mono">No sessions yet. Add a CLI to start.</p>
+      <p className="text-sm text-muted-foreground/40 font-mono">{t("No sessions yet. Add a CLI to start.")}</p>
       <AddCliDropdown
         variant="empty"
         tmuxAvailable={tmuxAvailable}

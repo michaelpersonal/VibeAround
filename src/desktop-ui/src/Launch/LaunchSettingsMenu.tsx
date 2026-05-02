@@ -5,6 +5,7 @@ import {
   SlidersHorizontal,
   Terminal as TerminalIcon,
 } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +39,7 @@ const PROXY_LABELS: Record<CompatibilityProxyMode, string> = {
 };
 
 export function LaunchSettingsMenu({ prefs, onChange }: Props) {
+  const { t } = useI18n();
   const [openMenu, setOpenMenu] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,10 +50,10 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
 
   const title = prefs
     ? [
-        `Terminal: ${currentTerminal?.label ?? "Terminal"}`,
-        `API proxy: ${PROXY_LABELS[prefs.compatibilityProxy]}`,
+        t("Terminal: {{terminal}}", { terminal: currentTerminal?.label ?? t("Terminal") }),
+        t("API proxy: {{mode}}", { mode: t(PROXY_LABELS[prefs.compatibilityProxy]) }),
       ].join("\n")
-    : "Launch settings";
+    : t("Launch settings");
 
   async function refresh() {
     onChange(await getLauncherPreferences());
@@ -107,7 +109,7 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
           className="h-8 px-2.5 text-xs"
         >
           <SlidersHorizontal className="w-3 h-3" />
-          Launch settings
+          {t("Launch settings")}
           <ChevronDown className="w-3 h-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
@@ -115,7 +117,7 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
         <DropdownMenuContent align="end" className="w-80">
           <DropdownMenuLabel className="flex items-center gap-2 text-[11px] font-medium">
             <TerminalIcon className="w-3 h-3" />
-            Terminal app
+            {t("Terminal app")}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={prefs.terminal}
@@ -133,7 +135,7 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
                 <span>{option.label}</span>
                 {!option.installed && (
                   <DropdownMenuShortcut className="normal-case tracking-normal">
-                    not installed
+                    {t("not installed")}
                   </DropdownMenuShortcut>
                 )}
               </DropdownMenuRadioItem>
@@ -143,7 +145,7 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="flex items-center gap-2 text-[11px] font-medium">
             <Network className="w-3 h-3" />
-            API proxy
+            {t("API proxy")}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={prefs.compatibilityProxy}
@@ -152,13 +154,13 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
             }}
           >
             <DropdownMenuRadioItem value="auto" disabled={pending} className="text-xs">
-              Auto
+              {t("Auto")}
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="on" disabled={pending} className="text-xs">
-              Force on
+              {t("Force on")}
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="off" disabled={pending} className="text-xs">
-              Off
+              {t("Off")}
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
 

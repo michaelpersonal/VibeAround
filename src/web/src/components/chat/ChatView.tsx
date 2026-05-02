@@ -15,6 +15,7 @@ import { getWebSocketUrl } from "@/lib/ws-url";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
 import { ChatEventSchema, type AgentInfo } from "@va/client";
 import type { SessionNotification } from "@agentclientprotocol/sdk";
+import { useI18n } from "@va/i18n";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -32,6 +33,7 @@ type ChatMeta = {
 };
 
 export function ChatView() {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
@@ -129,7 +131,7 @@ export function ChatView() {
           if (status === "completed" || status === "failed") {
             clearStreamProgress();
           } else {
-            setStreamProgress(`Using tool: ${title ?? "tool"}…`);
+            setStreamProgress(t("Using tool: {{tool}}…", { tool: title ?? "tool" }));
           }
           break;
         }
@@ -196,12 +198,12 @@ export function ChatView() {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (!last || last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, { role: "assistant", content: `Error: ${error}`, mode: "stream" }];
+          return [...prev, { role: "assistant", content: t("Error: {{error}}", { error }), mode: "stream" }];
         }
         const next = [...prev];
         next[next.length - 1] = {
           ...last,
-          content: last.content + (last.content ? "\n\n" : "") + `Error: ${error}`,
+          content: last.content + (last.content ? "\n\n" : "") + t("Error: {{error}}", { error }),
           progress: undefined,
           mode: "stream",
         };
@@ -213,7 +215,7 @@ export function ChatView() {
       ws.close();
       wsRef.current = null;
     };
-  }, []);
+  }, [t]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -238,19 +240,19 @@ export function ChatView() {
     <div className="flex h-full flex-col overflow-hidden bg-background">
       <div className="border-b border-border/60 bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono">
-          <span>channel: web</span>
-          <span>chat: {meta.channelId ?? "-"}</span>
-          <span>agent: {meta.agentTitle ?? meta.agentName ?? agentLabel}</span>
-          <span>version: {meta.agentVersion ?? "-"}</span>
-          <span>sessionId: {meta.sessionId ?? "-"}</span>
+          <span>{t("channel: web")}</span>
+          <span>{t("chat: {{value}}", { value: meta.channelId ?? "-" })}</span>
+          <span>{t("agent: {{value}}", { value: meta.agentTitle ?? meta.agentName ?? agentLabel })}</span>
+          <span>{t("version: {{value}}", { value: meta.agentVersion ?? "-" })}</span>
+          <span>{t("sessionId: {{value}}", { value: meta.sessionId ?? "-" })}</span>
         </div>
       </div>
       <Conversation className="flex-1">
         <ConversationContent>
           {messages.length === 0 ? (
             <ConversationEmptyState
-              title={`Chat with ${agentLabel}`}
-              description="Send a message to start."
+              title={t("Chat with {{agent}}", { agent: agentLabel })}
+              description={t("Send a message to start.")}
             />
           ) : (
             messages.map((msg, i) => (
@@ -297,7 +299,7 @@ export function ChatView() {
         }}
         disabled={!connected}
         isStreaming={streaming}
-        placeholder={connected ? `Message ${agentLabel}…` : "Connecting…"}
+        placeholder={connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")}
         targetLabel={agentLabel}
         targetTool={toolType}
         agents={agents}

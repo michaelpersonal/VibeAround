@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "@va/i18n";
 
 import { AppFooter } from "@/components/AppFooter";
 import { AppHeader } from "@/components/AppHeader";
@@ -15,6 +16,7 @@ import type { ViewMode } from "@/lib/terminal-types";
 import { ThemeContext, getResolvedTheme, toggleTheme as applyThemeToggle, type Theme } from "@/lib/theme";
 
 function App() {
+  const { t } = useI18n();
   const [page, setPage] = useState<AppPage>("terminal");
   const [viewMode, setViewMode] = useState<ViewMode>("tabs");
   const [theme, setTheme] = useState<Theme>(() => getResolvedTheme());
@@ -115,7 +117,7 @@ function App() {
                 />
               ) : sessionsLoading ? (
                 <div className="flex h-full items-center justify-center">
-                  <p className="text-sm text-muted-foreground/40 font-mono">Loading sessions…</p>
+                  <p className="text-sm text-muted-foreground/40 font-mono">{t("Loading sessions…")}</p>
                 </div>
               ) : (
                 <EmptyTerminalState

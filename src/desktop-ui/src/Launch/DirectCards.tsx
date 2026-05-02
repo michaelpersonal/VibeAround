@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Pin, Sparkles, Star } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ export function DirectCards({
   defaultAgent,
   defaultProfiles = {},
 }: Props) {
+  const { t } = useI18n();
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function DirectCards({
       <div className="flex items-start gap-2">
         <span
           className="mt-0.5 h-7 w-5 shrink-0 rounded text-muted-foreground/60 inline-flex items-center justify-center"
-          title="Direct launch stays pinned above profiles"
+          title={t("Direct launch stays pinned above profiles")}
         >
           <Pin className="w-3.5 h-3.5" />
         </span>
@@ -64,15 +66,15 @@ export function DirectCards({
           <Sparkles className="w-3.5 h-3.5" />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-medium">Direct launch</div>
+          <div className="text-[13px] font-medium">{t("Direct launch")}</div>
           <div className="text-[11px] text-muted-foreground truncate">
-            No profile — uses each CLI's existing login session
+            {t("No profile — uses each CLI's existing login session")}
           </div>
         </div>
       </div>
       {error && <div className="text-[11px] text-destructive">{error}</div>}
       {agents === null && !error ? (
-        <div className="text-[11px] text-muted-foreground">Loading…</div>
+        <div className="text-[11px] text-muted-foreground">{t("Loading…")}</div>
       ) : (
         <div className="flex flex-wrap gap-1.5 mt-1">
           {(agents ?? []).map((a) => {
@@ -114,7 +116,9 @@ export function DirectCards({
                         setDefaultBusy(null);
                       }
                     }}
-                    title={`Use ${a.display_name} as Quick Launch default without a profile`}
+                    title={t("Use {{agent}} as Quick Launch default without a profile", {
+                      agent: a.display_name,
+                    })}
                     className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
                   >
                     <Star className="w-3 h-3" />

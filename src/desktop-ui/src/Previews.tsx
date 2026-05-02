@@ -8,6 +8,7 @@ import {
   type PreviewSnapshot,
   type PreviewsResponse,
 } from "@va/client";
+import { useI18n } from "@va/i18n";
 
 import { EmptyBlock, PageHeader, PageShell, StatusBanner } from "@/components/page";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ const PREVIEW_SHARE_TTL_MINUTES = Math.round(PREVIEW_SHARE_TTL_SECS / 60);
 const POLL_INTERVAL_MS = 5000;
 
 export function Previews() {
+  const { t } = useI18n();
   const [data, setData] = useState<PreviewsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -61,20 +63,17 @@ export function Previews() {
     <PageShell>
       <PageHeader
         icon={<Eye className="w-4 h-4 text-primary" />}
-        title="Previews"
-        description={
-          <>
-            Active dev-server proxies and markdown previews. Owner links are
-            permanent; share links rotate every {PREVIEW_SHARE_TTL_MINUTES} minutes.
-          </>
-        }
+        title={t("Previews")}
+        description={t("Active dev-server proxies and markdown previews. Owner links are permanent; share links rotate every {{minutes}} minutes.", {
+          minutes: PREVIEW_SHARE_TTL_MINUTES,
+        })}
         actions={(
           <Button
             type="button"
             variant="ghost"
             size="icon-xs"
             onClick={fetchPreviews}
-            title="Refresh"
+            title={t("Refresh")}
           >
             <RefreshCw
               className={`w-3.5 h-3.5 text-muted-foreground ${loading ? "animate-spin" : ""}`}
@@ -100,9 +99,7 @@ export function Previews() {
         ))}
         {(!data || data.previews.length === 0) && !loading && (
           <EmptyBlock>
-            No active previews. Ask your coding agent to run{" "}
-            <span className="font-mono">preview</span> or{" "}
-            <span className="font-mono">md_preview</span>.
+            {t("No active previews. Ask your coding agent to run preview or md_preview.")}
           </EmptyBlock>
         )}
       </div>
@@ -119,6 +116,7 @@ interface PreviewRowProps {
 }
 
 function PreviewRow({ preview, tunnelUrl, localBase, isFirst, onClose }: PreviewRowProps) {
+  const { t } = useI18n();
   const ownerPath = `/va/preview/u/${encodeURIComponent(preview.slug)}`;
   const sharePath = preview.share_key
     ? `/va/preview/s/${encodeURIComponent(preview.share_key)}`
@@ -168,7 +166,7 @@ function PreviewRow({ preview, tunnelUrl, localBase, isFirst, onClose }: Preview
           size="icon-sm"
           onClick={onClose}
           className="shrink-0 hover:bg-destructive/10"
-          title={preview.kind === "server" ? "Close (kills dev server)" : "Close"}
+          title={preview.kind === "server" ? t("Close (kills dev server)") : t("Close")}
         >
           <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
         </Button>
@@ -176,25 +174,25 @@ function PreviewRow({ preview, tunnelUrl, localBase, isFirst, onClose }: Preview
 
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
         <UrlButton
-          label="Local"
+          label={t("Local")}
           url={localOwnerUrl}
           icon={<ExternalLink className="w-3 h-3" />}
         />
         <UrlButton
-          label="Tunnel · owner"
+          label={t("Tunnel · owner")}
           url={tunnelOwnerUrl}
           icon={<Globe className="w-3 h-3" />}
-          disabledReason={tunnelOwnerUrl ? null : "Tunnel not running"}
+          disabledReason={tunnelOwnerUrl ? null : t("Tunnel not running")}
         />
         <UrlButton
-          label="Tunnel · share"
+          label={t("Tunnel · share")}
           url={tunnelShareUrl}
           icon={<Globe className="w-3 h-3" />}
           disabledReason={
             !tunnelUrl
-              ? "Tunnel not running"
+              ? t("Tunnel not running")
               : !sharePath
-                ? "Share key expired"
+                ? t("Share key expired")
                 : null
           }
         />
@@ -211,6 +209,7 @@ interface UrlButtonProps {
 }
 
 function UrlButton({ label, url, icon, disabledReason }: UrlButtonProps) {
+  const { t } = useI18n();
   const disabled = !url || !!disabledReason;
   const onClick = () => {
     if (!url) return;
@@ -223,7 +222,7 @@ function UrlButton({ label, url, icon, disabledReason }: UrlButtonProps) {
       size="xs"
       disabled={disabled}
       onClick={onClick}
-      title={disabled ? disabledReason ?? "Unavailable" : url ?? ""}
+      title={disabled ? disabledReason ?? t("Unavailable") : url ?? ""}
       className="h-7 text-[11px] bg-primary/10 text-primary hover:bg-primary/20 disabled:bg-muted disabled:text-muted-foreground/50"
     >
       {icon}

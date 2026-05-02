@@ -9,9 +9,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LanguageMenu } from "@/components/LanguageMenu";
 
 const STORAGE_KEY = "vibearound.auth.token";
 const POLL_INTERVAL_MS = 2000;
@@ -29,6 +31,7 @@ function isSafeNext(next: string): boolean {
 type PairStatus = "loading" | "pending" | "expired" | "verified";
 
 export function PairingGate() {
+  const { t } = useI18n();
   const [code, setCode] = useState<string | null>(null);
   const [status, setStatus] = useState<PairStatus>("loading");
   const [remaining, setRemaining] = useState(CODE_TTL_SECS);
@@ -119,11 +122,11 @@ export function PairingGate() {
     e.preventDefault();
     const trimmed = pasted.trim();
     if (!trimmed) {
-      setTokenError("Token is required.");
+      setTokenError(t("Token is required."));
       return;
     }
     if (!/^[0-9a-fA-F]{32,}$/.test(trimmed)) {
-      setTokenError("That doesn't look like a VibeAround auth token.");
+      setTokenError(t("That doesn't look like a VibeAround auth token."));
       return;
     }
     window.sessionStorage.setItem(STORAGE_KEY, trimmed);
@@ -133,6 +136,9 @@ export function PairingGate() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6 py-12 text-foreground">
       <div className="w-full max-w-md space-y-6">
+        <div className="flex justify-end">
+          <LanguageMenu />
+        </div>
         {/* Header badge */}
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -153,10 +159,10 @@ export function PairingGate() {
           </div>
           <div>
             <h1 className="text-base font-semibold tracking-tight">
-              Pair your browser
+              {t("Pair your browser")}
             </h1>
             <p className="text-xs text-muted-foreground">
-              Connect this browser to your VibeAround instance.
+              {t("Connect this browser to your VibeAround instance.")}
             </p>
           </div>
         </div>
@@ -164,13 +170,13 @@ export function PairingGate() {
         {/* Pairing code display */}
         <div className="rounded-lg border border-border bg-card/50 p-6 text-center">
           {status === "loading" && (
-            <p className="text-sm text-muted-foreground">Generating pairing code…</p>
+            <p className="text-sm text-muted-foreground">{t("Generating pairing code…")}</p>
           )}
 
           {(status === "pending" || status === "expired") && code && (
             <>
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Your pairing code
+                {t("Your pairing code")}
               </p>
               <p
                 className={`font-mono text-4xl font-bold tracking-[0.3em] ${
@@ -186,11 +192,14 @@ export function PairingGate() {
                   <>
                     <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
                     <span>
-                      Waiting for <span className="font-mono">/pair {code}</span> · {remaining}s
+                      {t("Waiting for /pair {{code}} · {{seconds}}s", {
+                        code,
+                        seconds: remaining,
+                      })}
                     </span>
                   </>
                 ) : (
-                  <span className="text-destructive">Code expired</span>
+                  <span className="text-destructive">{t("Code expired")}</span>
                 )}
               </div>
             </>
@@ -198,7 +207,7 @@ export function PairingGate() {
 
           {status === "verified" && (
             <p className="text-sm font-medium text-primary">
-              ✓ Paired! Loading dashboard…
+              {t("✓ Paired! Loading dashboard…")}
             </p>
           )}
         </div>
@@ -207,17 +216,17 @@ export function PairingGate() {
         {status !== "verified" && (
           <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              How to pair
+              {t("How to pair")}
             </p>
             <ol className="list-decimal space-y-1 pl-5 text-sm text-foreground/90">
-              <li>Open any IM channel connected to VibeAround.</li>
+              <li>{t("Open any IM channel connected to VibeAround.")}</li>
               <li>
-                Send{" "}
+                {t("Send")}{" "}
                 <span className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
                   /pair {code ?? "···"}
                 </span>
               </li>
-              <li>This page will update automatically.</li>
+              <li>{t("This page will update automatically.")}</li>
             </ol>
           </div>
         )}
@@ -229,7 +238,7 @@ export function PairingGate() {
             onClick={startPairing}
             className="w-full"
           >
-            Generate new code
+            {t("Generate new code")}
           </Button>
         )}
 
@@ -241,13 +250,12 @@ export function PairingGate() {
             onToggle={(e) => setShowTokenInput((e.target as HTMLDetailsElement).open)}
           >
             <summary className="cursor-pointer select-none px-4 py-3 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-              I have a token — paste it
+              {t("I have a token — paste it")}
             </summary>
             <form onSubmit={submitToken} className="space-y-3 border-t border-border px-4 py-3">
               <label className="block space-y-1.5">
                 <span className="text-xs text-muted-foreground">
-                  Session auth token (from{" "}
-                  <span className="font-mono">~/.vibearound/auth.json</span>)
+                  {t("Session auth token (from ~/.vibearound/auth.json)")}
                 </span>
                 <Input
                   type="text"
@@ -258,7 +266,7 @@ export function PairingGate() {
                     setPasted(e.target.value);
                     if (tokenError) setTokenError(null);
                   }}
-                  placeholder="hex token…"
+                  placeholder={t("hex token…")}
                   className="font-mono text-xs"
                 />
               </label>
@@ -270,7 +278,7 @@ export function PairingGate() {
                 size="sm"
                 className="w-full text-xs"
               >
-                Unlock dashboard
+                {t("Unlock dashboard")}
               </Button>
             </form>
           </details>
@@ -278,7 +286,7 @@ export function PairingGate() {
 
         {/* Footer */}
         <p className="text-center text-[10px] text-muted-foreground/60">
-          VibeAround · pairing codes expire after 1 minute
+          {t("VibeAround · pairing codes expire after 1 minute")}
         </p>
       </div>
     </div>

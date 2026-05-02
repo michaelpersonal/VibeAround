@@ -1,4 +1,5 @@
 import { Bot, FolderOpen, Plus, Star, Trash2 } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,6 +17,7 @@ export function StepAgents({
   onCreateProfile,
   onDeleteProfile,
 }: StepAgentsProps) {
+  const { t } = useI18n();
   const recommended = agents.filter((agent) => RECOMMENDED_AGENT_IDS.has(agent.id));
   const others = agents.filter((agent) => !RECOMMENDED_AGENT_IDS.has(agent.id));
 
@@ -24,17 +26,17 @@ export function StepAgents({
       <div>
         <h2 className="text-base font-semibold flex items-center gap-2">
           <Bot className="w-4 h-4 text-primary" />
-          Quick Launch
+          {t("Quick Launch")}
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Pick the CLI VibeAround should start from Launch and IM messages.
+          {t("Pick the CLI VibeAround should start from Launch and IM messages.")}
         </p>
       </div>
 
       <Card className="p-3 space-y-3">
         <div className="flex items-center gap-2 text-xs font-medium">
           <Star className="w-3.5 h-3.5 text-primary" />
-          Best recommended
+          {t("Best recommended")}
         </div>
         <AgentGrid
           agents={recommended}
@@ -45,7 +47,7 @@ export function StepAgents({
 
       {others.length > 0 && (
         <Card className="p-3 space-y-3">
-          <div className="text-xs font-medium text-muted-foreground">Other CLIs</div>
+          <div className="text-xs font-medium text-muted-foreground">{t("Other CLIs")}</div>
           <AgentGrid
             agents={others}
             enabled={enabled}
@@ -57,9 +59,9 @@ export function StepAgents({
       <Card className="p-3 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-medium">API profiles</div>
+            <div className="text-xs font-medium">{t("API profiles")}</div>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              Optional. Save API keys now; choose launch defaults later in Launch.
+              {t("Optional. Save API keys now; choose launch defaults later in Launch.")}
             </p>
           </div>
           <Button
@@ -70,7 +72,7 @@ export function StepAgents({
             onClick={onCreateProfile}
           >
             <Plus className="w-3 h-3" />
-            Add API profile
+            {t("Add API profile")}
           </Button>
         </div>
 
@@ -101,7 +103,7 @@ export function StepAgents({
                   variant="ghost"
                   size="icon-xs"
                   className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                  title={`Delete ${profile.label}`}
+                  title={t("Delete {{label}}", { label: profile.label })}
                   onClick={() => onDeleteProfile(profile.id)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -111,7 +113,7 @@ export function StepAgents({
           </div>
         ) : (
           <p className="text-[11px] text-muted-foreground">
-            No API profiles yet. You can add one now or skip this step.
+            {t("No API profiles yet. You can add one now or skip this step.")}
           </p>
         )}
       </Card>
@@ -120,7 +122,7 @@ export function StepAgents({
         <div className="flex items-center gap-2">
           <FolderOpen className="w-4 h-4 text-primary" />
           <div>
-            <div className="text-xs font-medium">Default workspace</div>
+            <div className="text-xs font-medium">{t("Default workspace")}</div>
             <div className="text-[11px] text-muted-foreground font-mono">
               ~/.vibearound/workspaces
             </div>

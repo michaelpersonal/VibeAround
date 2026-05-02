@@ -2,6 +2,7 @@
 
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useI18n } from "@va/i18n";
 import type { TerminalSession, TerminalStatus, ToolType, ViewMode } from "@/lib/terminal-types";
 import { getToolTheme, STATUS_COLORS } from "@/lib/terminal-types";
 import { useTheme } from "@/lib/theme";
@@ -36,6 +37,7 @@ export function TerminalPanel({
   onClose,
   onSessionState,
 }: TerminalPanelProps) {
+  const { t } = useI18n();
   const appTheme = useTheme();
   const theme = getToolTheme(session.tool, appTheme);
   const status = statusConfig[session.status];
@@ -78,7 +80,7 @@ export function TerminalPanel({
               color: theme.accent,
             }}
           >
-            {theme.label}
+            {t(theme.label)}
           </div>
           <div className="text-xs font-medium text-foreground/90 font-mono">
             {session.name}
@@ -91,7 +93,7 @@ export function TerminalPanel({
               }}
             />
             <div className="text-[9px] h-1.5 font-mono text-muted-foreground/50 uppercase leading-none">
-              {status.label}
+              {t(status.label)}
             </div>
           </div>
         </div>
@@ -106,8 +108,8 @@ export function TerminalPanel({
               size="icon-sm"
               onClick={onClose}
               className="text-muted-foreground/40 hover:text-foreground"
-              title="Close session"
-              aria-label="Close session"
+              title={t("Close session")}
+              aria-label={t("Close session")}
             >
               <X className="h-3 w-3" />
             </Button>
@@ -118,8 +120,8 @@ export function TerminalPanel({
               size="icon-sm"
               onClick={onToggleMaximize}
               className="text-muted-foreground/40 hover:text-foreground"
-              title={isMaximized ? "Restore" : "Maximize"}
-              aria-label={isMaximized ? "Restore panel" : "Maximize panel"}
+              title={isMaximized ? t("Restore") : t("Maximize")}
+              aria-label={isMaximized ? t("Restore panel") : t("Maximize panel")}
             >
               {isMaximized ? (
                 <Minimize2 className="h-3 w-3" />

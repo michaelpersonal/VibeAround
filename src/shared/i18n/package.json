@@ -1,0 +1,14 @@
+{
+  "name": "@va/i18n",
+  "private": true,
+  "version": "0.5.3",
+  "type": "module",
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
+  "dependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
+  }
+}

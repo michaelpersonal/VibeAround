@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, ChevronRight, Rocket } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
+import { LanguageMenu } from "@/components/LanguageMenu";
 
 import { STEPS } from "./constants";
 import { StepAgents } from "./components/StepAgents";
@@ -39,6 +41,7 @@ function orderAgents(agentDefs: AgentSummary[]): AgentSummary[] {
 }
 
 export default function Onboarding() {
+  const { t } = useI18n();
   const [step, setStep] = useState(0);
   const [settings, setSettings] = useState<Settings>({});
   const [discoveredPlugins, setDiscoveredPlugins] = useState<DiscoveredChannelPlugin[]>([]);
@@ -236,16 +239,16 @@ export default function Onboarding() {
 
   const handleDeleteProfile = useCallback(async (id: string) => {
     const profile = profiles.find((item) => item.id === id);
-    if (profile && !window.confirm(`Delete profile "${profile.label}"?`)) return;
+    if (profile && !window.confirm(t("Delete profile \"{{label}}\"?", { label: profile.label }))) return;
     await deleteProfile(id);
     const nextProfiles = await listProfiles();
     setProfiles(nextProfiles);
-  }, [profiles]);
+  }, [profiles, t]);
 
   if (!loaded) {
     return (
       <div className="flex items-center justify-center h-full">
-        <span className="text-sm text-muted-foreground animate-pulse">Loading…</span>
+        <span className="text-sm text-muted-foreground animate-pulse">{t("Loading…")}</span>
       </div>
     );
   }
@@ -256,20 +259,27 @@ export default function Onboarding() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      <div className="flex items-center gap-1 px-6 pt-5 pb-2">
-        {STEPS.map((label, index) => (
-          <div key={label} className="flex items-center gap-1 flex-1">
-            <div
-              className={`h-1 flex-1 rounded-full transition-colors ${
-                index <= step ? "bg-primary" : "bg-border"
-              }`}
-            />
-          </div>
-        ))}
+      <div className="flex items-center gap-2 px-6 pt-5 pb-2">
+        <div className="flex items-center gap-1 flex-1">
+          {STEPS.map((label, index) => (
+            <div key={label} className="flex items-center gap-1 flex-1">
+              <div
+                className={`h-1 flex-1 rounded-full transition-colors ${
+                  index <= step ? "bg-primary" : "bg-border"
+                }`}
+              />
+            </div>
+          ))}
+        </div>
+        <LanguageMenu />
       </div>
       <div className="px-6 pb-3">
         <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
-          Step {step + 1} of {STEPS.length} — {currentStep}
+          {t("Step {{current}} of {{total}} — {{step}}", {
+            current: step + 1,
+            total: STEPS.length,
+            step: t(currentStep),
+          })}
         </span>
       </div>
 
@@ -344,15 +354,15 @@ export default function Onboarding() {
                 {installTasks.some((task) =>
                   task.status === "error" || task.status === "cancelled"
                 )
-                  ? "Continue Anyway"
-                  : "Open VibeAround"}
+                  ? t("Continue Anyway")
+                  : t("Open VibeAround")}
               </Button>
             ) : (
               <Button
                 onClick={cancelInstall}
                 variant="outline"
               >
-                Cancel
+                {t("Cancel")}
               </Button>
             )}
           </>
@@ -364,7 +374,7 @@ export default function Onboarding() {
               variant="ghost"
             >
               <ChevronLeft className="w-4 h-4" />
-              Back
+              {t("Back")}
             </Button>
             {isLast ? (
               <Button
@@ -372,11 +382,11 @@ export default function Onboarding() {
                 disabled={finishing}
               >
                 {finishing ? (
-                  <>Confirming…</>
+                  <>{t("Confirming…")}</>
                 ) : (
                   <>
                     <Rocket className="w-4 h-4" />
-                    Confirm
+                    {t("Confirm")}
                   </>
                 )}
               </Button>
@@ -385,7 +395,7 @@ export default function Onboarding() {
                 onClick={() => setStep((v) => Math.min(STEPS.length - 1, v + 1))}
                 disabled={!canNext}
               >
-                {currentStep === "Welcome" ? "Get Started" : "Next"}
+                {currentStep === "Welcome" ? t("Get Started") : t("Next")}
                 <ChevronRight className="w-4 h-4" />
               </Button>
             )}

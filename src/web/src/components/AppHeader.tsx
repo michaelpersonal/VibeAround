@@ -1,9 +1,11 @@
 import { LayoutGrid, MessageSquare, Moon, Rows3, Sun } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Theme } from "@/lib/theme";
 import type { ViewMode } from "@/lib/terminal-types";
 import type { AppPage } from "@/lib/session-mappers";
+import { LanguageMenu } from "./LanguageMenu";
 
 interface AppHeaderProps {
   page: AppPage;
@@ -28,6 +30,8 @@ export function AppHeader({
   runningSessions,
   pingMs,
 }: AppHeaderProps) {
+  const { t } = useI18n();
+
   return (
     <header className="flex items-center justify-between px-3 py-1.5 shrink-0 bg-muted/50 dark:bg-background border-b border-border">
       <div className="flex items-center gap-3">
@@ -44,19 +48,19 @@ export function AppHeader({
         >
           <ToggleGroupItem
             value="terminal"
-            aria-label="Terminal"
+            aria-label={t("Terminal")}
             className="rounded px-2 py-1 gap-1.5 data-[state=on]:bg-primary/15 data-[state=on]:text-primary text-muted-foreground/50 hover:text-foreground"
           >
             <Rows3 className="h-3 w-3" />
-            Terminal
+            {t("Terminal")}
           </ToggleGroupItem>
           <ToggleGroupItem
             value="chat"
-            aria-label="Chat"
+            aria-label={t("Chat")}
             className="rounded px-2 py-1 gap-1.5 data-[state=on]:bg-primary/15 data-[state=on]:text-primary text-muted-foreground/50 hover:text-foreground"
           >
             <MessageSquare className="h-3 w-3" />
-            Chat
+            {t("Chat")}
           </ToggleGroupItem>
         </ToggleGroup>
         <div
@@ -65,11 +69,14 @@ export function AppHeader({
           }`}
         >
           <span className="text-[10px] text-muted-foreground/50 font-mono">
-            {runningSessions}/{totalSessions} active
+            {t("{{running}}/{{total}} active", {
+              running: runningSessions,
+              total: totalSessions,
+            })}
           </span>
           <span className="text-[10px] text-emerald-400/80 font-mono flex items-center gap-1.5">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            connected
+            {t("connected")}
             {pingMs !== null ? (
               <span className="text-muted-foreground/70">· {pingMs} ms</span>
             ) : (
@@ -83,10 +90,11 @@ export function AppHeader({
           type="button"
           onClick={onThemeToggle}
           className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          aria-label={theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme")}
         >
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
+        <LanguageMenu />
         <ToggleGroup
           type="single"
           value={viewMode}
@@ -97,14 +105,14 @@ export function AppHeader({
         >
           <ToggleGroupItem
             value="tabs"
-            aria-label="Tab view"
+            aria-label={t("Tab view")}
             className="rounded px-2 py-1 data-[state=on]:bg-primary/15 data-[state=on]:text-primary text-muted-foreground/50 hover:text-foreground"
           >
             <Rows3 className="h-3 w-3" />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="grid"
-            aria-label="Grid view"
+            aria-label={t("Grid view")}
             className="rounded px-2 py-1 data-[state=on]:bg-primary/15 data-[state=on]:text-primary text-muted-foreground/50 hover:text-foreground"
           >
             <LayoutGrid className="h-3 w-3" />
