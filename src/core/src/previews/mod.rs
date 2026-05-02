@@ -1,10 +1,12 @@
-//! Preview sessions — one per workspace (server) or file path (file).
+//! Preview sessions — one per (workspace, port) for server or file path
+//! for file.
 //!
 //! A unified `PreviewSession` models both live dev-server previews and
 //! static file previews (e.g. rendered markdown). Each session has:
 //!
 //! - `id`        — the canonical path that identifies this preview
-//!                 (workspace dir for `Server`, file path for `File`).
+//!                 (workspace dir + synthetic `:port:N` segment for
+//!                 `Server`; file path for `File`).
 //! - `target`    — what to serve: `Server { port }` or `File`.
 //! - `slug`      — stable, readable URL segment derived from `id`.
 //!                 Full-path-based (slashes → `-`), so slugs are globally
@@ -48,9 +50,11 @@ use store::{
 // Public API — create / refresh
 // ---------------------------------------------------------------------------
 
-/// Ensure a Server preview session exists for `workspace`. Returns
-/// `(owner_slug, share_key)`. Calling twice for the same workspace
-/// reuses the owner slug; the share key is refreshed if expired.
+/// Ensure a Server preview session exists for `(workspace, port)`.
+/// Returns `(owner_slug, share_key)`. Calling twice for the same
+/// `(workspace, port)` reuses the owner slug; the share key is refreshed
+/// if expired. Different ports under the same workspace coexist as
+/// independent sessions.
 pub fn ensure_server(
     port: u16,
     workspace: PathBuf,
@@ -58,8 +62,9 @@ pub fn ensure_server(
     owner_session: Option<String>,
 ) -> (String, String) {
     let workspace = canonical(&workspace);
+    let id = workspace.join(format!(":port:{port}"));
     ensure_session(
-        workspace.clone(),
+        id,
         workspace,
         title,
         PreviewTarget::Server { port },
@@ -355,6 +360,22 @@ mod tests {
         let (slug_b, share_b) = ensure_server(3000, path.clone(), "t".into(), None);
         assert_eq!(slug_a, slug_b);
         assert_eq!(share_a, share_b);
+    }
+
+    #[test]
+    fn ensure_server_keeps_different_ports_separate() {
+        let path = std::env::temp_dir().join("va-preview-test-multiport");
+        std::fs::create_dir_all(&path).unwrap();
+
+        let (slug_a, _) = ensure_server(3456, path.clone(), "liquid".into(), None);
+        let (slug_b, _) = ensure_server(5000, path.clone(), "python".into(), None);
+
+        assert_ne!(slug_a, slug_b, "same workspace + different ports must not collapse");
+
+        let entry_a = lookup_owner(&slug_a).expect("slug A still registered");
+        let entry_b = lookup_owner(&slug_b).expect("slug B still registered");
+        assert!(matches!(entry_a.target, PreviewTarget::Server { port: 3456 }));
+        assert!(matches!(entry_b.target, PreviewTarget::Server { port: 5000 }));
     }
 
     #[test]

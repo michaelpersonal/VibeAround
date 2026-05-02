@@ -11,6 +11,8 @@ use dashmap::DashMap;
 use tokio::sync::broadcast;
 use tokio::task::AbortHandle;
 
+use crate::process::registry::ChildRegistry;
+
 use super::status::{TunnelMeta, TunnelStatus};
 
 use super::TunnelProvider;
@@ -24,6 +26,12 @@ pub struct TunnelEntry {
     /// Public URL once the backend has finished connecting. `None` while
     /// the backend is still starting up.
     pub url: Option<String>,
+    /// `ChildRegistry` id for process-based tunnels (cloudflared /
+    /// localtunnel). `None` for SDK-based tunnels (ngrok) and for the
+    /// brief window between `register` and the first `set_registry_id`.
+    /// Consumed by `kill()` to SIGKILL the child independent of task
+    /// abort timing.
+    pub registry_id: Option<u64>,
 }
 
 /// Value-typed view of a single tunnel's current state, suitable for
@@ -70,6 +78,7 @@ impl TunnelManager {
                 meta: TunnelMeta::new(Some(abort_handle)),
                 provider,
                 url: None,
+                registry_id: None,
             },
         );
         self.notify_change();
@@ -83,20 +92,33 @@ impl TunnelManager {
         self.notify_change();
     }
 
+    /// Record the `ChildRegistry` id so `kill()` can SIGKILL the child
+    /// even if the owning task is cancelled before entering `guard.wait`.
+    /// Called once per tunnel, right after `start_web_tunnel` returns.
+    pub fn set_registry_id(&self, provider_key: &str, registry_id: u64) {
+        if let Some(mut entry) = self.tunnels.get_mut(provider_key) {
+            entry.registry_id = Some(registry_id);
+        }
+    }
+
     /// Kill the tunnel matching `provider_key` and remove it from the
     /// registry. Returns `true` if an entry was found and killed.
     pub fn kill(&self, provider_key: &str) -> bool {
-        let killed = if let Some(entry) = self.tunnels.get(provider_key) {
+        let registry_id = if let Some(entry) = self.tunnels.get(provider_key) {
             entry.meta.kill();
-            true
+            entry.registry_id
         } else {
-            false
+            return false;
         };
-        if killed {
-            self.tunnels.remove(provider_key);
-            self.notify_change();
+        // Dropping the Child fires kill_on_drop → SIGKILL. Independent
+        // of whether the owning task had time to reach `guard.wait` and
+        // cancel-propagate the drop itself.
+        if let Some(id) = registry_id {
+            drop(ChildRegistry::global().remove(id));
         }
-        killed
+        self.tunnels.remove(provider_key);
+        self.notify_change();
+        true
     }
 
     /// Clear all tunnels. Called on daemon stop.

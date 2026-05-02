@@ -7,6 +7,8 @@
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use crate::proc_log;
+use crate::process::registry::{ChildRegistry, ProcessKind};
 
 const PORT: u16 = crate::config::DEFAULT_PORT;
 
@@ -51,13 +53,15 @@ pub async fn start(port: u16) -> Result<(crate::tunnels::TunnelGuard, String), B
     cmd.args(&base_args)
         .arg(port.to_string())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
 
     let error_hint = crate::resources::tunnel_spawn_error_hint(tunnel_def)
         .unwrap_or("is Node/npx installed?");
     let mut child = cmd.spawn().map_err(|e| {
         format!("Failed to spawn {} ({}): {}", program, error_hint, e)
     })?;
+    let pid = child.id();
 
     let stdout = child
         .stdout
@@ -77,7 +81,23 @@ pub async fn start(port: u16) -> Result<(crate::tunnels::TunnelGuard, String), B
         }
     };
 
-    Ok((crate::tunnels::TunnelGuard::Process(child), url))
+    // Register Child with the global registry only after URL parsing —
+    // until then we need local ownership to `.take()` the stdout. The
+    // small window where the Child lives on this task's frame is the
+    // only moment kill_all() can't reach it; in practice URL parsing
+    // finishes in <1s so the window is negligible.
+    let registry_id = ChildRegistry::global().register(ProcessKind::Tunnel, "localtunnel", child);
+
+    proc_log!(
+        info,
+        kind = ProcessKind::Tunnel,
+        label = "localtunnel",
+        pid = pid,
+        event = "started",
+        url = %url
+    );
+
+    Ok((crate::tunnels::TunnelGuard::Process { registry_id }, url))
 }
 
 /// Start tunnel for the default web dashboard port.

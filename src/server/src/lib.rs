@@ -60,8 +60,9 @@ impl RunningDaemon {
         self.channel_hub.shutdown_all().await;
 
         // Safety net: synchronously kill any child process still registered
-        // after the graceful shutdown paths ran. Covers cases where guardian
-        // tasks didn't get a chance to poll their drop handlers.
+        // after the graceful shutdown paths ran. Covers cases where the
+        // supervisor-driven cancel + kill_on_drop never got polled because
+        // the tokio runtime tore down first.
         ChildRegistry::global().kill_all();
 
         // Kill any user-started dev servers we were previewing so they don't
@@ -268,6 +269,9 @@ impl ServerDaemon {
                     Ok((guard, url)) => {
                         tracing::info!(url = %url, "tunnel connected");
                         tunnel_manager.set_url(tunnel_provider.as_str(), &url);
+                        if let Some(id) = guard.registry_id() {
+                            tunnel_manager.set_registry_id(tunnel_provider.as_str(), id);
+                        }
                         guard.wait().await;
                     }
                     Err(e) => {

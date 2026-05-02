@@ -4,6 +4,9 @@
 
 use std::process::Stdio;
 
+use crate::proc_log;
+use crate::process::registry::{ChildRegistry, ProcessKind};
+
 /// Start Cloudflare tunnel. Returns (guard, public URL).
 /// Token from config; hostname (public URL) from config since Cloudflare Named Tunnels have a fixed URL.
 pub async fn start_web_tunnel(
@@ -42,6 +45,13 @@ pub async fn start_web_tunnel(
     let child = cmd.spawn().map_err(|e| {
         format!("Failed to spawn {} ({}): {}", program, error_hint, e)
     })?;
+    let pid = child.id();
+
+    // Transfer Child ownership to the registry so daemon shutdown's
+    // kill_all() reaches it even if the outer task never gets a chance
+    // to reach guard.wait(). See TunnelGuard::wait for the happy-path
+    // reaper.
+    let registry_id = ChildRegistry::global().register(ProcessKind::Tunnel, "cloudflare", child);
 
     let url = format!(
         "https://{}",
@@ -49,9 +59,16 @@ pub async fn start_web_tunnel(
             .trim_start_matches("https://")
             .trim_start_matches("http://")
     );
-    tracing::info!("[cloudflare] Tunnel starting, public URL: {}", url);
+    proc_log!(
+        info,
+        kind = ProcessKind::Tunnel,
+        label = "cloudflare",
+        pid = pid,
+        event = "started",
+        url = %url
+    );
 
-    Ok((crate::tunnels::TunnelGuard::Process(child), url))
+    Ok((crate::tunnels::TunnelGuard::Process { registry_id }, url))
 }
 
 /// Cloudflare backend. Implements TunnelBackend for unified dispatch.

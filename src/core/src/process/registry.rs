@@ -36,18 +36,35 @@ use dashmap::DashMap;
 use tokio::process::Child;
 
 /// Classification of a registered child, used by `orphan_sweep` to decide
-/// whether a leftover process belongs to us.
+/// whether a leftover process belongs to us, and by the `Supervisor` for
+/// structured logging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChildKind {
+pub enum ProcessKind {
     /// Channel plugin process (node running under ~/.vibearound/plugins/).
-    Plugin,
+    ChannelPlugin,
     /// ACP coding-agent child (node running the ACP bridge package).
-    AgentAcp,
+    AcpAgent,
+    /// PTY-hosted interactive shell or CLI tool.
+    Pty,
+    /// Tunnel provider subprocess (cloudflared, lt, …). Not ngrok (SDK).
+    Tunnel,
+}
+
+impl ProcessKind {
+    /// Short lowercase tag used in structured logs (`kind=channel_plugin`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProcessKind::ChannelPlugin => "channel_plugin",
+            ProcessKind::AcpAgent => "acp_agent",
+            ProcessKind::Pty => "pty",
+            ProcessKind::Tunnel => "tunnel",
+        }
+    }
 }
 
 #[derive(Debug)]
 struct Entry {
-    kind: ChildKind,
+    kind: ProcessKind,
     label: String,
     child: Child,
 }
@@ -58,22 +75,32 @@ pub struct ChildRegistry {
 }
 
 impl ChildRegistry {
-    fn new() -> Self {
+    /// Number of live entries. Crate-private — used by `Supervisor` tests
+    /// that assert the registry gets drained on terminal bridge exits.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub(crate) fn new() -> Self {
         Self {
             entries: DashMap::new(),
             next_id: parking_lot::Mutex::new(1),
         }
     }
 
-    /// Global singleton. Stable across daemon restarts within the same process.
-    pub fn global() -> &'static ChildRegistry {
-        static INSTANCE: OnceLock<ChildRegistry> = OnceLock::new();
-        INSTANCE.get_or_init(ChildRegistry::new)
+    /// Global singleton. Stable across daemon restarts within the same
+    /// process. Returned as `Arc<Self>` so the `Supervisor` can hold it
+    /// through dependency injection while legacy callers still use
+    /// `ChildRegistry::global().kill_all()` via `Arc` auto-deref.
+    pub fn global() -> std::sync::Arc<ChildRegistry> {
+        static INSTANCE: OnceLock<std::sync::Arc<ChildRegistry>> = OnceLock::new();
+        std::sync::Arc::clone(INSTANCE.get_or_init(|| std::sync::Arc::new(ChildRegistry::new())))
     }
 
     /// Register a spawned child. Returns an opaque token that the caller
     /// must pass to `remove()` when the child exits cleanly.
-    pub fn register(&self, kind: ChildKind, label: impl Into<String>, child: Child) -> u64 {
+    pub fn register(&self, kind: ProcessKind, label: impl Into<String>, child: Child) -> u64 {
         let label = label.into();
         let id = {
             let mut next = self.next_id.lock();

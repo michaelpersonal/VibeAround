@@ -8,7 +8,8 @@
 //! - `slash`            — slash-command parser + `SlashAction` enum
 //! - `prompt`           — `handle_channel_input` + `handle_prompt` + helpers
 //! - `bridge_handler`   — `ChannelBridgeHandler` (notification + permission forwarding)
-//! - `monitor`          — supervisor: respawn + heartbeat watchdog
+//! - `monitor`          — Dashboard-facing facade over `process::Supervisor`
+//! - `plugin_bridge`    — `ChannelPluginBridge` (`ProcessBridge` impl for stdio plugins)
 //! - `manifest`         — `ChannelPluginManifest`
 //! - `plugin_host`      — runtime registry + pending permissions map
 //! - `plugin_runtime`   — enum wrapper around Stdio / WebSocket runtimes
@@ -18,6 +19,7 @@
 pub mod bridge_handler;
 pub mod manifest;
 pub mod monitor;
+pub mod plugin_bridge;
 pub mod plugin_host;
 pub mod plugin_runtime;
 pub mod prompt;
@@ -52,12 +54,10 @@ pub struct ChannelManager {
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     input_rx: StdMutex<Option<mpsc::UnboundedReceiver<ChannelInput>>>,
     conversation_manager: Arc<ConversationManager>,
-    /// Lazy-initialised on first `register_plugin` call. A single monitor
-    /// task supervises every channel plugin (respawn + heartbeat watchdog).
+    /// Lazy-initialised on first `register_plugin` call. The monitor is
+    /// a thin facade over `process::Supervisor` — it owns the supervisor
+    /// and its tick loop internally.
     monitor: StdMutex<Option<Arc<monitor::ChannelMonitor>>>,
-    /// Shutdown sender for the monitor loop. Kept here so `shutdown_all` can
-    /// cleanly stop the monitor before tearing down runtimes.
-    monitor_shutdown_tx: StdMutex<Option<mpsc::Sender<()>>>,
 }
 
 impl ChannelManager {
@@ -69,7 +69,6 @@ impl ChannelManager {
             input_rx: StdMutex::new(Some(input_rx)),
             conversation_manager,
             monitor: StdMutex::new(None),
-            monitor_shutdown_tx: StdMutex::new(None),
         }
     }
 
@@ -77,8 +76,8 @@ impl ChannelManager {
         Arc::clone(&self.plugin_host)
     }
 
-    /// Return the monitor, initialising it on first call. Also starts the
-    /// monitor's tick loop as a top-level task.
+    /// Return the monitor, initialising it on first call. Construction
+    /// also spawns the underlying `process::Supervisor` tick loop.
     pub fn monitor(&self) -> Arc<monitor::ChannelMonitor> {
         let mut slot = self.monitor.lock().unwrap();
         if let Some(existing) = slot.as_ref() {
@@ -91,15 +90,9 @@ impl ChannelManager {
             Arc::clone(&self.plugin_host),
             change_tx,
         );
-        // Establish the Weak back-pointer so bridge threads can call
-        // mark_crashed / touch into the monitor.
+        // Weak back-pointer so the plugin bridge's `_va/heartbeat`
+        // handler can call `touch(kind)` on the monitor.
         self.plugin_host.set_monitor(Arc::downgrade(&m));
-
-        // Start the tick loop with a shutdown channel.
-        let (sdn_tx, sdn_rx) = mpsc::channel::<()>(1);
-        *self.monitor_shutdown_tx.lock().unwrap() = Some(sdn_tx);
-        let m_clone = Arc::clone(&m);
-        tokio::spawn(async move { monitor::run_monitor_loop(m_clone, sdn_rx).await });
 
         *slot = Some(Arc::clone(&m));
         m
@@ -140,7 +133,12 @@ impl ChannelManager {
     ) {
         self.plugin_host
             .register_websocket_plugin(channel_name.to_string(), outbound_tx);
-        tracing::info!("[{}] registered internal ACP plugin", channel_name);
+        crate::proc_log!(
+            info,
+            kind = crate::process::registry::ProcessKind::ChannelPlugin,
+            label = channel_name,
+            event = "registered_internal"
+        );
     }
 
     /// Fire-and-forget: enqueue input for async processing. `Send`-safe
@@ -165,6 +163,12 @@ impl ChannelManager {
     }
 
     pub async fn shutdown_all(&self) {
+        // Cancel every supervised plugin bridge first so they wind down
+        // cleanly, then drop the host-side routing + pending permissions.
+        let monitor = self.monitor.lock().unwrap().clone();
+        if let Some(monitor) = monitor {
+            monitor.shutdown_all().await;
+        }
         self.plugin_host.shutdown_all().await;
     }
 

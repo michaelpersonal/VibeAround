@@ -5,6 +5,9 @@ use ngrok::config::ForwarderBuilder;
 use ngrok::tunnel::EndpointInfo;
 use url::Url;
 
+use crate::proc_log;
+use crate::process::registry::ProcessKind;
+
 const PORT: u16 = crate::config::DEFAULT_PORT;
 
 /// Start ngrok tunnel using the Rust SDK. Returns (guard, public URL).
@@ -28,7 +31,13 @@ pub async fn start_web_tunnel(
         .map_err(|e| format!("forward URL: {}", e))?;
     let forwarder = match config.ngrok_domain.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
         Some(domain) => {
-            tracing::info!("[ngrok] Using static domain: {}", domain);
+            proc_log!(
+                info,
+                kind = ProcessKind::Tunnel,
+                label = "ngrok",
+                event = "static_domain",
+                domain = %domain
+            );
             let f = session
                 .http_endpoint()
                 .domain(domain)
@@ -45,6 +54,13 @@ pub async fn start_web_tunnel(
     };
 
     let url = forwarder.url().to_string();
+    proc_log!(
+        info,
+        kind = ProcessKind::Tunnel,
+        label = "ngrok",
+        event = "started",
+        url = %url
+    );
 
     // Keep both Session and forwarder alive; dropping Session closes the ngrok connection and makes the endpoint go offline (ERR_NGROK_3200).
     let handle = tokio::spawn(async move {

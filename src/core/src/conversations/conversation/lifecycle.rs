@@ -174,6 +174,7 @@ impl Conversation {
 
         let ready = match Agent::spawn(
             agent_id,
+            &self.route,
             &workspace,
             resume_session_id.clone(),
             handler,

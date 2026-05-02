@@ -8,6 +8,9 @@ use std::path::Path;
 use std::sync::{self, Arc, Mutex};
 use tokio::sync::mpsc;
 
+use crate::proc_log;
+use crate::process::registry::ProcessKind;
+
 /// Shell command: login shell on Unix, cmd on Windows. Caller must set PTY env.
 #[cfg(unix)]
 fn shell_command() -> CommandBuilder {
@@ -350,6 +353,17 @@ pub(super) fn spawn_pty_with_command(
         .slave
         .spawn_command(cmd)
         .context("Failed to spawn PTY child process")?;
+    let child_pid = child.process_id();
+    let tool_label = format!("{:?}", tool).to_lowercase();
+    proc_log!(
+        info,
+        kind = ProcessKind::Pty,
+        label = tool_label,
+        pid = child_pid,
+        event = "spawned",
+        cwd = ?cwd,
+        tmux = ?tmux_session
+    );
 
     let mut reader = pair
         .master
@@ -410,6 +424,7 @@ pub(super) fn spawn_pty_with_command(
         .expect("failed to spawn PTY resize thread");
 
     let child_poll = Arc::clone(&child);
+    let poll_label = format!("{:?}", tool).to_lowercase();
     std::thread::Builder::new()
         .name(format!("pty-{:?}-poll", tool))
         .spawn(move || {
@@ -427,6 +442,13 @@ pub(super) fn spawn_pty_with_command(
                     }
                 };
                 if let Some(code) = exit_status {
+                    proc_log!(
+                        info,
+                        kind = ProcessKind::Pty,
+                        label = poll_label,
+                        event = "exited",
+                        exit_code = code
+                    );
                     let _ = state_tx.blocking_send(PtyRunState::Exited {
                         tool,
                         exit_code: code,
