@@ -4,6 +4,7 @@ import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 import type { ComponentProps } from "react";
 import { useCallback } from "react";
 import { ChevronDown } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
 
@@ -44,6 +45,8 @@ export function ConversationEmptyState({
   children,
   ...props
 }: ConversationEmptyStateProps) {
+  const { t } = useI18n();
+
   return (
     <div
       className={`flex size-full flex-col items-center justify-center gap-3 p-8 text-center ${className ?? ""}`}
@@ -53,9 +56,9 @@ export function ConversationEmptyState({
         <>
           {icon && <div className="text-muted-foreground">{icon}</div>}
           <div className="space-y-1">
-            <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            <h3 className="text-sm font-medium text-foreground">{t(title)}</h3>
             {description && (
-              <p className="text-sm text-muted-foreground">{description}</p>
+              <p className="text-sm text-muted-foreground">{t(description)}</p>
             )}
           </div>
         </>
@@ -68,6 +71,7 @@ export function ConversationScrollButton({
   className,
   ...props
 }: ComponentProps<"button">) {
+  const { t } = useI18n();
   const { isAtBottom, scrollToBottom } = useStickToBottomContext();
   const handleClick = useCallback(() => scrollToBottom(), [scrollToBottom]);
 
@@ -77,7 +81,7 @@ export function ConversationScrollButton({
       type="button"
       onClick={handleClick}
       className={`absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-border bg-background p-2 text-muted-foreground shadow hover:bg-muted hover:text-foreground ${className ?? ""}`}
-      aria-label="Scroll to bottom"
+      aria-label={t("Scroll to bottom")}
       {...props}
     >
       <ChevronDown className="h-4 w-4" />

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { getProfiles, type ProfileLaunchOption } from "@/api/sessions";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ export function AddCliDropdown({
   onRefreshTmux,
   trigger,
 }: AddCliDropdownProps) {
+  const { t } = useI18n();
   const [newTmuxName, setNewTmuxName] = useState("");
   const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
   const align = variant === "top" ? "start" : "center";
@@ -71,10 +73,10 @@ export function AddCliDropdown({
           ? "h-auto gap-1 px-2.5 py-2 text-[11px] font-mono text-muted-foreground hover:text-foreground"
           : "gap-1.5 font-mono text-xs text-primary hover:bg-primary/10"
       }
-      aria-label="Add CLI session"
+      aria-label={t("Add CLI session")}
     >
       <Plus className="h-3.5 w-3.5" />
-      Add CLI
+      {t("Add CLI")}
     </Button>
   );
 
@@ -89,7 +91,7 @@ export function AddCliDropdown({
       <DropdownMenuTrigger asChild>{trigger ?? defaultTrigger}</DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-[140px] font-mono text-xs" align={align}>
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          New session
+          {t("New session")}
         </DropdownMenuLabel>
         {TOOL_OPTIONS.map((tool) => (
           <DropdownMenuItem key={tool} onSelect={() => onAddCli(tool)} className="capitalize">
@@ -100,7 +102,7 @@ export function AddCliDropdown({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Profiles
+              {t("Profiles")}
             </DropdownMenuLabel>
             {profiles.flatMap((profile) =>
               profile.launch_targets.map((target) => (
@@ -118,7 +120,7 @@ export function AddCliDropdown({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              tmux sessions
+              {t("tmux sessions")}
             </DropdownMenuLabel>
             {tmuxSessions.map((name) => (
               <DropdownMenuItem key={`tmux-${name}`} onSelect={() => onAttachTmux(name)}>
@@ -131,7 +133,7 @@ export function AddCliDropdown({
             >
               <input
                 type="text"
-                placeholder="session name…"
+                placeholder={t("session name…")}
                 value={newTmuxName}
                 onChange={(e) => setNewTmuxName(e.target.value)}
                 onKeyDown={(e) => {

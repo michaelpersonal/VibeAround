@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { Search } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ export function ProviderGrid({
   catalog: CatalogEntry[];
   onPick: (c: CatalogEntry) => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
   const filteredCatalog = useMemo(() => {
@@ -32,8 +34,7 @@ export function ProviderGrid({
   if (catalog.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        No providers found. The catalog ships with the desktop binary; if you
-        see this, the install is broken.
+        {t("No providers found. The catalog ships with the desktop binary; if you see this, the install is broken.")}
       </p>
     );
   }
@@ -44,7 +45,7 @@ export function ProviderGrid({
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search providers"
+          placeholder={t("Search providers")}
           className="h-8 pl-8 text-[13px]"
           autoFocus
         />
@@ -52,14 +53,14 @@ export function ProviderGrid({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold">Preset providers</div>
+          <div className="text-xs font-semibold">{t("Preset providers")}</div>
           <Badge variant="muted" className="tabular-nums">
             {filteredCatalog.length}
           </Badge>
         </div>
         {filteredCatalog.length === 0 ? (
           <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-            No matching providers
+            {t("No matching providers")}
           </div>
         ) : (
           <div className={PROVIDER_TILE_GRID}>
@@ -75,13 +76,13 @@ export function ProviderGrid({
       </div>
 
       <div className="space-y-2 border-t border-border/60 pt-3">
-        <div className="text-xs font-semibold">Custom</div>
+        <div className="text-xs font-semibold">{t("Custom")}</div>
         <div className={PROVIDER_TILE_GRID}>
           <ProviderTile
             provider={CUSTOM_PROVIDER}
             onPick={() => onPick(CUSTOM_PROVIDER)}
             dashed
-            description="Bring your own URL + key"
+            description={t("Bring your own URL + key")}
           />
         </div>
       </div>
@@ -100,6 +101,7 @@ function ProviderTile({
   dashed?: boolean;
   description?: string;
 }) {
+  const { t } = useI18n();
   const endpoints = provider.endpoints.filter((e) =>
     isProviderApiKind(e.api_type),
   );
@@ -122,7 +124,7 @@ function ProviderTile({
           fallback={provider.icon}
           className="h-6 w-6"
         />
-        <span className="text-[13px] font-medium">{provider.label}</span>
+        <span className="text-[13px] font-medium">{t(provider.label)}</span>
       </div>
       <div className="flex flex-wrap gap-1 mt-1">
         {endpoints.map((e) => (

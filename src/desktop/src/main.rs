@@ -119,6 +119,11 @@ fn open_external_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("failed to open url: {e}"))
 }
 
+#[tauri::command]
+fn set_ui_locale<R: Runtime>(app: AppHandle<R>, locale: String) -> Result<(), String> {
+    tray::set_ui_locale(&app, &locale)
+}
+
 fn main() {
     common::logging::init();
 
@@ -189,6 +194,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_auth_token,
             open_external_url,
+            set_ui_locale,
             onboarding::get_settings,
             onboarding::list_channel_plugins,
             onboarding::save_settings,

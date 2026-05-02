@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Ref } from "react";
 import { AlertTriangle, GripVertical, MoreVertical, Pencil, Star, Trash2 } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ export function ProfileCard({
   dragHandleDisabled = false,
   isDragging = false,
 }: Props) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
   const isDefaultProfile = profile.launchTargets.some(
@@ -55,7 +57,7 @@ export function ProfileCard({
   }
 
   async function handleDelete() {
-    if (!window.confirm(`Delete profile "${profile.label}"?`)) return;
+    if (!window.confirm(t("Delete profile \"{{label}}\"?", { label: profile.label }))) return;
     setBusy(true);
     try {
       await onDelete();
@@ -89,7 +91,7 @@ export function ProfileCard({
             ref={dragHandleRef}
             role="button"
             tabIndex={0}
-            aria-label={`Reorder ${profile.label}`}
+            aria-label={t("Reorder {{label}}", { label: profile.label })}
             aria-disabled={dragHandleDisabled}
             className={`mt-0.5 h-7 w-5 shrink-0 rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground inline-flex items-center justify-center select-none ${
               dragHandleDisabled ? "cursor-not-allowed opacity-40" : "cursor-grab active:cursor-grabbing"
@@ -118,14 +120,14 @@ export function ProfileCard({
               variant="ghost"
               size="icon-xs"
               className="shrink-0 text-muted-foreground"
-              aria-label="More"
+              aria-label={t("More")}
             >
               <MoreVertical className="w-3.5 h-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-32">
             <DropdownMenuItem className="text-xs" onSelect={onEdit}>
-              <Pencil className="w-3 h-3" /> Edit
+              <Pencil className="w-3 h-3" /> {t("Edit")}
             </DropdownMenuItem>
             <DropdownMenuItem
               className="text-xs"
@@ -134,7 +136,7 @@ export function ProfileCard({
                 void handleDelete();
               }}
             >
-              <Trash2 className="w-3 h-3" /> Delete
+              <Trash2 className="w-3 h-3" /> {t("Delete")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -158,8 +160,14 @@ export function ProfileCard({
                 }`}
                 title={
                   warning
-                    ? `⚠ ${warning}\n\n(Click to launch ${target.label} via ${apiTypeShort(target.apiType)} anyway.)`
-                    : `Launch ${target.label} via ${apiTypeShort(target.apiType)}`
+                    ? `⚠ ${warning}\n\n(${t("Click to launch {{agent}} via {{apiType}} anyway.", {
+                        agent: target.label,
+                        apiType: apiTypeShort(target.apiType),
+                      })})`
+                    : t("Launch {{agent}} via {{apiType}}", {
+                        agent: target.label,
+                        apiType: apiTypeShort(target.apiType),
+                      })
                 }
               >
                 <BrandIcon
@@ -190,7 +198,10 @@ export function ProfileCard({
                       setDefaultBusy(null);
                     }
                   }}
-                  title={`Use ${target.label} with ${profile.label} as Quick Launch default`}
+                  title={t("Use {{agent}} with {{profile}} as Quick Launch default", {
+                    agent: target.label,
+                    profile: profile.label,
+                  })}
                   className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
                 >
                   <Star className="w-3 h-3" />

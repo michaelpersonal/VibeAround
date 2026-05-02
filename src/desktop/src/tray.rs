@@ -4,6 +4,7 @@
 
 use std::sync::atomic::Ordering;
 
+use serde::{Deserialize, Serialize};
 use tauri::{
     image::Image,
     menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder},
@@ -25,6 +26,69 @@ const MENU_OPEN_TUNNEL: &str = "open_tunnel";
 const MENU_QUIT: &str = "quit";
 const MENU_LAUNCH_DIRECT_PREFIX: &str = "launch_direct:";
 const MENU_LAUNCH_PROFILE_PREFIX: &str = "launch_profile:";
+const SETTINGS_UI_LOCALE: &str = "ui_locale";
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum UiLocale {
+    En,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+}
+
+impl UiLocale {
+    fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "en" | "en-us" | "en_us" => Some(Self::En),
+            "zh" | "zh-cn" | "zh_cn" | "zh-hans" | "zh_hans" => Some(Self::ZhCn),
+            _ => None,
+        }
+    }
+
+    fn as_settings_value(self) -> &'static str {
+        match self {
+            Self::En => "en",
+            Self::ZhCn => "zh-CN",
+        }
+    }
+
+    fn text(self, key: TrayText) -> &'static str {
+        match self {
+            Self::En => key.en(),
+            Self::ZhCn => match key {
+                TrayText::ShowWindow => "显示窗口",
+                TrayText::QuickLaunch => "快速启动",
+                TrayText::LaunchWithoutProfile => "不使用 Profile 启动",
+                TrayText::OpenDashboard => "打开控制台",
+                TrayText::OpenTunnel => "打开隧道",
+                TrayText::Quit => "退出",
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TrayText {
+    ShowWindow,
+    QuickLaunch,
+    LaunchWithoutProfile,
+    OpenDashboard,
+    OpenTunnel,
+    Quit,
+}
+
+impl TrayText {
+    fn en(self) -> &'static str {
+        match self {
+            Self::ShowWindow => "Show Window",
+            Self::QuickLaunch => "Quick Launch",
+            Self::LaunchWithoutProfile => "Launch Without Profile",
+            Self::OpenDashboard => "Open Dashboard",
+            Self::OpenTunnel => "Open Tunnel",
+            Self::Quit => "Quit",
+        }
+    }
+}
 
 /// Build the dashboard URL with the session auth token.
 ///
@@ -149,6 +213,7 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let locale = current_locale();
     let is_onboarding = is_onboarding(app);
     let launch_enabled = !is_onboarding;
     let has_tunnel_url = app
@@ -156,19 +221,23 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .map(|state| state.0.has_url())
         .unwrap_or(false);
 
-    let show_item = MenuItemBuilder::with_id(MENU_SHOW_WINDOW, "Show Window").build(app)?;
-    let launch_default_item = MenuItemBuilder::with_id(MENU_LAUNCH_DEFAULT, "Quick Launch")
-        .enabled(launch_enabled)
-        .build(app)?;
-    let direct_launch_menu = build_direct_launch_submenu(app, launch_enabled)?;
+    let show_item =
+        MenuItemBuilder::with_id(MENU_SHOW_WINDOW, locale.text(TrayText::ShowWindow)).build(app)?;
+    let launch_default_item =
+        MenuItemBuilder::with_id(MENU_LAUNCH_DEFAULT, locale.text(TrayText::QuickLaunch))
+            .enabled(launch_enabled)
+            .build(app)?;
+    let direct_launch_menu = build_direct_launch_submenu(app, launch_enabled, locale)?;
     let profile_menus = build_profile_submenus(app, launch_enabled)?;
-    let open_local_item = MenuItemBuilder::with_id(MENU_OPEN_LOCAL, "Open Dashboard")
-        .enabled(launch_enabled)
-        .build(app)?;
-    let open_tunnel_item = MenuItemBuilder::with_id(MENU_OPEN_TUNNEL, "Open Tunnel")
-        .enabled(launch_enabled && has_tunnel_url)
-        .build(app)?;
-    let quit_item = MenuItemBuilder::with_id(MENU_QUIT, "Quit").build(app)?;
+    let open_local_item =
+        MenuItemBuilder::with_id(MENU_OPEN_LOCAL, locale.text(TrayText::OpenDashboard))
+            .enabled(launch_enabled)
+            .build(app)?;
+    let open_tunnel_item =
+        MenuItemBuilder::with_id(MENU_OPEN_TUNNEL, locale.text(TrayText::OpenTunnel))
+            .enabled(launch_enabled && has_tunnel_url)
+            .build(app)?;
+    let quit_item = MenuItemBuilder::with_id(MENU_QUIT, locale.text(TrayText::Quit)).build(app)?;
 
     let mut builder = MenuBuilder::new(app)
         .item(&show_item)
@@ -191,9 +260,14 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 fn build_direct_launch_submenu<R: Runtime>(
     app: &AppHandle<R>,
     launch_enabled: bool,
+    locale: UiLocale,
 ) -> tauri::Result<tauri::menu::Submenu<R>> {
-    let mut builder = SubmenuBuilder::with_id(app, "direct_launch", "Launch Without Profile")
-        .enabled(launch_enabled);
+    let mut builder = SubmenuBuilder::with_id(
+        app,
+        "direct_launch",
+        locale.text(TrayText::LaunchWithoutProfile),
+    )
+    .enabled(launch_enabled);
 
     for agent in common::resources::AGENTS.iter() {
         let item = MenuItemBuilder::with_id(
@@ -259,6 +333,23 @@ fn rebuild_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
+pub(crate) fn set_ui_locale<R: Runtime>(app: &AppHandle<R>, locale: &str) -> Result<(), String> {
+    let locale =
+        UiLocale::from_str(locale).ok_or_else(|| format!("unsupported locale: {locale}"))?;
+    common::config::update_settings_json(|root| {
+        if !root.is_object() {
+            *root = serde_json::json!({});
+        }
+        if let Some(obj) = root.as_object_mut() {
+            obj.insert(
+                SETTINGS_UI_LOCALE.to_string(),
+                serde_json::Value::String(locale.as_settings_value().to_string()),
+            );
+        }
+    })?;
+    rebuild_menu(app).map_err(|e| e.to_string())
+}
+
 fn tray_icon<R: Runtime>(app: &AppHandle<R>) -> Option<TrayIcon<R>> {
     app.tray_by_id(TRAY_ID)
 }
@@ -267,6 +358,20 @@ fn is_onboarding<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.try_state::<OnboardingActive>()
         .map(|s| s.0.load(Ordering::Relaxed))
         .unwrap_or(false)
+}
+
+fn current_locale() -> UiLocale {
+    let path = common::config::data_dir().join("settings.json");
+    let Ok(data) = std::fs::read_to_string(path) else {
+        return UiLocale::En;
+    };
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(&data) else {
+        return UiLocale::En;
+    };
+    root.get(SETTINGS_UI_LOCALE)
+        .and_then(|value| value.as_str())
+        .and_then(UiLocale::from_str)
+        .unwrap_or(UiLocale::En)
 }
 
 fn handle_profile_launch_menu(menu_id: &str) -> Result<(), String> {

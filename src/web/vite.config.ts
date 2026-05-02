@@ -37,6 +37,7 @@ export default defineConfig({
       { find: "@va/ui/dropdown-menu", replacement: path.resolve(__dirname, "../shared/ui/src/dropdown-menu.tsx") },
       { find: "@va/ui/input", replacement: path.resolve(__dirname, "../shared/ui/src/input.tsx") },
       { find: "@va/ui", replacement: path.resolve(__dirname, "../shared/ui/src/index.ts") },
+      { find: "@va/i18n", replacement: path.resolve(__dirname, "../shared/i18n/src/index.tsx") },
       { find: "@va/client", replacement: path.resolve(__dirname, "../shared/client-ts/src/index.ts") },
       { find: "@", replacement: path.resolve(__dirname, "./src") },
     ],

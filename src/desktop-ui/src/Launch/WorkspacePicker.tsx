@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, FolderOpen, Plus } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function WorkspacePicker({ prefs, onChange }: Props) {
+  const { t } = useI18n();
   const [openMenu, setOpenMenu] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export function WorkspacePicker({ prefs, onChange }: Props) {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Choose Launch Workspace",
+        title: t("Choose Launch Workspace"),
       });
       const path = Array.isArray(selected) ? selected[0] : selected;
       if (!path) return;
@@ -94,18 +96,18 @@ export function WorkspacePicker({ prefs, onChange }: Props) {
           variant="outline"
           size="sm"
           disabled={!prefs || pending}
-          title={current?.detail ?? "Choose launch workspace"}
+          title={current?.detail ?? t("Choose launch workspace")}
           className="h-8 px-2.5 text-xs max-w-[220px]"
         >
           <FolderOpen className="w-3 h-3" />
-          <span className="truncate">{current?.label ?? "Workspace"}</span>
+          <span className="truncate">{current?.label ?? t("Workspace")}</span>
           <ChevronDown className="w-3 h-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
       {prefs && (
         <DropdownMenuContent align="end" className="w-72">
           <DropdownMenuLabel className="text-[10px] font-medium uppercase text-muted-foreground/60">
-            Workspace
+            {t("Workspace")}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={prefs.workspace}
@@ -139,7 +141,7 @@ export function WorkspacePicker({ prefs, onChange }: Props) {
             }}
           >
             <Plus className="w-3 h-3" />
-            Choose folder...
+            {t("Choose folder...")}
           </DropdownMenuItem>
           {error && (
             <>

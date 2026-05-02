@@ -1,5 +1,6 @@
 import { MessageSquare, Download, ExternalLink, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { useI18n } from "@va/i18n";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ export function StepChannels({
   onStartAuth,
   onCancelAuth,
 }: StepChannelsProps) {
+  const { t } = useI18n();
   const discoveredMap = new Map(discoveredPlugins.map((p) => [p.id, p]));
 
   return (
@@ -41,11 +43,10 @@ export function StepChannels({
       <div>
         <h2 className="text-base font-semibold flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-primary" />
-          IM Channels
+          {t("IM Channels")}
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Connect messaging bots to vibe code from your phone. Install plugins
-          from the registry, then configure and enable them.
+          {t("Connect messaging bots to vibe code from your phone. Install plugins from the registry, then configure and enable them.")}
         </p>
       </div>
 
@@ -122,6 +123,7 @@ function PluginCard({
   onStartAuth,
   onCancelAuth,
 }: PluginCardProps) {
+  const { t } = useI18n();
   const supportsAuth = discovered?.supportsQrcodeLogin ?? false;
   const schema = discovered?.configSchema;
   const properties = schema?.properties ?? {};
@@ -141,7 +143,7 @@ function PluginCard({
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-primary transition-colors"
-              title="View on GitHub"
+              title={t("View on GitHub")}
             >
               <ExternalLink className="w-3 h-3" />
             </a>
@@ -153,7 +155,7 @@ function PluginCard({
           <Switch
             checked={enabled}
             onCheckedChange={onToggle}
-            aria-label={`Toggle ${name}`}
+            aria-label={t("Toggle {{name}}", { name })}
           />
         ) : installing ? (
           <Button
@@ -163,7 +165,7 @@ function PluginCard({
             className="text-xs"
           >
             <Loader2 className="w-3 h-3 animate-spin" />
-            Installing…
+            {t("Installing…")}
           </Button>
         ) : (
           <Button
@@ -174,7 +176,7 @@ function PluginCard({
             className="text-xs"
           >
             <Download className="w-3 h-3" />
-            Install
+            {t("Install")}
           </Button>
         )}
       </div>
@@ -188,7 +190,7 @@ function PluginCard({
               {visibleFields.map(([key, prop]) => (
                 <label key={key} className="block">
                   <span className="text-xs text-muted-foreground">
-                    {fieldLabel(key, prop)}
+                    {t(fieldLabel(key, prop))}
                     {required.has(key) && <span className="text-destructive ml-0.5">*</span>}
                   </span>
                   <Input
@@ -230,6 +232,7 @@ function AuthFlowSection({
   onStart: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
   const status = authState?.status ?? "idle";
   const isBusy = status === "generating" || status === "waiting";
 
@@ -237,9 +240,9 @@ function AuthFlowSection({
     <Card className="space-y-3 bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-medium">QR Login</div>
+          <div className="text-sm font-medium">{t("QR Login")}</div>
           <div className="text-xs text-muted-foreground mt-1">
-            Generate a QR code, scan it with the app, then wait for authorization.
+            {t("Generate a QR code, scan it with the app, then wait for authorization.")}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -251,7 +254,7 @@ function AuthFlowSection({
               size="sm"
               className="text-xs"
             >
-              Cancel
+              {t("Cancel")}
             </Button>
           )}
           <Button
@@ -262,10 +265,10 @@ function AuthFlowSection({
             className="text-xs"
           >
             {status === "connected"
-              ? "Reconnect"
+              ? t("Reconnect")
               : isBusy
-                ? "Waiting…"
-                : "Connect"}
+                ? t("Waiting…")
+                : t("Connect")}
           </Button>
         </div>
       </div>
@@ -280,7 +283,7 @@ function AuthFlowSection({
                 : "default"
           }
         >
-          {authState.message}
+          {t(authState.message)}
         </Alert>
       )}
 
@@ -294,11 +297,11 @@ function AuthFlowSection({
               fgColor="#111111"
               level="M"
               includeMargin
-              title="QR code"
+              title={t("QR code")}
             />
           </div>
           <div className="text-[11px] text-muted-foreground text-center">
-            Scan with the app and confirm on your phone.
+            {t("Scan with the app and confirm on your phone.")}
           </div>
         </div>
       )}

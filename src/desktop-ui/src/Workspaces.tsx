@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Star, Trash2, RefreshCw } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { WorkspacesResponseSchema, type WorkspacesResponse } from "@va/client";
+import { useI18n } from "@va/i18n";
 
 import { EmptyBlock, PageHeader, PageShell, StatusBanner } from "@/components/page";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { apiFetch } from "./lib/api";
 
 export function Workspaces() {
+  const { t } = useI18n();
   const [data, setData] = useState<WorkspacesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -35,7 +37,7 @@ export function Workspaces() {
   const addWorkspace = async () => {
     setAdding(true);
     try {
-      const selected = await open({ directory: true, multiple: false, title: "Select Workspace Folder" });
+      const selected = await open({ directory: true, multiple: false, title: t("Select Workspace Folder") });
       if (!selected) { setAdding(false); return; }
       const path = typeof selected === "string" ? selected : selected[0];
       if (!path) { setAdding(false); return; }
@@ -85,8 +87,8 @@ export function Workspaces() {
     <PageShell>
       <PageHeader
         icon={<FolderOpen className="w-4 h-4 text-primary" />}
-        title="Workspaces"
-        description="Workspace folders where agents build projects. The built-in workspace is used when no default folder is selected."
+        title={t("Workspaces")}
+        description={t("Workspace folders where agents build projects. The built-in workspace is used when no default folder is selected.")}
         actions={(
           <>
             <Button
@@ -94,7 +96,7 @@ export function Workspaces() {
               variant="ghost"
               size="icon-xs"
               onClick={fetchWorkspaces}
-              title="Refresh"
+              title={t("Refresh")}
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 text-muted-foreground ${loading ? "animate-spin" : ""}`}
@@ -108,7 +110,7 @@ export function Workspaces() {
               className="text-xs font-semibold"
             >
               <Plus className="w-3.5 h-3.5" />
-              {adding ? "Selecting…" : "Add Folder"}
+              {adding ? t("Selecting…") : t("Add Folder")}
             </Button>
           </>
         )}
@@ -133,12 +135,12 @@ export function Workspaces() {
                 <div className="flex items-center gap-2 mt-0.5">
                   {ws.is_builtin && (
                     <Badge className="text-[10px]">
-                      Built-in
+                      {t("Built-in")}
                     </Badge>
                   )}
                   {ws.is_default && (
                     <Badge className="text-[10px] bg-amber-500/10 text-amber-600">
-                      <Star className="w-2.5 h-2.5" /> Default
+                      <Star className="w-2.5 h-2.5" /> {t("Default")}
                     </Badge>
                   )}
                 </div>
@@ -152,7 +154,7 @@ export function Workspaces() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setDefault(ws.path)}
-                  title="Set as default"
+                  title={t("Set as default")}
                 >
                   <Star className="w-3.5 h-3.5 text-muted-foreground" />
                 </Button>
@@ -164,7 +166,7 @@ export function Workspaces() {
                   size="icon-sm"
                   onClick={() => removeWorkspace(ws.path)}
                   className="hover:bg-destructive/10"
-                  title="Remove workspace"
+                  title={t("Remove workspace")}
                 >
                   <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
                 </Button>
@@ -175,7 +177,7 @@ export function Workspaces() {
 
         {(!data || data.workspaces.length === 0) && !loading && (
           <EmptyBlock>
-            No workspaces configured
+            {t("No workspaces configured")}
           </EmptyBlock>
         )}
       </div>

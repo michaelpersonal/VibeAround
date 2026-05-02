@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTheme } from "@/lib/theme";
+import { useI18n } from "@va/i18n";
 
 interface MobileInputBarProps {
   sendInput: (data: string) => void;
@@ -95,6 +96,7 @@ function useVisualViewportHeight() {
 }
 
 export function MobileInputBar({ sendInput }: MobileInputBarProps) {
+  const { t } = useI18n();
   const theme = useTheme();
   const isDark = theme === "dark";
   const S = isDark ? S_DARK : S_LIGHT;
@@ -208,7 +210,7 @@ export function MobileInputBar({ sendInput }: MobileInputBarProps) {
             style={S_PROMPT}
             onClick={() => { setPromptOpen(true); textareaRef.current?.focus(); }}
           >
-            ✍️ Prompt
+            {t("Prompt")}
           </button>
           <button type="button" className={`${B} flex-[1.2]`} style={S} onPointerDown={fire("\r")}>Enter</button>
         </div>
@@ -227,13 +229,13 @@ export function MobileInputBar({ sendInput }: MobileInputBarProps) {
         }}
       >
         <div className="flex items-center justify-between px-4 py-3 shrink-0 border-b border-border">
-          <span className="text-sm font-mono font-medium text-foreground">Prompt</span>
+          <span className="text-sm font-mono font-medium text-foreground">{t("Prompt")}</span>
           <button
             type="button"
             className="text-xs font-mono text-muted-foreground/60 active:text-foreground px-2 py-1 rounded active:scale-95 transition-transform"
             onClick={() => { setPromptOpen(false); setPromptText(""); textareaRef.current?.blur(); }}
           >
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
         <div className="flex-1 min-h-0 p-3">
@@ -241,7 +243,7 @@ export function MobileInputBar({ sendInput }: MobileInputBarProps) {
             ref={textareaRef}
             value={promptText}
             onChange={(e) => setPromptText(e.target.value)}
-            placeholder="Type text to send to terminal…"
+            placeholder={t("Type text to send to terminal…")}
             className="w-full h-full resize-none rounded-lg p-3 font-mono text-foreground placeholder:text-muted-foreground/30 focus:outline-none bg-muted/50 dark:bg-muted border border-border"
             style={{
               fontSize: "16px", lineHeight: "1.5",
@@ -259,7 +261,7 @@ export function MobileInputBar({ sendInput }: MobileInputBarProps) {
             disabled={!promptText.trim()}
             onClick={handleSend}
           >
-            Send
+            {t("Send")}
           </button>
         </div>
       </div>

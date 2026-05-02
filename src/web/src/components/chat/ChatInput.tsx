@@ -6,6 +6,7 @@ import type { ToolType } from "@/lib/terminal-types";
 import { getToolTheme } from "@/lib/terminal-types";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@va/i18n";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,6 +50,7 @@ export function ChatInput({
   onAgentChange,
   className,
 }: ChatInputProps) {
+  const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -99,9 +101,9 @@ export function ChatInput({
                 <button
                   type="button"
                   className="flex items-center gap-1 truncate min-w-0 text-xs font-medium cursor-pointer rounded px-1 py-0.5 hover:bg-muted/60 transition-colors"
-                  title={`Chat with ${targetLabel}`}
+                  title={t("Chat with {{agent}}", { agent: targetLabel })}
                 >
-                  <span className="text-muted-foreground shrink-0">Chat with</span>
+                  <span className="text-muted-foreground shrink-0">{t("Chat with")}</span>
                   <span className="truncate" style={{ color: accentColor }}>{targetLabel}</span>
                   <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
                 </button>
@@ -115,15 +117,15 @@ export function ChatInput({
                   >
                     <span>{agent.name}</span>
                     {agent.id === targetTool && (
-                      <span className="text-xs text-muted-foreground">current</span>
+                      <span className="text-xs text-muted-foreground">{t("current")}</span>
                     )}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <span className="flex items-center gap-1 truncate min-w-0 text-xs font-medium" title={`Chat with ${targetLabel}`}>
-              <span className="text-muted-foreground shrink-0">Chat with</span>
+            <span className="flex items-center gap-1 truncate min-w-0 text-xs font-medium" title={t("Chat with {{agent}}", { agent: targetLabel })}>
+              <span className="text-muted-foreground shrink-0">{t("Chat with")}</span>
               <span className="truncate" style={{ color: accentColor }}>{targetLabel}</span>
             </span>
           )}
@@ -133,7 +135,7 @@ export function ChatInput({
             onClick={showStop ? onStop : onSubmit}
             disabled={!showStop && !canSend}
             className="h-8 w-8 shrink-0 rounded-full"
-            aria-label={showStop ? "Stop" : "Send"}
+            aria-label={showStop ? t("Stop") : t("Send")}
           >
             {showStop ? (
               <Square className="h-4 w-4" />

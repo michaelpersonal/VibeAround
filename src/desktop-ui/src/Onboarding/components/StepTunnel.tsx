@@ -1,4 +1,5 @@
 import { Globe } from "lucide-react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ export function StepTunnel({
   cfHostname,
   onCfHostname,
 }: StepTunnelProps) {
+  const { t } = useI18n();
   const orderedTunnels = [...tunnels].sort(
     (a, b) => tunnelRank(a.id) - tunnelRank(b.id),
   );
@@ -27,11 +29,10 @@ export function StepTunnel({
       <div>
         <h2 className="text-base font-semibold flex items-center gap-2">
           <Globe className="w-4 h-4 text-primary" />
-          Tunnel
+          {t("Tunnel")}
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Expose your local server to the internet for IM webhooks and remote
-          access. Skip if you only use it locally.
+          {t("Expose your local server to the internet for IM webhooks and remote access. Skip if you only use it locally.")}
         </p>
       </div>
 
@@ -51,7 +52,7 @@ export function StepTunnel({
           >
             {tp.display_name}
             {tp.id === "cloudflare" && (
-              <span className="ml-1 text-[10px] opacity-70">Recommended</span>
+              <span className="ml-1 text-[10px] opacity-70">{t("Recommended")}</span>
             )}
           </Button>
         ))}
@@ -60,7 +61,7 @@ export function StepTunnel({
       {provider === "ngrok" && (
         <div className="space-y-2">
           <label className="block">
-            <span className="text-xs text-muted-foreground">Auth Token</span>
+            <span className="text-xs text-muted-foreground">{t("Auth Token")}</span>
             <Input
               type="password"
               value={ngrokToken}
@@ -70,7 +71,7 @@ export function StepTunnel({
             />
           </label>
           <label className="block">
-            <span className="text-xs text-muted-foreground">Domain (optional)</span>
+            <span className="text-xs text-muted-foreground">{t("Domain (optional)")}</span>
             <Input
               type="text"
               value={ngrokDomain}
@@ -85,7 +86,7 @@ export function StepTunnel({
       {provider === "cloudflare" && (
         <div className="space-y-2">
           <label className="block">
-            <span className="text-xs text-muted-foreground">Tunnel Token</span>
+            <span className="text-xs text-muted-foreground">{t("Tunnel Token")}</span>
             <Input
               type="password"
               value={cfToken}
@@ -95,7 +96,7 @@ export function StepTunnel({
             />
           </label>
           <label className="block">
-            <span className="text-xs text-muted-foreground">Hostname (optional)</span>
+            <span className="text-xs text-muted-foreground">{t("Hostname (optional)")}</span>
             <Input
               type="text"
               value={cfHostname}

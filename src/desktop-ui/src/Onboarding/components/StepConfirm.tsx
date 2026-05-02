@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +19,8 @@ import {
 } from "@/components/ui/collapsible";
 
 import type { InstallTaskProgress, StepConfirmProps } from "../types";
+
+type Translate = ReturnType<typeof useI18n>["t"];
 
 export function StepConfirm({
   agents,
@@ -30,6 +33,7 @@ export function StepConfirm({
   installComplete,
   installTasks,
 }: StepConfirmProps) {
+  const { t } = useI18n();
   if (isInstalling) {
     return (
       <InstallProgressView
@@ -56,39 +60,36 @@ export function StepConfirm({
       <div>
         <h2 className="text-base font-semibold flex items-center gap-2">
           <Rocket className="w-4 h-4 text-primary" />
-          Ready to Launch
+          {t("Ready to Launch")}
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Review your configuration. You can always change these in
-          settings.json later.
+          {t("Review your configuration. You can always change these in settings.json later.")}
         </p>
       </div>
 
       <div className="space-y-2 text-sm">
         <SummaryRow
-          label="Quick Launch"
-          value={`${agentLabels.get("claude") ?? "Claude Code"} · Direct launch`}
+          label={t("Quick Launch")}
+          value={`${agentLabels.get("claude") ?? "Claude Code"} · ${t("Direct launch")}`}
         />
-        <SummaryRow label="Workspace" value="~/.vibearound/workspaces" />
-        <SummaryRow label="Agents" value={agentSummary} />
+        <SummaryRow label={t("Workspace")} value="~/.vibearound/workspaces" />
+        <SummaryRow label={t("Agents")} value={agentSummary} />
         <SummaryRow
-          label="Channels"
+          label={t("Channels")}
           value={
             channelNames.length > 0
               ? channelNames.join(", ")
-              : "None configured"
+              : t("None configured")
           }
         />
         <SummaryRow
-          label="Tunnel"
+          label={t("Tunnel")}
           value={tunnelLabels.get(tunnelProvider) ?? tunnelProvider}
         />
       </div>
 
       <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
-        VibeAround will add an MCP server entry to your coding agents' global
-        settings and install a handover skill for session transfer between
-        devices. Your existing agent settings will not be overwritten.
+        {t("VibeAround will add an MCP server entry to your coding agents' global settings and install a handover skill for session transfer between devices. Your existing agent settings will not be overwritten.")}
       </p>
     </div>
   );
@@ -105,6 +106,7 @@ function InstallProgressView({
   tasks: InstallTaskProgress[];
   complete: boolean;
 }) {
+  const { t } = useI18n();
   const hasErrors = tasks.some((t) => t.status === "error");
   const hasCancelled = tasks.some((t) => t.status === "cancelled");
 
@@ -123,16 +125,16 @@ function InstallProgressView({
           )}
           {complete
             ? hasCancelled
-              ? "Installation Cancelled"
+              ? t("Installation Cancelled")
               : hasErrors
-                ? "Installation Completed with Errors"
-                : "Installation Complete"
-            : "Installing VibeAround"}
+                ? t("Installation Completed with Errors")
+                : t("Installation Complete")
+            : t("Installing VibeAround")}
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
           {complete
-            ? "Review the results below."
-            : "Setting up your agents and plugins..."}
+            ? t("Review the results below.")
+            : t("Setting up your agents and plugins...")}
         </p>
       </div>
 
@@ -150,6 +152,7 @@ function InstallProgressView({
 // ---------------------------------------------------------------------------
 
 function TaskRow({ task }: { task: InstallTaskProgress }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const logs = task.logs ?? [];
   const hasLogs = logs.length > 0;
@@ -176,7 +179,7 @@ function TaskRow({ task }: { task: InstallTaskProgress }) {
                     : "text-foreground"
               }`}
             >
-              {task.label}
+              {translateInstallLine(task.label, t)}
             </span>
           </div>
           {latest && (
@@ -188,7 +191,7 @@ function TaskRow({ task }: { task: InstallTaskProgress }) {
               }`}
               title={latest}
             >
-              {latest}
+              {translateInstallLine(latest, t)}
             </p>
           )}
         </div>
@@ -199,7 +202,7 @@ function TaskRow({ task }: { task: InstallTaskProgress }) {
               variant="ghost"
               size="icon-xs"
               className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
-              aria-label={expanded ? "Collapse install log" : "Expand install log"}
+              aria-label={expanded ? t("Collapse install log") : t("Expand install log")}
             >
               {expanded ? (
                 <ChevronDown className="h-3.5 w-3.5" />
@@ -213,7 +216,7 @@ function TaskRow({ task }: { task: InstallTaskProgress }) {
 
       <CollapsibleContent>
         <pre className="mx-3 mb-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-          {logs.join("\n\n")}
+          {logs.map((line) => translateInstallLine(line, t)).join("\n\n")}
         </pre>
       </CollapsibleContent>
     </Collapsible>
@@ -241,6 +244,14 @@ function StatusIcon({ status }: { status: InstallTaskProgress["status"] }) {
     case "cancelled":
       return <Minus className="w-3.5 h-3.5 text-muted-foreground/50" />;
   }
+}
+
+function translateInstallLine(value: string, t: Translate): string {
+  const parts = value.split(" — ");
+  if (parts.length === 2) {
+    return `${parts[0]} — ${t(parts[1])}`;
+  }
+  return t(value);
 }
 
 // ---------------------------------------------------------------------------

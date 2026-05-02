@@ -7,6 +7,7 @@
  * one key supports more than one.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -55,6 +56,7 @@ export function ProfileFormDialog({
   onClose,
   onSave,
 }: Props) {
+  const { t } = useI18n();
   const editing = !!initial;
 
   const { initialProvider, providerMissing } = useMemo(() => {
@@ -138,18 +140,18 @@ export function ProfileFormDialog({
     setError(null);
     if (!provider) return;
     if (!label.trim()) {
-      setError("Label is required");
+      setError(t("Label is required"));
       return;
     }
     if (selectedApiTypes.length === 0) {
-      setError("Pick at least one API type");
+      setError(t("Pick at least one API type"));
       return;
     }
 
     const fieldDefs = collectFields(provider, selectedApiTypes, "api_key");
     for (const f of fieldDefs) {
       if (f.required && !credentials[f.name]?.trim()) {
-        setError(`${f.label} is required`);
+        setError(t("{{field}} is required", { field: t(f.label) }));
         return;
       }
     }
@@ -159,12 +161,12 @@ export function ProfileFormDialog({
       if (!ep) continue;
       const ov = overrides[apiType];
       if (!ov?.model?.trim()) {
-        setError(`Model is required for ${apiType}`);
+        setError(t("Model is required for {{apiType}}", { apiType }));
         return;
       }
       if (ep.default_base_url) continue;
       if (!ov?.base_url?.trim()) {
-        setError(`Base URL is required for ${apiType}`);
+        setError(t("Base URL is required for {{apiType}}", { apiType }));
         return;
       }
     }
@@ -201,13 +203,13 @@ export function ProfileFormDialog({
         <DialogHeader className="border-b border-border pr-10">
           <DialogTitle>
             {editing
-              ? `Edit profile · ${initial!.label}`
+              ? t("Edit profile · {{label}}", { label: initial!.label })
               : step === "pick-provider"
-                ? "Pick a provider"
-                : `New profile · ${provider?.label}`}
+                ? t("Pick a provider")
+                : t("New profile · {{provider}}", { provider: provider?.label ?? "" })}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Configure a Quick Launch provider profile.
+            {t("Configure a Quick Launch provider profile.")}
           </DialogDescription>
         </DialogHeader>
 
@@ -235,9 +237,9 @@ export function ProfileFormDialog({
 
         {providerMissing && (
           <div className="px-4 py-2 bg-amber-500/10 text-amber-700 text-xs border-t border-amber-500/20">
-            ⚠ The provider <code>{initial?.provider}</code> is no longer in the
-            catalog. Form fell back to a custom endpoint — re-pick a provider
-            via Back, or edit the URL/key and save.
+            ⚠ {t("The provider {{provider}} is no longer in the catalog. Form fell back to a custom endpoint — re-pick a provider via Back, or edit the URL/key and save.", {
+              provider: initial?.provider ?? "",
+            })}
           </div>
         )}
         {error && (
@@ -255,13 +257,13 @@ export function ProfileFormDialog({
                 size="sm"
                 onClick={() => setStep("pick-provider")}
               >
-                Back
+                {t("Back")}
               </Button>
             )}
           </div>
           <div className="flex items-center gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-              Cancel
+              {t("Cancel")}
             </Button>
             {step === "fill-form" && (
               <Button
@@ -271,10 +273,10 @@ export function ProfileFormDialog({
                 disabled={saving}
               >
                 {saving
-                  ? "Saving…"
+                  ? t("Saving…")
                   : editing
-                    ? "Save changes"
-                    : "Create profile"}
+                    ? t("Save changes")
+                    : t("Create profile")}
               </Button>
             )}
           </div>
