@@ -21,6 +21,7 @@ import {
   shouldShowBaseUrl,
 } from "./profileFormHelpers";
 import type { ApiTypeOverrides, CatalogEntry, FieldDef } from "./types";
+import type { ProviderSettings } from "./types";
 import { apiTypeLabel, apiTypeShort, isProviderApiKind } from "./types";
 
 interface FormBodyProps {
@@ -33,6 +34,8 @@ interface FormBodyProps {
   setCredentials: (v: Record<string, string>) => void;
   overrides: Record<string, ApiTypeOverrides>;
   setOverrides: (v: Record<string, ApiTypeOverrides>) => void;
+  providerSettings: ProviderSettings;
+  setProviderSettings: (v: ProviderSettings) => void;
   revealKeys: Record<string, boolean>;
   setRevealKeys: (v: Record<string, boolean>) => void;
 }
@@ -47,6 +50,8 @@ export function FormBody({
   setCredentials,
   overrides,
   setOverrides,
+  providerSettings,
+  setProviderSettings,
   revealKeys,
   setRevealKeys,
 }: FormBodyProps) {
@@ -233,6 +238,15 @@ export function FormBody({
         </FormSection>
       )}
 
+      {provider.id === "deepseek" && selectedApiTypes.includes("openai-chat") && (
+        <FormSection title="DeepSeek proxy">
+          <DeepSeekProxySettingsField
+            settings={providerSettings}
+            onChange={setProviderSettings}
+          />
+        </FormSection>
+      )}
+
       {provider.homepage && (
         <a
           href={provider.homepage}
@@ -244,6 +258,79 @@ export function FormBody({
         </a>
       )}
     </div>
+  );
+}
+
+function DeepSeekProxySettingsField({
+  settings,
+  onChange,
+}: {
+  settings: ProviderSettings;
+  onChange: (v: ProviderSettings) => void;
+}) {
+  const deepseek = settings.deepseek ?? {};
+  const thinking = !!deepseek.thinking;
+
+  function update(next: { thinking?: boolean; replay_reasoning_content?: boolean }) {
+    const merged = {
+      ...deepseek,
+      ...next,
+    };
+    if (next.thinking === false) {
+      merged.replay_reasoning_content = false;
+    } else if (next.thinking === true && deepseek.replay_reasoning_content == null) {
+      merged.replay_reasoning_content = true;
+    }
+    onChange({ ...settings, deepseek: merged });
+  }
+
+  return (
+    <div className="space-y-2">
+      <CheckRow
+        label="Thinking mode"
+        checked={thinking}
+        onChange={(checked) => update({ thinking: checked })}
+      />
+      <CheckRow
+        label="Replay reasoning content"
+        checked={!!deepseek.replay_reasoning_content}
+        disabled={!thinking}
+        onChange={(checked) => update({ replay_reasoning_content: checked })}
+      />
+    </div>
+  );
+}
+
+function CheckRow({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className={`h-8 flex items-center gap-2 px-2.5 border rounded-md text-xs ${
+        disabled
+          ? "opacity-50 cursor-not-allowed border-border/70"
+          : checked
+            ? "border-primary bg-primary/10 cursor-pointer"
+            : "border-border hover:bg-accent/30 cursor-pointer"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3.5 w-3.5 accent-primary"
+      />
+      <span>{label}</span>
+    </label>
   );
 }
 

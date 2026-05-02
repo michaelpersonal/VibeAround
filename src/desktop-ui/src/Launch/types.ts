@@ -6,6 +6,7 @@
  */
 
 export type AuthMode = "api_key" | "oauth_via_cli";
+export type CompatibilityProxyMode = "auto" | "on" | "off";
 
 export interface ProfileSummary {
   id: string;
@@ -35,6 +36,15 @@ export interface ApiTypeOverrides {
   reasoning_effort?: string | null;
 }
 
+export interface ProviderSettings {
+  deepseek?: DeepSeekProviderSettings | null;
+}
+
+export interface DeepSeekProviderSettings {
+  thinking?: boolean | null;
+  replay_reasoning_content?: boolean | null;
+}
+
 export interface ProfileDef {
   id: string;
   label: string;
@@ -43,6 +53,7 @@ export interface ProfileDef {
   api_types: string[];
   credentials: Record<string, string>;
   overrides: Record<string, ApiTypeOverrides>;
+  provider_settings?: ProviderSettings;
 }
 
 export interface ModelDef {

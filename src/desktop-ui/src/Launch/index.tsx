@@ -27,9 +27,9 @@ import {
   type LauncherPreferences,
 } from "./api";
 import { DirectCards } from "./DirectCards";
+import { LaunchSettingsMenu } from "./LaunchSettingsMenu";
 import { ProfileCard } from "./ProfileCard";
 import { ProfileFormDialog } from "./ProfileFormDialog";
-import { TerminalPicker } from "./TerminalPicker";
 import { WorkspacePicker } from "./WorkspacePicker";
 import type { CatalogEntry, ProfileDef, ProfileSummary } from "./types";
 
@@ -203,8 +203,8 @@ export function Launch() {
           >
             <Plus className="w-3 h-3" /> New profile
           </Button>
-          <TerminalPicker />
-          <WorkspacePicker />
+          <WorkspacePicker prefs={prefs} onChange={setPrefs} />
+          <LaunchSettingsMenu prefs={prefs} onChange={setPrefs} />
           <Button
             type="button"
             onClick={handleLaunchDefault}

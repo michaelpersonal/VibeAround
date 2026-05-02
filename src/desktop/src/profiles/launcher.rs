@@ -23,7 +23,8 @@ use anyhow::{anyhow, bail, Context};
 
 #[cfg(target_os = "windows")]
 use common::auth;
-use common::{profiles, resources};
+use common::{config, profiles, resources};
+use toml_edit::{value, DocumentMut};
 
 use super::terminal::{self, TerminalChoice};
 use profiles::ProfileDef;
@@ -33,7 +34,8 @@ use profiles::ProfileDef;
 // ---------------------------------------------------------------------------
 
 pub fn launch(profile: &ProfileDef, launch_target: &str) -> anyhow::Result<()> {
-    let rendered = profiles::runtime::render_for_launch(profile, launch_target)?;
+    let mut rendered = profiles::runtime::render_for_launch(profile, launch_target)?;
+    apply_compatibility_proxy(profile, launch_target, &mut rendered)?;
     do_launch(profile, launch_target, rendered)
 }
 
@@ -84,6 +86,64 @@ fn command_with_args(command: &str, args: &[String]) -> String {
         )));
     }
     out
+}
+
+fn apply_compatibility_proxy(
+    profile: &ProfileDef,
+    launch_target: &str,
+    rendered: &mut profiles::render::RenderedProfile,
+) -> anyhow::Result<()> {
+    let mode = terminal::read_compatibility_proxy_preference();
+    if mode == terminal::CompatibilityProxyMode::Off {
+        return Ok(());
+    }
+
+    let provider = profiles::catalog::get(&profile.provider)
+        .ok_or_else(|| anyhow!("unknown provider '{}'", profile.provider))?;
+    let api_type = profiles::runtime::api_type_for_launch_target(profile, provider, launch_target)?;
+
+    if api_type != "openai-chat" || launch_target != "codex" {
+        return Ok(());
+    }
+
+    let proxy_base_url = format!(
+        "http://127.0.0.1:{}/va/openai-proxy/{}/v1",
+        config::DEFAULT_PORT,
+        profile.id
+    );
+
+    for settings_file in &mut rendered.settings_files {
+        if settings_file.rel_path == "config.toml" {
+            settings_file.contents = rewrite_codex_config_for_proxy(
+                &settings_file.contents,
+                &profile.provider,
+                &proxy_base_url,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn rewrite_codex_config_for_proxy(
+    contents: &str,
+    provider_id: &str,
+    proxy_base_url: &str,
+) -> anyhow::Result<String> {
+    let mut doc = contents
+        .parse::<DocumentMut>()
+        .context("parse generated Codex config.toml")?;
+    let provider = doc["model_providers"][provider_id]
+        .as_table_mut()
+        .ok_or_else(|| {
+            anyhow!(
+                "generated Codex config has no model_providers.{} table",
+                provider_id
+            )
+        })?;
+    provider["base_url"] = value(proxy_base_url);
+    provider["wire_api"] = value("responses");
+    Ok(doc.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -188,8 +248,7 @@ fn spawn_terminal(
     // `Command` inherits all inheritable handles by default on Windows; if a
     // launched CLI keeps the daemon's TCP listener handle alive, VibeAround's
     // next start sees 127.0.0.1:12358 as occupied by a stale PID.
-    open::with(params, "cmd.exe")
-        .with_context(|| format!("open {}", choice.label()))?;
+    open::with(params, "cmd.exe").with_context(|| format!("open {}", choice.label()))?;
 
     Ok(())
 }
@@ -381,5 +440,32 @@ mod tests {
     fn build_bash_script_cd_selected_workspace() {
         let script = build_bash_script(&[], "claude", "x", Path::new("/tmp/my project"));
         assert!(script.contains("cd '/tmp/my project'\n"));
+    }
+
+    #[test]
+    fn rewrites_codex_chat_config_for_proxy() {
+        let input = r#"model = "deepseek-chat"
+model_provider = "deepseek"
+model_reasoning_effort = "high"
+disable_response_storage = true
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com/v1"
+wire_api = "chat"
+requires_openai_auth = true
+"#;
+
+        let output = rewrite_codex_config_for_proxy(
+            input,
+            "deepseek",
+            "http://127.0.0.1:12358/va/openai-proxy/deepseek/v1",
+        )
+        .unwrap();
+
+        assert!(
+            output.contains(r#"base_url = "http://127.0.0.1:12358/va/openai-proxy/deepseek/v1""#)
+        );
+        assert!(output.contains(r#"wire_api = "responses""#));
     }
 }

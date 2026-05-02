@@ -5,6 +5,7 @@
 mod api;
 mod auth;
 mod mcp;
+mod openai_proxy;
 mod pair;
 mod preview;
 mod ws_chat;
@@ -63,7 +64,9 @@ pub(crate) struct AppState {
 }
 
 /// Ensure web dist exists (build web first).
-fn verify_web_dist(web_dist: &std::path::Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn verify_web_dist(
+    web_dist: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if !web_dist.exists() {
         tracing::info!("[VibeAround] Web dist not found: {:?}", web_dist);
         return Err(format!("Web dist not found: {:?}", web_dist).into());
@@ -83,16 +86,26 @@ async fn spa_fallback(dist_path: PathBuf) -> Response {
             .header("Content-Type", "text/html; charset=utf-8")
             .body(Body::from(content))
             .unwrap_or_else(|_| {
-                (StatusCode::INTERNAL_SERVER_ERROR, "failed to build response").into_response()
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to build response",
+                )
+                    .into_response()
             }),
         Err(e) => {
             tracing::info!("[VibeAround] Failed to read index.html: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load index.html: {}", e)).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load index.html: {}", e),
+            )
+                .into_response()
         }
     }
 }
 
-async fn spa_fallback_handler(axum::extract::State(state): axum::extract::State<AppState>) -> Response {
+async fn spa_fallback_handler(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Response {
     spa_fallback(state.dist_for_fallback.clone()).await
 }
 
@@ -158,14 +171,14 @@ pub async fn run_web_server(
         .route("/ws/chat", get(ws_chat::ws_chat_handler))
         .route("/ws/channels", get(ws_domains::ws_channels_handler))
         .route("/ws/tunnels", get(ws_domains::ws_tunnels_handler))
-        .route("/ws/agents/runtime", get(ws_domains::ws_agents_runtime_handler))
+        .route(
+            "/ws/agents/runtime",
+            get(ws_domains::ws_agents_runtime_handler),
+        )
         .route("/api/channels", get(api::list_channels_handler))
         .route("/api/tunnels", get(api::list_tunnels_handler))
         .route("/api/agents/runtime", get(api::list_agents_runtime_handler))
-        .route(
-            "/api/channels/{kind}/stop",
-            post(api::stop_channel_handler),
-        )
+        .route("/api/channels/{kind}/stop", post(api::stop_channel_handler))
         .route(
             "/api/channels/{kind}/restart",
             post(api::restart_channel_handler),
@@ -183,7 +196,10 @@ pub async fn run_web_server(
             "/api/workspaces",
             get(api::list_workspaces_handler).post(api::add_workspace_handler),
         )
-        .route("/api/workspaces/remove", post(api::remove_workspace_handler))
+        .route(
+            "/api/workspaces/remove",
+            post(api::remove_workspace_handler),
+        )
         .route(
             "/api/workspaces/default",
             axum::routing::put(api::set_default_workspace_handler),
@@ -203,6 +219,14 @@ pub async fn run_web_server(
     // short-lived authentication token (10-min TTL, cryptographically random;
     // single source of truth: `common::previews::SHARE_TTL_SECS`).
     let public = Router::new()
+        // Profile-launched CLIs cannot attach the VibeAround bearer token
+        // separately from their upstream OpenAI API key. This route is
+        // localhost-only and requires the CLI's Authorization header; it
+        // never reads API keys from profile files.
+        .route(
+            "/openai-proxy/{profile_id}/v1/responses",
+            post(openai_proxy::responses_handler),
+        )
         // Pairing API: no auth required (pairing IS the auth flow).
         .route("/api/pair/start", post(pair::start_handler))
         .route("/api/pair/status", get(pair::status_handler))
@@ -237,7 +261,10 @@ pub async fn run_web_server(
         }
         e
     })?;
-    println!("[VibeAround] Web server listening on http://127.0.0.1:{}", port);
+    println!(
+        "[VibeAround] Web server listening on http://127.0.0.1:{}",
+        port
+    );
     axum::serve(listener, app).await?;
     Ok(())
 }

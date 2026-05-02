@@ -1,6 +1,7 @@
 //! VibeAround server crate: Axum HTTP + WebSocket, and the unified ServerDaemon entry point.
 
 pub mod api_types;
+pub mod openai_proxy;
 mod web_server;
 
 pub use web_server::run_web_server;
@@ -12,12 +13,12 @@ use anyhow::{anyhow, Context};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use common::conversations::ConversationManager;
 use common::auth::{self, AuthToken};
 use common::channels::{handle_channel_input, ChannelManager, WebChannelManager};
-use common::process::registry::{self as child_registry, ChildRegistry};
 use common::config;
+use common::conversations::ConversationManager;
 use common::plugins;
+use common::process::registry::{self as child_registry, ChildRegistry};
 use common::pty::{PtySessionManager, Registry, SessionId};
 use common::tunnels::{self, TunnelManager};
 
@@ -66,7 +67,8 @@ impl RunningDaemon {
         common::previews::shutdown_kill_all_ports();
 
         let pty_manager = PtySessionManager::from_registry(Arc::clone(&self.pty));
-        let session_ids: Vec<SessionId> = self.pty.iter().map(|entry| entry.key().clone()).collect();
+        let session_ids: Vec<SessionId> =
+            self.pty.iter().map(|entry| entry.key().clone()).collect();
         for session_id in session_ids {
             let _ = pty_manager.delete_session(session_id);
         }
@@ -122,7 +124,10 @@ impl ServerDaemon {
     }
 
     pub async fn start_background(&self, dist_path: PathBuf) -> anyhow::Result<RunningDaemon> {
-        if tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await.is_ok() {
+        if tokio::net::TcpStream::connect(("127.0.0.1", self.port))
+            .await
+            .is_ok()
+        {
             return Err(anyhow!(
                 "Port {} is already in use — another VibeAround instance may be running",
                 self.port
@@ -178,7 +183,9 @@ impl ServerDaemon {
         // `Arc<PluginHost>` transitively holds the input_tx — so we give it
         // an explicit shutdown `Notify` and hand the join handle back to
         // `RunningDaemon` so `stop()` can unwind cleanly.
-        let mut input_rx = channel_hub.take_input_rx().context("input_rx already taken")?;
+        let mut input_rx = channel_hub
+            .take_input_rx()
+            .context("input_rx already taken")?;
         let manager_for_input = Arc::clone(&conversation_manager);
         let plugin_host_for_input = channel_hub.plugin_host();
         let channel_input_shutdown = Arc::new(Notify::new());

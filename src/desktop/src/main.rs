@@ -217,6 +217,7 @@ fn main() {
             profiles::launcher_set_default,
             profiles::launcher_set_terminal,
             profiles::launcher_set_workspace,
+            profiles::launcher_set_compatibility_proxy,
         ])
         .setup({
             let daemon = Arc::clone(&daemon);

@@ -249,6 +249,9 @@ pub struct LauncherPreferences {
     pub default_agent: String,
     /// Per-agent profile defaults from settings.json.
     pub default_profiles: std::collections::BTreeMap<String, String>,
+    /// Global policy for wrapping OpenAI-compatible profile launches through
+    /// VibeAround's local compatibility proxy.
+    pub compatibility_proxy: terminal::CompatibilityProxyMode,
 }
 
 #[derive(Debug, Serialize)]
@@ -288,6 +291,7 @@ pub fn launcher_get_preferences() -> LauncherPreferences {
         workspace_options,
         default_agent: canonical_agent_id(&cfg.default_agent),
         default_profiles: cfg.default_profiles.clone(),
+        compatibility_proxy: terminal::read_compatibility_proxy_preference(),
     }
 }
 
@@ -369,6 +373,15 @@ pub fn launcher_set_terminal(terminal_id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn launcher_set_workspace(workspace_path: String) -> Result<(), String> {
     terminal::write_workspace_preference(PathBuf::from(workspace_path)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn launcher_set_compatibility_proxy(app: tauri::AppHandle, mode: String) -> Result<(), String> {
+    let mode = terminal::CompatibilityProxyMode::from_id(&mode)
+        .ok_or_else(|| format!("unknown compatibility proxy mode: '{mode}'"))?;
+    terminal::write_compatibility_proxy_preference(mode).map_err(|e| e.to_string())?;
+    emit_launch_config_changed(&app);
+    Ok(())
 }
 
 fn launcher_workspace_options() -> Vec<WorkspaceOption> {

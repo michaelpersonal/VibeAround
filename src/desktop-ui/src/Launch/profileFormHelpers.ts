@@ -3,6 +3,7 @@ import type {
   AuthModeDef,
   CatalogEntry,
   FieldDef,
+  ProviderSettings,
 } from "./types";
 import { apiTypeLabel, apiTypeShort, isProviderApiKind } from "./types";
 
@@ -117,4 +118,21 @@ export function pruneOverrides(
     if (Object.keys(trimmed).length > 0) out[apiType] = trimmed;
   }
   return out;
+}
+
+export function pruneProviderSettings(
+  providerId: string,
+  settings: ProviderSettings,
+): ProviderSettings {
+  if (providerId !== "deepseek") return {};
+
+  const deepseek = settings.deepseek ?? {};
+  const trimmed = {
+    ...(deepseek.thinking ? { thinking: true } : {}),
+    ...(deepseek.replay_reasoning_content
+      ? { replay_reasoning_content: true }
+      : {}),
+  };
+
+  return Object.keys(trimmed).length > 0 ? { deepseek: trimmed } : {};
 }
