@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod onboarding;
+mod profiles;
 mod tray;
 
 use std::path::PathBuf;
@@ -157,9 +158,7 @@ fn main() {
     // itself with the freshly populated settings. Skipping here also
     // avoids a pointless uninstall sweep over files that don't exist yet.
     if !onboarding_needed {
-        common::agent::sync_integrations(
-            &onboarding::get_settings_value(),
-        );
+        common::agent::sync_integrations(&onboarding::get_settings_value());
     }
     let gate = Arc::new(Notify::new());
 
@@ -167,7 +166,9 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            tracing::info!("[VibeAround] ⚠️  Another instance tried to start, focusing existing window");
+            tracing::info!(
+                "[VibeAround] ⚠️  Another instance tried to start, focusing existing window"
+            );
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.show();
@@ -175,11 +176,15 @@ fn main() {
             }
         }))
         .manage(AppTunnels(tunnels))
-        .manage(OnboardingGate { notify: Arc::clone(&gate) })
+        .manage(OnboardingGate {
+            notify: Arc::clone(&gate),
+        })
         .manage(OnboardingSessions {
             plugin_sessions: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
-        .manage(OnboardingActive(std::sync::atomic::AtomicBool::new(onboarding_needed)))
+        .manage(OnboardingActive(std::sync::atomic::AtomicBool::new(
+            onboarding_needed,
+        )))
         .manage(OnboardingInstallState::default())
         .invoke_handler(tauri::generate_handler![
             get_auth_token,
@@ -199,85 +204,98 @@ fn main() {
             onboarding::get_install_manifest,
             onboarding::start_onboarding_install,
             onboarding::cancel_onboarding_install,
+            profiles::profiles_list,
+            profiles::profiles_get,
+            profiles::profiles_upsert,
+            profiles::profiles_delete,
+            profiles::profiles_reorder,
+            profiles::profiles_launch,
+            profiles::profiles_launch_default,
+            profiles::profiles_launch_direct,
+            profiles::profiles_catalog,
+            profiles::launcher_get_preferences,
+            profiles::launcher_set_default,
+            profiles::launcher_set_terminal,
+            profiles::launcher_set_workspace,
+            profiles::launcher_set_compatibility_proxy,
         ])
         .setup({
             let daemon = Arc::clone(&daemon);
             move |app| {
-            // Resolve the web dashboard `dist/` directory.
-            //
-            // - **Dev** (`cargo tauri dev`): read from the source tree so hot
-            //   edits to `src/web/dist` are picked up without rebundling.
-            // - **Release**: read from the Tauri bundle's resource dir. The
-            //   resources glob `../web/dist/**/*` in `tauri.conf.json` copies
-            //   files under `<resource_dir>/_up_/web/dist/`.
-            //
-            // Using `env!("CARGO_MANIFEST_DIR")` unconditionally would bake
-            // the *build machine's* absolute source path into the release
-            // binary — on every other machine that path doesn't exist, the
-            // daemon fails to locate the dashboard, and users hit a broken
-            // install.
-            let dist_path: PathBuf = {
-                #[cfg(debug_assertions)]
-                {
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist")
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    app.path()
-                        .resource_dir()
-                        .map_err(|e| format!("failed to resolve resource_dir: {e}"))?
-                        .join("_up_")
-                        .join("web")
-                        .join("dist")
-                }
-            };
-            app.manage(DaemonController::new(Arc::clone(&daemon), dist_path));
-
-            tray::setup(app)?;
-
-            // Show the window immediately — the splash screen in index.html
-            // is visible while React loads and the daemon starts.
-            if let Some(w) = app.get_webview_window("main") {
-                if onboarding_needed {
-                    let _ = w.eval("window.location.replace('/onboarding')");
-                }
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-
-            // Start the daemon — immediately if no onboarding needed,
-            // otherwise wait for the onboarding gate signal.
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if onboarding_needed {
-                    tracing::info!("[VibeAround] Waiting for onboarding to complete…");
-                    gate.notified().await;
-                    tracing::info!("[VibeAround] Onboarding complete, starting daemon…");
-
-                    // Mark onboarding as done for tray
-                    if let Some(state) = app_handle.try_state::<OnboardingActive>() {
-                        state.0.store(false, std::sync::atomic::Ordering::Relaxed);
+                // Resolve the web dashboard `dist/` directory.
+                //
+                // - **Dev** (`cargo tauri dev`): read from the source tree so hot
+                //   edits to `src/web/dist` are picked up without rebundling.
+                // - **Release**: read from the Tauri bundle's resource dir. The
+                //   resources glob `../web/dist/**/*` in `tauri.conf.json` copies
+                //   files under `<resource_dir>/_up_/web/dist/`.
+                //
+                // Using `env!("CARGO_MANIFEST_DIR")` unconditionally would bake
+                // the *build machine's* absolute source path into the release
+                // binary — on every other machine that path doesn't exist, the
+                // daemon fails to locate the dashboard, and users hit a broken
+                // install.
+                let dist_path: PathBuf = {
+                    #[cfg(debug_assertions)]
+                    {
+                        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist")
                     }
+                    #[cfg(not(debug_assertions))]
+                    {
+                        app.path()
+                            .resource_dir()
+                            .map_err(|e| format!("failed to resolve resource_dir: {e}"))?
+                            .join("_up_")
+                            .join("web")
+                            .join("dist")
+                    }
+                };
+                app.manage(DaemonController::new(Arc::clone(&daemon), dist_path));
+
+                tray::setup(app)?;
+
+                // Show the window immediately — the splash screen in index.html
+                // is visible while React loads and the daemon starts.
+                if let Some(w) = app.get_webview_window("main") {
+                    if onboarding_needed {
+                        let _ = w.eval("window.location.replace('/onboarding')");
+                    }
+                    let _ = w.show();
+                    let _ = w.set_focus();
                 }
 
-                if let Err(e) = start_daemon(&app_handle).await {
-                    tracing::info!("[VibeAround] Daemon error: {}", e);
-                }
+                // Start the daemon — immediately if no onboarding needed,
+                // otherwise wait for the onboarding gate signal.
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if onboarding_needed {
+                        tracing::info!("[VibeAround] Waiting for onboarding to complete…");
+                        gate.notified().await;
+                        tracing::info!("[VibeAround] Onboarding complete, starting daemon…");
 
-                // Onboarding path: settings were empty when we ran the
-                // early sync before Tauri started, so run it now that
-                // the user has picked their enabled agents. The
-                // steady-state path already ran this pre-binding, so
-                // re-running would be wasted work.
-                if onboarding_needed {
-                    common::agent::sync_integrations(
-                        &onboarding::get_settings_value(),
-                    );
-                }
-            });
+                        // Mark onboarding as done for tray
+                        if let Some(state) = app_handle.try_state::<OnboardingActive>() {
+                            state.0.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
 
-            Ok(())
-        }})
+                    if let Err(e) = start_daemon(&app_handle).await {
+                        tracing::info!("[VibeAround] Daemon error: {}", e);
+                    }
+
+                    // Onboarding path: settings were empty when we ran the
+                    // early sync before Tauri started, so run it now that
+                    // the user has picked their enabled agents. The
+                    // steady-state path already ran this pre-binding, so
+                    // re-running would be wasted work.
+                    if onboarding_needed {
+                        common::agent::sync_integrations(&onboarding::get_settings_value());
+                    }
+                });
+
+                Ok(())
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building VibeAround")
         .run(|_app, event| {

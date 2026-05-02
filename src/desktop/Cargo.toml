@@ -1,6 +1,6 @@
 [package]
 name = "vibearound-desktop"
-version = "0.5.0"
+version = "0.5.2"
 description = "VibeAround Desktop — Tray-first AI coding orchestrator"
 edition = "2021"
 rust-version = "1.82"
@@ -21,6 +21,8 @@ serde_json = "1.0"
 anyhow = "1"
 open = "1.7"
 tracing = "0.1"
+shell-escape = "0.1"
+uuid = { version = "1", features = ["v4"] }
 
 [features]
 default = []

@@ -15,9 +15,13 @@ use agent_client_protocol as acp;
 
 use crate::agent::{Agent, AgentClientHandler};
 use crate::config;
+use crate::profiles;
 
 use super::super::event::SystemEvent;
 use super::super::handover::HandoverHandler;
+use super::super::session_log::{
+    append_im_session_started, is_im_route, ImSessionStartRecord, SessionStartSource,
+};
 use super::Conversation;
 
 impl Conversation {
@@ -30,15 +34,20 @@ impl Conversation {
         resume_cwd: Option<String>,
         downstream_handler: Arc<dyn AgentClientHandler>,
     ) -> anyhow::Result<Arc<Agent>> {
+        let requested_cli_kind = cli_kind
+            .as_deref()
+            .map(crate::resources::resolve_agent_id)
+            .transpose()
+            .map_err(anyhow::Error::msg)?;
         let stored_cli_kind = self.cli_kind.lock().await.clone();
         let resolved_cli_kind = stored_cli_kind
             .clone()
-            .or(cli_kind.clone())
+            .or(requested_cli_kind.clone())
             .unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
 
         // If an Agent exists, check if caller requested a different kind (implicit switch).
         if let Some(existing) = self.agent.lock().await.clone() {
-            let needs_switch = cli_kind
+            let needs_switch = requested_cli_kind
                 .as_ref()
                 .map(|requested| {
                     stored_cli_kind
@@ -49,7 +58,7 @@ impl Conversation {
                 .unwrap_or(false);
 
             if needs_switch {
-                let new_kind = cli_kind.unwrap();
+                let new_kind = requested_cli_kind.unwrap();
                 tracing::info!(
                     route = %self.route,
                     from = %resolved_cli_kind,
@@ -64,18 +73,20 @@ impl Conversation {
             }
         }
 
+        let cfg = config::ensure_loaded();
         let cli_kind = self
             .cli_kind
             .lock()
             .await
             .clone()
-            .unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
+            .unwrap_or_else(|| cfg.default_agent.clone());
+        let agent_id = crate::resources::resolve_agent_id(&cli_kind).map_err(anyhow::Error::msg)?;
+        let cli_kind = agent_id.clone();
         tracing::info!(route = %self.route, cli_kind = %cli_kind, "spawning new agent");
-        let profile = self
-            .profile
-            .lock()
-            .await
+        let explicit_profile = self.profile.lock().await.clone();
+        let mut profile = explicit_profile
             .clone()
+            .or_else(|| cfg.default_profile_for(&cli_kind))
             .unwrap_or_else(|| "default".to_string());
 
         // Resolve workspace — handover must include cwd, normal prompt uses default.
@@ -107,15 +118,59 @@ impl Conversation {
         std::fs::create_dir_all(&workspace)
             .with_context(|| format!("Failed to create workspace {:?}", &workspace))?;
 
-        let agent_id = crate::resources::agent_by_alias(&cli_kind)
-            .map(|def| def.id.clone())
-            .unwrap_or_else(|| "claude".to_string());
-
-        let env_vars = vec![
-            ("VIBEAROUND_CHANNEL_KIND".to_string(), self.route.channel_kind.clone()),
+        let mut env_vars = vec![
+            (
+                "VIBEAROUND_CHANNEL_KIND".to_string(),
+                self.route.channel_kind.clone(),
+            ),
             ("VIBEAROUND_CHAT_ID".to_string(), self.route.chat_id.clone()),
             ("VIBEAROUND_AGENT_KIND".to_string(), agent_id.clone()),
         ];
+        if profile_uses_vibearound_credentials(&profile) {
+            if let Some(profile_def) =
+                profiles::schema::load(&profile).map(profiles::normalize_legacy_profile)
+            {
+                match profiles::runtime::env_for_launch(&profile_def, &agent_id) {
+                    Ok(profile_env) => {
+                        tracing::info!(
+                            route = %self.route,
+                            cli_kind = %cli_kind,
+                            profile = %profile,
+                            "applied profile env for agent spawn"
+                        );
+                        env_vars.extend(profile_env);
+                    }
+                    Err(error) if explicit_profile.is_some() => {
+                        return Err(error).with_context(|| {
+                            format!(
+                                "failed to apply profile '{}' to agent '{}'",
+                                profile, agent_id
+                            )
+                        });
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            route = %self.route,
+                            cli_kind = %cli_kind,
+                            profile = %profile,
+                            error = %error,
+                            "default profile could not be applied; falling back to direct launch"
+                        );
+                        profile = "default".to_string();
+                    }
+                }
+            } else if explicit_profile.is_some() {
+                return Err(anyhow!("profile '{}' not found", profile));
+            } else {
+                tracing::warn!(
+                    route = %self.route,
+                    cli_kind = %cli_kind,
+                    profile = %profile,
+                    "default profile not found; falling back to direct launch"
+                );
+                profile = "default".to_string();
+            }
+        }
 
         let ready = match Agent::spawn(
             agent_id,
@@ -161,6 +216,12 @@ impl Conversation {
 
         if let Some(session_id) = resume_session_id.or(ready.startup_session_id) {
             *self.session_id.lock().await = Some(session_id.clone());
+            let source = if is_handover {
+                SessionStartSource::Pickup
+            } else {
+                SessionStartSource::StartupSession
+            };
+            self.log_im_session_started_once(&session_id, source).await;
             self.emit(SystemEvent::SessionReady {
                 route: self.route.clone(),
                 session_id,
@@ -195,6 +256,8 @@ impl Conversation {
             acp::Agent::new_session(&**agent, acp::NewSessionRequest::new(workspace)).await?;
         let session_id = response.session_id.to_string();
         *self.session_id.lock().await = Some(session_id.clone());
+        self.log_im_session_started_once(&session_id, SessionStartSource::NewSession)
+            .await;
 
         self.emit(SystemEvent::SessionReady {
             route: self.route.clone(),
@@ -220,9 +283,47 @@ impl Conversation {
         *self.initialize.lock().await = None;
         *self.failed.lock().await = None;
         *self.busy.lock().await = false;
+        *self.logged_session_id.lock().await = None;
         *self.handover_resume_session_id.lock().await = None;
         *self.handover_cwd.lock().await = None;
         *self.suppress_replay.lock().await = None;
         tracing::debug!(route = %self.route, "full_reset complete");
     }
+
+    async fn log_im_session_started_once(&self, session_id: &str, source: SessionStartSource) {
+        if !is_im_route(&self.route) {
+            return;
+        }
+
+        {
+            let mut logged_session_id = self.logged_session_id.lock().await;
+            if logged_session_id.as_deref() == Some(session_id) {
+                return;
+            }
+            *logged_session_id = Some(session_id.to_string());
+        }
+
+        let state = self.state().await;
+        let record = ImSessionStartRecord::new(
+            self.route.clone(),
+            state.cli_kind,
+            state.profile,
+            session_id.to_string(),
+            source,
+            state.workspace,
+        );
+
+        if let Err(error) = append_im_session_started(record).await {
+            tracing::warn!(
+                route = %self.route,
+                session_id = %session_id,
+                error = %error,
+                "failed to append IM session startup index"
+            );
+        }
+    }
+}
+
+fn profile_uses_vibearound_credentials(profile: &str) -> bool {
+    !matches!(profile, "default" | "none" | "off" | "direct")
 }

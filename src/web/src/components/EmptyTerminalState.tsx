@@ -5,6 +5,7 @@ interface EmptyTerminalStateProps {
   tmuxAvailable: boolean | null;
   tmuxSessions: string[];
   onAddCli: (tool: ToolType) => void;
+  onAddProfileCli: (profileId: string, launchTarget: string) => void;
   onAttachTmux: (name: string) => void;
   onRefreshTmux: () => void;
 }
@@ -13,6 +14,7 @@ export function EmptyTerminalState({
   tmuxAvailable,
   tmuxSessions,
   onAddCli,
+  onAddProfileCli,
   onAttachTmux,
   onRefreshTmux,
 }: EmptyTerminalStateProps) {
@@ -24,6 +26,7 @@ export function EmptyTerminalState({
         tmuxAvailable={tmuxAvailable}
         tmuxSessions={tmuxSessions}
         onAddCli={onAddCli}
+        onAddProfileCli={onAddProfileCli}
         onAttachTmux={onAttachTmux}
         onRefreshTmux={onRefreshTmux}
       />

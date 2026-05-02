@@ -57,7 +57,7 @@ fn strip_line_wraps(s: &str) -> String {
             if c == '\r' && chars.peek() == Some(&'\n') {
                 chars.next();
             }
-            while chars.peek().map_or(false, |c| *c == ' ') {
+            while chars.peek().is_some_and(|c| *c == ' ') {
                 chars.next();
             }
         } else {

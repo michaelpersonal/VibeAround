@@ -79,6 +79,9 @@ function writeJson(path, obj) {
 }
 
 function listPluginDirs() {
+    if (!existsSync(pluginsDir)) {
+        return [];
+    }
     return readdirSync(pluginsDir)
         .filter((entry) => {
             const full = join(pluginsDir, entry);
@@ -93,11 +96,15 @@ function listPluginDirs() {
 
 function targetSpec(mode) {
     if (mode === 'local') return LOCAL_SPEC;
-    const sdkPkg = readJson(join(pluginsDir, SDK_DIR_NAME, 'package.json'));
+    const sdkPkg = readJson(sdkPackagePath());
     if (!sdkPkg.version) {
         throw new Error('channel-sdk/package.json is missing "version"');
     }
     return `^${sdkPkg.version}`;
+}
+
+function sdkPackagePath() {
+    return join(pluginsDir, SDK_DIR_NAME, 'package.json');
 }
 
 /**
@@ -157,6 +164,13 @@ function runInstall(pluginDir) {
 
 function main() {
     const args = parseArgs(process.argv);
+    const sdkPkgPath = sdkPackagePath();
+    if (!existsSync(sdkPkgPath)) {
+        console.log(`[link-sdk] ${sdkPkgPath} not found`);
+        console.log('[link-sdk] local plugin SDK checkout is optional; skipping dependency rewrite');
+        return;
+    }
+
     const releaseSpec = targetSpec('release');
     const spec = args.mode === 'release' ? releaseSpec : LOCAL_SPEC;
     const plugins = listPluginDirs();

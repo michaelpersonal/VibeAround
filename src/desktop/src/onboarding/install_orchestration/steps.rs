@@ -2,6 +2,7 @@
 //! channel plugins. Each function emits `running` → `done`/`error`
 //! progress events and appends stdout/stderr to the onboarding log.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tauri::{AppHandle, Runtime};
@@ -9,13 +10,14 @@ use tokio::sync::Mutex;
 
 use crate::onboarding::{plugin_install, InstallProgressEvent};
 
-use super::util::{emit_progress, log_line};
+use super::util::{emit_progress, log_line, output_excerpt};
 
 pub(super) async fn install_npm_agent<R: Runtime>(
     app: &AppHandle<R>,
     agent_id: &str,
     agent_def: &common::resources::AgentDef,
     log_file: &Arc<Mutex<Option<std::fs::File>>>,
+    cancelled: &Arc<AtomicBool>,
     had_error: &mut bool,
 ) {
     let task_id = format!("agent:{}:acp", agent_id);
@@ -53,36 +55,55 @@ pub(super) async fn install_npm_agent<R: Runtime>(
     );
     log_line(log_file, &format!("[{}] {}", agent_id, msg));
 
-    match common::agent::auto_install_npm_agent_with_output(npm_pkg).await {
+    let task_label = format!("{} — CLI install", agent_def.display_name);
+    match common::agent::auto_install_npm_agent_with_progress_and_cancel(
+        npm_pkg,
+        |line| {
+            emit_progress(
+                app,
+                &InstallProgressEvent {
+                    id: task_id.clone(),
+                    label: task_label.clone(),
+                    status: "running".into(),
+                    message: Some(line),
+                },
+            );
+        },
+        || cancelled.load(Ordering::Relaxed),
+    )
+    .await
+    {
         Ok(out) => {
-            log_line(
-                log_file,
-                &format!("[{}] stdout:\n{}", agent_id, out.stdout),
-            );
-            log_line(
-                log_file,
-                &format!("[{}] stderr:\n{}", agent_id, out.stderr),
-            );
+            log_line(log_file, &format!("[{}] stdout:\n{}", agent_id, out.stdout));
+            log_line(log_file, &format!("[{}] stderr:\n{}", agent_id, out.stderr));
             emit_progress(
                 app,
                 &InstallProgressEvent {
                     id: task_id,
-                    label: format!("{} — CLI install", agent_def.display_name),
+                    label: task_label,
                     status: "done".into(),
-                    message: None,
+                    message: Some("Install complete".into()),
                 },
             );
             log_line(log_file, &format!("[{}] npm install complete", agent_id));
         }
         Err(e) => {
             *had_error = true;
-            let err_msg = format!("{:#}", e);
+            let err_msg = if cancelled.load(Ordering::Relaxed) {
+                "Cancelled".to_string()
+            } else {
+                format!("{:#}", e)
+            };
             emit_progress(
                 app,
                 &InstallProgressEvent {
                     id: task_id,
                     label: format!("{} — CLI install", agent_def.display_name),
-                    status: "error".into(),
+                    status: if cancelled.load(Ordering::Relaxed) {
+                        "cancelled".into()
+                    } else {
+                        "error".into()
+                    },
                     message: Some(err_msg.clone()),
                 },
             );
@@ -132,25 +153,39 @@ pub(super) async fn install_script_agent<R: Runtime>(
     );
     log_line(log_file, &format!("[{}] {}", agent_id, msg));
 
-    match common::agent::auto_install_agent_cmd_with_output(install_cmd, agent_id)
-        .await
-    {
+    match common::agent::auto_install_agent_cmd_with_output(install_cmd, agent_id).await {
         Ok(out) => {
-            log_line(
-                log_file,
-                &format!("[{}] stdout:\n{}", agent_id, out.stdout),
-            );
-            log_line(
-                log_file,
-                &format!("[{}] stderr:\n{}", agent_id, out.stderr),
-            );
+            log_line(log_file, &format!("[{}] stdout:\n{}", agent_id, out.stdout));
+            log_line(log_file, &format!("[{}] stderr:\n{}", agent_id, out.stderr));
+            if let Some(stdout) = output_excerpt("stdout", &out.stdout) {
+                emit_progress(
+                    app,
+                    &InstallProgressEvent {
+                        id: task_id.clone(),
+                        label: format!("{} — CLI install", agent_def.display_name),
+                        status: "running".into(),
+                        message: Some(stdout),
+                    },
+                );
+            }
+            if let Some(stderr) = output_excerpt("stderr", &out.stderr) {
+                emit_progress(
+                    app,
+                    &InstallProgressEvent {
+                        id: task_id.clone(),
+                        label: format!("{} — CLI install", agent_def.display_name),
+                        status: "running".into(),
+                        message: Some(stderr),
+                    },
+                );
+            }
             emit_progress(
                 app,
                 &InstallProgressEvent {
                     id: task_id,
                     label: format!("{} — CLI install", agent_def.display_name),
                     status: "done".into(),
-                    message: None,
+                    message: Some("Install complete".into()),
                 },
             );
             log_line(log_file, &format!("[{}] script install complete", agent_id));
@@ -176,6 +211,7 @@ pub(super) async fn install_channel_plugin<R: Runtime>(
     app: &AppHandle<R>,
     channel_id: &str,
     log_file: &Arc<Mutex<Option<std::fs::File>>>,
+    cancelled: &Arc<AtomicBool>,
     had_error: &mut bool,
 ) {
     let task_id = format!("plugin:{}", channel_id);
@@ -241,16 +277,33 @@ pub(super) async fn install_channel_plugin<R: Runtime>(
         plugin_id: channel_id.to_string(),
         github_url,
     };
-    match plugin_install::run_install_inner(request).await {
+    let task_label = format!("{} — Plugin install", label);
+    match plugin_install::run_install_inner_with_progress(
+        request,
+        |message| {
+            emit_progress(
+                app,
+                &InstallProgressEvent {
+                    id: task_id.clone(),
+                    label: task_label.clone(),
+                    status: "running".into(),
+                    message: Some(message),
+                },
+            );
+        },
+        || cancelled.load(Ordering::Relaxed),
+    )
+    .await
+    {
         Ok(resp) => {
             if resp.success {
                 emit_progress(
                     app,
                     &InstallProgressEvent {
                         id: task_id,
-                        label: format!("{} — Plugin install", label),
+                        label: task_label,
                         status: "done".into(),
-                        message: None,
+                        message: Some("Install complete".into()),
                     },
                 );
                 log_line(
@@ -272,13 +325,22 @@ pub(super) async fn install_channel_plugin<R: Runtime>(
         }
         Err(e) => {
             *had_error = true;
-            let err_msg = format!("{:#}", e);
+            let is_cancelled = cancelled.load(Ordering::Relaxed);
+            let err_msg = if is_cancelled {
+                "Cancelled".to_string()
+            } else {
+                format!("{:#}", e)
+            };
             emit_progress(
                 app,
                 &InstallProgressEvent {
                     id: task_id,
                     label: format!("{} — Plugin install", label),
-                    status: "error".into(),
+                    status: if is_cancelled {
+                        "cancelled".into()
+                    } else {
+                        "error".into()
+                    },
                     message: Some(err_msg.clone()),
                 },
             );

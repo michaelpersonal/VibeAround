@@ -2,7 +2,6 @@ import { AGENT_IDS, type AgentId } from "@va/client";
 import type { ToolType } from "@/lib/terminal-types";
 
 export type { AgentId };
-export { AGENT_IDS };
 
 export interface AgentDisplayInfo {
   id: AgentId;
@@ -12,7 +11,7 @@ export interface AgentDisplayInfo {
 /** Display names for every `AgentId`. The `Record<AgentId, ...>` shape
  *  means adding an entry to `resources/agents.json` breaks the build here
  *  until the display name is filled in. */
-export const AGENT_DISPLAY_NAMES: Record<AgentId, string> = {
+const AGENT_DISPLAY_NAMES: Record<AgentId, string> = {
   claude: "Claude Code",
   gemini: "Gemini CLI",
   opencode: "Opencode",

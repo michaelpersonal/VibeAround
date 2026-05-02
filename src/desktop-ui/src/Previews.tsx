@@ -2,27 +2,19 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Eye, ExternalLink, Globe, Trash2, RefreshCw, FileText, Server,
 } from "lucide-react";
-import { PREVIEW_SHARE_TTL_SECS } from "@va/client";
+import {
+  PREVIEW_SHARE_TTL_SECS,
+  PreviewsResponseSchema,
+  type PreviewSnapshot,
+  type PreviewsResponse,
+} from "@va/client";
+
+import { EmptyBlock, PageHeader, PageShell, StatusBanner } from "@/components/page";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { apiFetch, openDashboardUrl, API_BASE } from "./lib/api";
 
 const PREVIEW_SHARE_TTL_MINUTES = Math.round(PREVIEW_SHARE_TTL_SECS / 60);
-
-interface PreviewSnapshot {
-  slug: string;
-  id: string;
-  workspace: string;
-  title: string;
-  kind: "server" | "file";
-  port: number | null;
-  share_key: string | null;
-  share_expires_at_ms: number | null;
-  created_at_ms: number;
-}
-
-interface PreviewsResponse {
-  previews: PreviewSnapshot[];
-  tunnel_url: string | null;
-}
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -36,7 +28,7 @@ export function Previews() {
     try {
       const res = await apiFetch(`/api/previews`);
       if (!res.ok) throw new Error(await res.text());
-      setData(await res.json());
+      setData(PreviewsResponseSchema.parse(await res.json()));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -66,33 +58,33 @@ export function Previews() {
   const localBase = API_BASE.replace(/\/va\/?$/, "");
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold flex items-center gap-2">
-          <Eye className="w-4 h-4 text-primary" />
-          Previews
-        </h2>
-        <button
-          onClick={fetchPreviews}
-          className="p-1 rounded hover:bg-accent transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 text-muted-foreground ${loading ? "animate-spin" : ""}`}
-          />
-        </button>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        Active dev-server proxies and markdown previews. Owner links are
-        permanent; share links rotate every {PREVIEW_SHARE_TTL_MINUTES} minutes.
-        Closing a server preview also kills the underlying dev server process.
-      </p>
+    <PageShell>
+      <PageHeader
+        icon={<Eye className="w-4 h-4 text-primary" />}
+        title="Previews"
+        description={
+          <>
+            Active dev-server proxies and markdown previews. Owner links are
+            permanent; share links rotate every {PREVIEW_SHARE_TTL_MINUTES} minutes.
+          </>
+        }
+        actions={(
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={fetchPreviews}
+            title="Refresh"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 text-muted-foreground ${loading ? "animate-spin" : ""}`}
+            />
+          </Button>
+        )}
+      />
 
       {error && (
-        <div className="text-xs text-destructive bg-destructive/10 rounded-md px-3 py-2">
-          {error}
-        </div>
+        <StatusBanner>{error}</StatusBanner>
       )}
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -107,14 +99,14 @@ export function Previews() {
           />
         ))}
         {(!data || data.previews.length === 0) && !loading && (
-          <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+          <EmptyBlock>
             No active previews. Ask your coding agent to run{" "}
             <span className="font-mono">preview</span> or{" "}
             <span className="font-mono">md_preview</span>.
-          </div>
+          </EmptyBlock>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }
 
@@ -139,26 +131,26 @@ function PreviewRow({ preview, tunnelUrl, localBase, isFirst, onClose }: Preview
   const Icon = preview.kind === "server" ? Server : FileText;
 
   return (
-    <div className={`px-4 py-3 ${isFirst ? "" : "border-t border-border"}`}>
+    <div className={`px-3 py-2 ${isFirst ? "" : "border-t border-border"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0 flex-1">
           <Icon className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold truncate">{preview.title}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded ${
+              <span className="text-[13px] font-semibold truncate">{preview.title}</span>
+              <Badge
+                className={`text-[10px] ${
                   preview.kind === "server"
                     ? "bg-emerald-500/10 text-emerald-600"
                     : "bg-blue-500/10 text-blue-600"
                 }`}
               >
                 {preview.kind}
-              </span>
+              </Badge>
               {preview.port != null && (
-                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-mono">
+                <Badge variant="muted" className="text-[10px] font-mono">
                   :{preview.port}
-                </span>
+                </Badge>
               )}
             </div>
             <div
@@ -170,13 +162,16 @@ function PreviewRow({ preview, tunnelUrl, localBase, isFirst, onClose }: Preview
           </div>
         </div>
 
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={onClose}
-          className="p-1.5 rounded hover:bg-destructive/10 transition-colors shrink-0"
+          className="shrink-0 hover:bg-destructive/10"
           title={preview.kind === "server" ? "Close (kills dev server)" : "Close"}
         >
           <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-        </button>
+        </Button>
       </div>
 
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -222,19 +217,17 @@ function UrlButton({ label, url, icon, disabledReason }: UrlButtonProps) {
     void openDashboardUrl(url);
   };
   return (
-    <button
+    <Button
       type="button"
+      variant="secondary"
+      size="xs"
       disabled={disabled}
       onClick={onClick}
       title={disabled ? disabledReason ?? "Unavailable" : url ?? ""}
-      className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-        disabled
-          ? "bg-muted text-muted-foreground/50 cursor-not-allowed"
-          : "bg-primary/10 text-primary hover:bg-primary/20"
-      }`}
+      className="h-7 text-[11px] bg-primary/10 text-primary hover:bg-primary/20 disabled:bg-muted disabled:text-muted-foreground/50"
     >
       {icon}
       {label}
-    </button>
+    </Button>
   );
 }

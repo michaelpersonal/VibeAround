@@ -9,6 +9,7 @@ pub mod logging;
 pub mod plugins;
 pub mod previews;
 pub mod process;
+pub mod profiles;
 pub mod pty;
 pub mod resources;
 pub mod routing;

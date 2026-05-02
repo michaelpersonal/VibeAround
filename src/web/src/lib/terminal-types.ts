@@ -17,6 +17,9 @@ export interface TerminalSession {
   startedAt: number;
   /** Backend created_at (seconds); optional, for display. */
   createdAt?: number;
+  profileId?: string;
+  profileLabel?: string;
+  launchTarget?: string;
   /** If attached to a tmux session, its name. */
   tmuxSession?: string;
 }
@@ -51,7 +54,7 @@ const TERMINAL_HEADER_BG_LIGHT = "#f5f5f5";
 const TERMINAL_HEADER_BG_DARK = "#1a1a1a";
 
 /** Per-tool: accent, label, cursor, selection. bg/headerBg come from app theme only. */
-export const toolThemes: Record<ToolType, Omit<ToolTheme, "bg" | "headerBg"> & { bg: string; headerBg: string }> = {
+const toolThemes: Record<ToolType, Omit<ToolTheme, "bg" | "headerBg"> & { bg: string; headerBg: string }> = {
   claude: {
     accent: "#d97706",
     accentFg: "#fef3c7",
@@ -120,13 +123,6 @@ export const STATUS_COLORS: Record<TerminalStatus, string> = {
   error:   "#f87171", // red-400
   stopped: "#64748b", // slate-500
 };
-
-export const GROUP_COLOR_PRESETS = [
-  { name: "Amber", hex: "#d97706" },
-  { name: "Violet", hex: "#8b5cf6" },
-  { name: "Cyan", hex: "#06b6d4" },
-  { name: "Slate", hex: "#64748b" },
-] as const;
 
 export function getGroupColor(hex: string) {
   return {

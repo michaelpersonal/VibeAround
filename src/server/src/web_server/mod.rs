@@ -2,9 +2,11 @@
 //! agent chat WS at /ws/chat, live preview (/preview/:slug with iframe wrapper + reverse proxy),
 //! and MCP endpoint at /mcp.
 
+mod agent_hooks;
 mod api;
 mod auth;
 mod mcp;
+mod openai_proxy;
 mod pair;
 mod preview;
 mod ws_chat;
@@ -21,6 +23,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
+use crate::agent_hooks::AgentHookRegistry;
 use common::auth::AuthToken;
 use common::channels::{ChannelManager, WebChannelManager};
 use common::pty::{PtySessionManager, Registry};
@@ -60,10 +63,14 @@ pub(crate) struct AppState {
     port: u16,
     /// Shared HTTP client for preview proxy (connection pooling).
     preview_client: reqwest::Client,
+    /// Codex/agent lifecycle events received from bundled hook helpers.
+    hook_registry: Arc<AgentHookRegistry>,
 }
 
 /// Ensure web dist exists (build web first).
-fn verify_web_dist(web_dist: &std::path::Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn verify_web_dist(
+    web_dist: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if !web_dist.exists() {
         tracing::info!("[VibeAround] Web dist not found: {:?}", web_dist);
         return Err(format!("Web dist not found: {:?}", web_dist).into());
@@ -83,16 +90,26 @@ async fn spa_fallback(dist_path: PathBuf) -> Response {
             .header("Content-Type", "text/html; charset=utf-8")
             .body(Body::from(content))
             .unwrap_or_else(|_| {
-                (StatusCode::INTERNAL_SERVER_ERROR, "failed to build response").into_response()
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to build response",
+                )
+                    .into_response()
             }),
         Err(e) => {
             tracing::info!("[VibeAround] Failed to read index.html: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load index.html: {}", e)).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load index.html: {}", e),
+            )
+                .into_response()
         }
     }
 }
 
-async fn spa_fallback_handler(axum::extract::State(state): axum::extract::State<AppState>) -> Response {
+async fn spa_fallback_handler(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Response {
     spa_fallback(state.dist_for_fallback.clone()).await
 }
 
@@ -106,6 +123,7 @@ pub async fn run_web_server(
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
     auth_token: Arc<AuthToken>,
+    hook_registry: Arc<AgentHookRegistry>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
     let web_dist = dist_path
@@ -130,6 +148,7 @@ pub async fn run_web_server(
         web_channel,
         port,
         preview_client,
+        hook_registry,
     };
 
     let auth_state = AuthState(Arc::clone(&auth_token));
@@ -153,18 +172,19 @@ pub async fn run_web_server(
         )
         .route("/api/tmux/sessions", get(api::list_tmux_sessions_handler))
         .route("/api/agents", get(api::list_agents_handler))
+        .route("/api/profiles", get(api::list_profiles_handler))
         .route("/ws", get(ws_pty::ws_handler))
         .route("/ws/chat", get(ws_chat::ws_chat_handler))
         .route("/ws/channels", get(ws_domains::ws_channels_handler))
         .route("/ws/tunnels", get(ws_domains::ws_tunnels_handler))
-        .route("/ws/agents/runtime", get(ws_domains::ws_agents_runtime_handler))
+        .route(
+            "/ws/agents/runtime",
+            get(ws_domains::ws_agents_runtime_handler),
+        )
         .route("/api/channels", get(api::list_channels_handler))
         .route("/api/tunnels", get(api::list_tunnels_handler))
         .route("/api/agents/runtime", get(api::list_agents_runtime_handler))
-        .route(
-            "/api/channels/{kind}/stop",
-            post(api::stop_channel_handler),
-        )
+        .route("/api/channels/{kind}/stop", post(api::stop_channel_handler))
         .route(
             "/api/channels/{kind}/restart",
             post(api::restart_channel_handler),
@@ -182,7 +202,10 @@ pub async fn run_web_server(
             "/api/workspaces",
             get(api::list_workspaces_handler).post(api::add_workspace_handler),
         )
-        .route("/api/workspaces/remove", post(api::remove_workspace_handler))
+        .route(
+            "/api/workspaces/remove",
+            post(api::remove_workspace_handler),
+        )
         .route(
             "/api/workspaces/default",
             axum::routing::put(api::set_default_workspace_handler),
@@ -202,6 +225,22 @@ pub async fn run_web_server(
     // short-lived authentication token (10-min TTL, cryptographically random;
     // single source of truth: `common::previews::SHARE_TTL_SECS`).
     let public = Router::new()
+        // Profile-launched CLIs cannot attach the VibeAround bearer token
+        // separately from their upstream OpenAI API key. This route is
+        // localhost-only and requires the CLI's Authorization header; it
+        // never reads API keys from profile files.
+        .route(
+            "/openai-proxy/{profile_id}/{launch_id}/v1/responses",
+            post(openai_proxy::responses_handler),
+        )
+        .route(
+            "/openai-proxy/{profile_id}/v1/responses",
+            post(openai_proxy::legacy_responses_handler),
+        )
+        .route(
+            "/internal/agent-hooks/codex",
+            post(agent_hooks::codex_hook_handler),
+        )
         // Pairing API: no auth required (pairing IS the auth flow).
         .route("/api/pair/start", post(pair::start_handler))
         .route("/api/pair/status", get(pair::status_handler))
@@ -236,7 +275,10 @@ pub async fn run_web_server(
         }
         e
     })?;
-    println!("[VibeAround] Web server listening on http://127.0.0.1:{}", port);
+    println!(
+        "[VibeAround] Web server listening on http://127.0.0.1:{}",
+        port
+    );
     axum::serve(listener, app).await?;
     Ok(())
 }

@@ -28,9 +28,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::conversations::ConversationManager;
 use crate::process::bridge::{BridgeFactory, ProcessBridge};
 use crate::process::registry::ProcessKind;
-use crate::process::supervisor::{
-    ProcessEvent, ProcessId, RestartPolicy, SpawnSpec, Supervisor,
-};
+use crate::process::supervisor::{ProcessEvent, ProcessId, RestartPolicy, SpawnSpec, Supervisor};
 
 use super::manifest::ChannelPluginManifest;
 use super::plugin_bridge::ChannelPluginBridge;
@@ -200,9 +198,7 @@ impl ChannelMonitor {
         let id = self
             .lookup(kind)
             .ok_or_else(|| format!("unknown channel: {}", kind))?;
-        self.supervisor
-            .force_start(id)
-            .map_err(|e| e.to_string())
+        self.supervisor.force_start(id).map_err(|e| e.to_string())
     }
 
     pub fn snapshot(&self) -> Vec<ChannelStatusSnapshot> {
@@ -282,10 +278,7 @@ pub fn touch_weak(weak: &Weak<ChannelMonitor>, kind: &str) {
 /// Forwarder that republishes supervisor events as `()` pings, filtered
 /// to `ChannelPlugin` entries so the Dashboard WS doesn't re-render for
 /// unrelated PTY / tunnel state.
-async fn forward_events(
-    mut rx: broadcast::Receiver<ProcessEvent>,
-    tx: broadcast::Sender<()>,
-) {
+async fn forward_events(mut rx: broadcast::Receiver<ProcessEvent>, tx: broadcast::Sender<()>) {
     loop {
         match rx.recv().await {
             Ok(event) if event.kind == ProcessKind::ChannelPlugin => {

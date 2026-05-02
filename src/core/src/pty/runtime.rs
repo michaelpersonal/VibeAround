@@ -25,40 +25,14 @@ fn shell_command() -> CommandBuilder {
     c
 }
 
-/// Exec string for each tool when wrapping with cd.
-fn tool_exec_argv(tool: PtyTool, tmux_session: Option<&str>) -> String {
-    if let Some(name) = tmux_session {
-        let escaped = name.replace('\'', "'\"'\"'");
-        let detach = crate::config::ensure_loaded().tmux_detach_others;
-        return if detach {
-            format!(
-                "tmux has-session -t '{}' 2>/dev/null && exec tmux attach -d -t '{}' || exec tmux new-session -s '{}'",
-                escaped, escaped, escaped
-            )
-        } else {
-            format!(
-                "tmux has-session -t '{}' 2>/dev/null && exec tmux attach -t '{}' || exec tmux new-session -s '{}'",
-                escaped, escaped, escaped
-            )
-        };
+fn set_pty_env(c: &mut CommandBuilder, theme: Option<&str>, extra_env: &[(String, String)]) {
+    for (key, val) in crate::process::env::enriched_env() {
+        c.env(key, val);
     }
-    // Map PtyTool to agent ID for resource lookup
-    let agent_id = match tool {
-        PtyTool::Generic => return "bash -l".to_string(),
-        PtyTool::Claude => "claude",
-        PtyTool::Gemini => "gemini",
-        PtyTool::Codex => "codex",
-        PtyTool::OpenCode => "opencode",
-        PtyTool::Cursor => "cursor",
-        PtyTool::Kiro => "kiro",
-        PtyTool::QwenCode => "qwen-code",
-    };
-    crate::resources::agent_by_id(agent_id)
-        .map(|a| a.pty.command.clone())
-        .unwrap_or_else(|| agent_id.to_string())
-}
-
-fn set_pty_env(c: &mut CommandBuilder, theme: Option<&str>) {
+    // Codex.app launches this process with NO_COLOR=1/TERM=dumb in some
+    // contexts. A web xterm PTY is color-capable, so clear the inherited
+    // opt-out before applying our terminal defaults.
+    c.env_remove("NO_COLOR");
     let pty_env = &crate::resources::PTY_ENV;
     for (key, val) in &pty_env.env {
         c.env(key, val);
@@ -69,15 +43,51 @@ fn set_pty_env(c: &mut CommandBuilder, theme: Option<&str>) {
             c.env("COLORFGBG", &theme_def.colorfgbg);
         }
     }
+    for (key, val) in extra_env {
+        c.env(key, val);
+    }
+    c.env_remove("NO_COLOR");
 }
 
-fn bash_wrapper(script: &str, theme: Option<&str>) -> CommandBuilder {
+fn bash_wrapper(
+    script: &str,
+    theme: Option<&str>,
+    extra_env: &[(String, String)],
+) -> CommandBuilder {
     let mut wrap = CommandBuilder::new("bash");
     wrap.arg("-c");
     wrap.arg(script);
-    set_pty_env(&mut wrap, theme);
+    set_pty_env(&mut wrap, theme, extra_env);
     wrap.env_remove("TMUX");
     wrap
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+/// Exec string for each tool when wrapping with cd/tmux.
+fn tool_exec_argv(tool: PtyTool, tmux_session: Option<&str>) -> String {
+    if let Some(name) = tmux_session {
+        let session = shell_quote(name);
+        let detach = crate::config::ensure_loaded().tmux_detach_others;
+        return if detach {
+            format!(
+                "tmux has-session -t {session} 2>/dev/null && exec tmux attach -d -t {session} || exec tmux new-session -s {session}"
+            )
+        } else {
+            format!(
+                "tmux has-session -t {session} 2>/dev/null && exec tmux attach -t {session} || exec tmux new-session -s {session}"
+            )
+        };
+    }
+
+    let Some(agent_id) = tool.agent_id() else {
+        return "bash -l".to_string();
+    };
+    crate::resources::agent_by_id(agent_id)
+        .map(|a| a.pty.command.clone())
+        .unwrap_or_else(|| agent_id.to_string())
 }
 
 fn command_for_tool(
@@ -85,15 +95,32 @@ fn command_for_tool(
     cwd: Option<&Path>,
     tmux_session: Option<&str>,
     theme: Option<&str>,
+    command_override: Option<&str>,
+    extra_env: &[(String, String)],
 ) -> CommandBuilder {
+    if let Some(command) = command_override {
+        let line = if let Some(dir) = cwd {
+            format!(
+                "cd {} && exec {}",
+                shell_quote(&dir.to_string_lossy()),
+                command
+            )
+        } else {
+            format!("exec {}", command)
+        };
+        return bash_wrapper(&line, theme, extra_env);
+    }
+
     if let Some(dir) = cwd {
         #[cfg(unix)]
         {
-            let path = dir.to_string_lossy();
-            let escaped = path.replace('\'', "'\"'\"'");
             let exec = tool_exec_argv(tool, tmux_session);
-            let line = format!("cd '{}' && exec {}", escaped, exec);
-            return bash_wrapper(&line, theme);
+            let line = format!(
+                "cd {} && exec {}",
+                shell_quote(&dir.to_string_lossy()),
+                exec
+            );
+            return bash_wrapper(&line, theme, extra_env);
         }
         #[cfg(not(unix))]
         let _ = dir;
@@ -101,13 +128,13 @@ fn command_for_tool(
 
     if tmux_session.is_some() {
         let exec = tool_exec_argv(tool, tmux_session);
-        return bash_wrapper(&exec, theme);
+        return bash_wrapper(&exec, theme, extra_env);
     }
 
     let mut c = match tool {
         PtyTool::Generic => {
             let mut cmd = shell_command();
-            set_pty_env(&mut cmd, theme);
+            set_pty_env(&mut cmd, theme, extra_env);
             return cmd;
         }
         PtyTool::Claude => {
@@ -122,7 +149,7 @@ fn command_for_tool(
         PtyTool::Kiro => CommandBuilder::new("kiro-cli"),
         PtyTool::QwenCode => CommandBuilder::new("qwen"),
     };
-    set_pty_env(&mut c, theme);
+    set_pty_env(&mut c, theme, extra_env);
     c
 }
 
@@ -147,6 +174,63 @@ pub enum PtyTool {
     QwenCode,
 }
 
+impl PtyTool {
+    pub fn agent_id(self) -> Option<&'static str> {
+        match self {
+            PtyTool::Generic => None,
+            PtyTool::Claude => Some("claude"),
+            PtyTool::Gemini => Some("gemini"),
+            PtyTool::Codex => Some("codex"),
+            PtyTool::OpenCode => Some("opencode"),
+            PtyTool::Cursor => Some("cursor"),
+            PtyTool::Kiro => Some("kiro"),
+            PtyTool::QwenCode => Some("qwen-code"),
+        }
+    }
+
+    pub fn from_agent_id(agent_id: &str) -> Option<Self> {
+        match agent_id {
+            "claude" => Some(PtyTool::Claude),
+            "gemini" => Some(PtyTool::Gemini),
+            "codex" => Some(PtyTool::Codex),
+            "opencode" => Some(PtyTool::OpenCode),
+            "cursor" => Some(PtyTool::Cursor),
+            "kiro" => Some(PtyTool::Kiro),
+            "qwen-code" => Some(PtyTool::QwenCode),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pty_tool_agent_ids_round_trip() {
+        for tool in [
+            PtyTool::Claude,
+            PtyTool::Gemini,
+            PtyTool::Codex,
+            PtyTool::OpenCode,
+            PtyTool::Cursor,
+            PtyTool::Kiro,
+            PtyTool::QwenCode,
+        ] {
+            let agent_id = tool.agent_id().expect("tool should map to an agent");
+            assert_eq!(PtyTool::from_agent_id(agent_id), Some(tool));
+        }
+        assert_eq!(PtyTool::Generic.agent_id(), None);
+        assert_eq!(PtyTool::from_agent_id("missing"), None);
+    }
+
+    #[test]
+    fn shell_quote_handles_single_quotes() {
+        assert_eq!(shell_quote("plain"), "'plain'");
+        assert_eq!(shell_quote("team's session"), "'team'\"'\"'s session'");
+    }
+}
+
 pub struct PtyBridge {
     pub writer: Arc<std::sync::Mutex<Box<dyn Write + Send>>>,
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
@@ -167,15 +251,23 @@ impl OscColorResponder {
         let (fg, bg) = (theme_def.fg.as_str(), theme_def.bg.as_str());
         let osc10 = format!(
             "\x1b]10;rgb:{r}{r}/{g}{g}/{b}{b}\x1b\\",
-            r = &fg[0..2], g = &fg[2..4], b = &fg[4..6],
+            r = &fg[0..2],
+            g = &fg[2..4],
+            b = &fg[4..6],
         )
         .into_bytes();
         let osc11 = format!(
             "\x1b]11;rgb:{r}{r}/{g}{g}/{b}{b}\x1b\\",
-            r = &bg[0..2], g = &bg[2..4], b = &bg[4..6],
+            r = &bg[0..2],
+            g = &bg[2..4],
+            b = &bg[4..6],
         )
         .into_bytes();
-        Some(Self { osc10, osc11, writer })
+        Some(Self {
+            osc10,
+            osc11,
+            writer,
+        })
     }
 
     fn intercept(&self, chunk: &[u8]) {
@@ -207,23 +299,60 @@ pub fn spawn_pty(
     tmux_session: Option<String>,
     theme: Option<String>,
     initial_size: Option<(u16, u16)>,
-) -> anyhow::Result<(PtyBridge, mpsc::Receiver<Vec<u8>>, ResizeSender, mpsc::Receiver<PtyRunState>)> {
+) -> anyhow::Result<(
+    PtyBridge,
+    mpsc::Receiver<Vec<u8>>,
+    ResizeSender,
+    mpsc::Receiver<PtyRunState>,
+)> {
+    spawn_pty_with_command(
+        tool,
+        cwd,
+        tmux_session,
+        theme,
+        initial_size,
+        None,
+        Vec::new(),
+    )
+}
+
+pub(super) fn spawn_pty_with_command(
+    tool: PtyTool,
+    cwd: Option<std::path::PathBuf>,
+    tmux_session: Option<String>,
+    theme: Option<String>,
+    initial_size: Option<(u16, u16)>,
+    command_override: Option<String>,
+    extra_env: Vec<(String, String)>,
+) -> anyhow::Result<(
+    PtyBridge,
+    mpsc::Receiver<Vec<u8>>,
+    ResizeSender,
+    mpsc::Receiver<PtyRunState>,
+)> {
     let pty_system = native_pty_system();
     let (cols, rows) = initial_size.unwrap_or((80, 24));
-    let pair = pty_system.openpty(PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
-    }).context("Failed to open PTY")?;
+    let pair = pty_system
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .context("Failed to open PTY")?;
 
     let cmd = command_for_tool(
         tool,
         cwd.as_deref(),
         tmux_session.as_deref(),
         theme.as_deref(),
+        command_override.as_deref(),
+        &extra_env,
     );
-    let child = pair.slave.spawn_command(cmd).context("Failed to spawn PTY child process")?;
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .context("Failed to spawn PTY child process")?;
     let child_pid = child.process_id();
     let tool_label = format!("{:?}", tool).to_lowercase();
     proc_log!(
@@ -236,8 +365,14 @@ pub fn spawn_pty(
         tmux = ?tmux_session
     );
 
-    let mut reader = pair.master.try_clone_reader().context("Failed to clone PTY reader")?;
-    let writer = pair.master.take_writer().context("Failed to take PTY writer")?;
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .context("Failed to clone PTY reader")?;
+    let writer = pair
+        .master
+        .take_writer()
+        .context("Failed to take PTY writer")?;
     let master = pair.master;
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
@@ -314,7 +449,10 @@ pub fn spawn_pty(
                         event = "exited",
                         exit_code = code
                     );
-                    let _ = state_tx.blocking_send(PtyRunState::Exited { tool, exit_code: code });
+                    let _ = state_tx.blocking_send(PtyRunState::Exited {
+                        tool,
+                        exit_code: code,
+                    });
                     break;
                 }
                 if !sent_running {

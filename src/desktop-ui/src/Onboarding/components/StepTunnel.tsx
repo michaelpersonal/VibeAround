@@ -1,5 +1,8 @@
 import { Globe } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import type { StepTunnelProps } from "../types";
 
 export function StepTunnel({
@@ -15,6 +18,10 @@ export function StepTunnel({
   cfHostname,
   onCfHostname,
 }: StepTunnelProps) {
+  const orderedTunnels = [...tunnels].sort(
+    (a, b) => tunnelRank(a.id) - tunnelRank(b.id),
+  );
+
   return (
     <div className="space-y-4">
       <div>
@@ -29,18 +36,24 @@ export function StepTunnel({
       </div>
 
       <div className="flex gap-2">
-        {tunnels.map((tp) => (
-          <button
+        {orderedTunnels.map((tp) => (
+          <Button
             key={tp.id}
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => onProvider(tp.id)}
-            className={`flex-1 text-xs font-medium py-2 rounded-md border transition-colors ${
+            className={`flex-1 text-xs ${
               provider === tp.id
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border text-muted-foreground hover:border-border/80"
+                ? "border-primary bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary"
+                : "text-muted-foreground"
             }`}
           >
             {tp.display_name}
-          </button>
+            {tp.id === "cloudflare" && (
+              <span className="ml-1 text-[10px] opacity-70">Recommended</span>
+            )}
+          </Button>
         ))}
       </div>
 
@@ -48,22 +61,22 @@ export function StepTunnel({
         <div className="space-y-2">
           <label className="block">
             <span className="text-xs text-muted-foreground">Auth Token</span>
-            <input
+            <Input
               type="password"
               value={ngrokToken}
               onChange={(event) => onNgrokToken(event.target.value)}
               placeholder="2ljk…"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/40"
+              className="mt-1"
             />
           </label>
           <label className="block">
             <span className="text-xs text-muted-foreground">Domain (optional)</span>
-            <input
+            <Input
               type="text"
               value={ngrokDomain}
               onChange={(event) => onNgrokDomain(event.target.value)}
               placeholder="myapp.ngrok-free.app"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/40"
+              className="mt-1"
             />
           </label>
         </div>
@@ -73,26 +86,41 @@ export function StepTunnel({
         <div className="space-y-2">
           <label className="block">
             <span className="text-xs text-muted-foreground">Tunnel Token</span>
-            <input
+            <Input
               type="password"
               value={cfToken}
               onChange={(event) => onCfToken(event.target.value)}
               placeholder="eyJh…"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/40"
+              className="mt-1"
             />
           </label>
           <label className="block">
             <span className="text-xs text-muted-foreground">Hostname (optional)</span>
-            <input
+            <Input
               type="text"
               value={cfHostname}
               onChange={(event) => onCfHostname(event.target.value)}
               placeholder="vibe.yourdomain.com"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/40"
+              className="mt-1"
             />
           </label>
         </div>
       )}
     </div>
   );
+}
+
+function tunnelRank(id: string): number {
+  switch (id) {
+    case "cloudflare":
+      return 0;
+    case "none":
+      return 1;
+    case "localtunnel":
+      return 2;
+    case "ngrok":
+      return 3;
+    default:
+      return 10;
+  }
 }

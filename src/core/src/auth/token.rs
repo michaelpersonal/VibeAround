@@ -86,8 +86,7 @@ pub fn write_token_file(port: u16, token: &AuthToken) -> std::io::Result<()> {
         port,
         token: token.as_str().to_string(),
     };
-    let body = serde_json::to_string_pretty(&record)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let body = serde_json::to_string_pretty(&record).map_err(std::io::Error::other)?;
     fs::write(&path, body)?;
     set_owner_only(&path)?;
     Ok(())

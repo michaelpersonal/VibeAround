@@ -2,6 +2,9 @@
 //! All config comes from ~/.vibearound/settings.json.
 //! Callers load a fresh Config when they need one.
 
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
@@ -19,7 +22,8 @@ pub const DEFAULT_PORT: u16 = 12358;
 /// Minimal default settings.json content, embedded at compile time.
 const DEFAULT_SETTINGS_JSON: &str = r#"{
   "workspaces": [],
-  "default_workspace": ""
+  "default_workspace": "",
+  "default_profiles": {}
 }"#;
 
 /// User home directory (HOME on Unix, USERPROFILE on Windows).
@@ -69,16 +73,10 @@ fn ensure_rustls_provider() {
 }
 
 /// Per-channel verbose/output settings for IM.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ImVerboseConfig {
     pub show_thinking: bool,
     pub show_tool_use: bool,
-}
-
-impl Default for ImVerboseConfig {
-    fn default() -> Self {
-        Self { show_thinking: false, show_tool_use: false }
-    }
 }
 
 /// Cached config from settings.json.
@@ -93,12 +91,15 @@ pub struct Config {
     // --- Workspaces ---
     /// User-added project folders (not including the built-in ~/.vibearound/workspaces/).
     pub workspaces: Vec<PathBuf>,
-    /// User override for default workspace. None = use built-in per-agent default.
+    /// User override for default workspace. None = use the built-in workspaces root.
     pub default_workspace: Option<PathBuf>,
     pub preview_base_url: Option<String>,
     pub tmux_detach_others: bool,
     // --- Agents ---
     pub default_agent: String,
+    /// Per-agent default profile id used when a route has not chosen a
+    /// profile explicitly. Keys are canonical agent ids.
+    pub default_profiles: BTreeMap<String, String>,
     /// Subset of agent IDs from `resources/agents.json` the user has enabled.
     /// Validated at load time — entries that don't resolve via
     /// `resources::agent_by_alias` are dropped.
@@ -129,14 +130,24 @@ impl Config {
 
     /// Resolve the workspace directory for an agent session.
     /// - If user set a default_workspace → use it directly
-    /// - Otherwise → ~/.vibearound/workspaces/{agent_kind}-default
-    pub fn resolve_workspace(&self, agent_kind: &str) -> PathBuf {
+    /// - Otherwise → ~/.vibearound/workspaces
+    pub fn resolve_workspace(&self, _agent_kind: &str) -> PathBuf {
         if let Some(ref ws) = self.default_workspace {
             ws.clone()
         } else {
-            let subdir = format!("{}-default", agent_kind);
-            data_dir().join("workspaces").join(subdir)
+            builtin_workspaces_dir()
         }
+    }
+
+    /// Resolve the default profile id for an agent alias/id.
+    pub fn default_profile_for(&self, agent_kind: &str) -> Option<String> {
+        let agent_id = crate::resources::agent_by_alias(agent_kind)
+            .map(|def| def.id.as_str())
+            .unwrap_or(agent_kind);
+        self.default_profiles
+            .get(agent_id)
+            .cloned()
+            .filter(|s| !s.trim().is_empty())
     }
 
     /// All available workspaces: the built-in root + user-added paths.
@@ -272,6 +283,25 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "claude".to_string());
 
+    let default_profiles = root
+        .get("default_profiles")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(agent, profile)| {
+                    let profile = profile.as_str()?.trim();
+                    if profile.is_empty() {
+                        return None;
+                    }
+                    let agent_id = crate::resources::agent_by_alias(agent)
+                        .map(|def| def.id.clone())
+                        .unwrap_or_else(|| agent.to_string());
+                    Some((agent_id, profile.to_string()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+
     let enabled_agents = root
         .get("enabled_agents")
         .and_then(|v| v.as_array())
@@ -295,6 +325,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         preview_base_url,
         tmux_detach_others,
         default_agent,
+        default_profiles,
         enabled_agents,
         raw_channels,
     }
@@ -326,8 +357,10 @@ fn parse_verbose_config(channel_obj: Option<&serde_json::Value>) -> ImVerboseCon
 
 /// Expand ~ to home directory in a path string.
 fn expand_home(s: &str) -> PathBuf {
-    if s.starts_with("~/") || s == "~" {
-        home_dir().join(&s[2..])
+    if s == "~" {
+        home_dir()
+    } else if let Some(rest) = s.strip_prefix("~/") {
+        home_dir().join(rest)
     } else {
         PathBuf::from(s)
     }
@@ -338,18 +371,41 @@ pub fn builtin_workspaces_dir() -> PathBuf {
     data_dir().join("workspaces")
 }
 
-/// Read + write settings.json atomically (for API-driven updates).
+/// Read + write settings.json (for API-driven updates).
 /// Automatically reloads the in-memory config cache after writing.
 pub fn update_settings_json(mutator: impl FnOnce(&mut serde_json::Value)) -> Result<(), String> {
     let path = data_dir().join("settings.json");
     let data = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
     let mut root: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
     mutator(&mut root);
-    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty).map_err(|e| e.to_string())?;
+    write_settings_json_locked(&root)?;
     // Invalidate cache so next ensure_loaded() picks up the change.
     *CONFIG_CACHE.write() = None;
     Ok(())
+}
+
+/// Replace settings.json with an already-mutated JSON value. Use this for
+/// whole-file settings flows such as onboarding. Incremental updates should
+/// prefer [`update_settings_json`] so they merge against the latest on-disk
+/// content.
+pub fn write_settings_json(root: &serde_json::Value) -> Result<(), String> {
+    write_settings_json_locked(root)?;
+    *CONFIG_CACHE.write() = None;
+    Ok(())
+}
+
+fn write_settings_json_locked(root: &serde_json::Value) -> Result<(), String> {
+    let path = data_dir().join("settings.json");
+    write_settings_json_to_path(&path, root)
+}
+
+fn write_settings_json_to_path(path: &Path, root: &serde_json::Value) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let pretty = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
+    fs::write(path, pretty).map_err(|e| e.to_string())?;
+    crate::auth::set_owner_only(path).map_err(|e| e.to_string())
 }
 
 impl Default for Config {
@@ -365,8 +421,71 @@ impl Default for Config {
             preview_base_url: None,
             tmux_detach_others: true,
             default_agent: "claude".to_string(),
+            default_profiles: BTreeMap::new(),
             enabled_agents: crate::resources::AGENTS.iter().map(|a| a.id.clone()).collect(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!(
+            "vibearound-config-{name}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn settings_write_replaces_file() {
+        let dir = unique_test_dir("write");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, "{}").unwrap();
+
+        write_settings_json_to_path(&path, &serde_json::json!({ "workspaces": [] })).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
+            serde_json::json!({ "workspaces": [] })
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn settings_write_creates_parent_dir() {
+        let dir = unique_test_dir("parent");
+        let path = dir.join("nested").join("settings.json");
+
+        write_settings_json_to_path(&path, &serde_json::json!({ "onboarded": true })).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
+            serde_json::json!({ "onboarded": true })
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn expand_home_handles_bare_home() {
+        assert_eq!(expand_home("~"), home_dir());
+        assert_eq!(expand_home("~/project"), home_dir().join("project"));
     }
 }

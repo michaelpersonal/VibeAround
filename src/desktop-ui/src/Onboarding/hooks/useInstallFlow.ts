@@ -38,7 +38,12 @@ export function useInstallFlow(): UseInstallFlowResult {
         settings: finalSettings,
       });
       setInstallTasks(
-        manifest.map((t) => ({ id: t.id, label: t.label, status: "pending" as const })),
+        manifest.map((t) => ({
+          id: t.id,
+          label: t.label,
+          status: "pending" as const,
+          logs: [],
+        })),
       );
       setIsInstalling(true);
 
@@ -52,7 +57,12 @@ export function useInstallFlow(): UseInstallFlowResult {
         setInstallTasks((prev) =>
           prev.map((task) =>
             task.id === id
-              ? { ...task, status: status as InstallTaskProgress["status"], message }
+              ? {
+                  ...task,
+                  status: status as InstallTaskProgress["status"],
+                  message,
+                  logs: message ? [...(task.logs ?? []), message] : task.logs,
+                }
               : task,
           ),
         );
@@ -81,7 +91,12 @@ export function useInstallFlow(): UseInstallFlowResult {
       setInstallTasks((prev) =>
         prev.map((task) =>
           task.status === "pending" || task.status === "running"
-            ? { ...task, status: "cancelled" as const, message: "Cancelled" }
+            ? {
+                ...task,
+                status: "cancelled" as const,
+                message: "Cancelled",
+                logs: [...(task.logs ?? []), "Cancelled"],
+              }
             : task,
         ),
       );

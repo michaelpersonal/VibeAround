@@ -1,0 +1,106 @@
+import { invoke } from "@tauri-apps/api/core";
+
+import type {
+  CatalogEntry,
+  CompatibilityProxyMode,
+  ProfileDef,
+  ProfileSummary,
+} from "./types";
+
+export function listProfiles(): Promise<ProfileSummary[]> {
+  return invoke<ProfileSummary[]>("profiles_list");
+}
+
+export function getProfile(id: string): Promise<ProfileDef> {
+  return invoke<ProfileDef>("profiles_get", { id });
+}
+
+export function upsertProfile(profile: ProfileDef): Promise<void> {
+  return invoke<void>("profiles_upsert", { profile });
+}
+
+export function deleteProfile(id: string): Promise<void> {
+  return invoke<void>("profiles_delete", { id });
+}
+
+export function reorderProfiles(profileIds: string[]): Promise<void> {
+  return invoke<void>("profiles_reorder", { profileIds });
+}
+
+export function launchProfile(id: string, launchTarget: string): Promise<void> {
+  return invoke<void>("profiles_launch", { id, launchTarget });
+}
+
+export function launchDefault(): Promise<void> {
+  return invoke<void>("profiles_launch_default");
+}
+
+/** Direct launch — no env, CLI uses whatever global OAuth the user has. */
+export function launchDirect(agentId: string): Promise<void> {
+  return invoke<void>("profiles_launch_direct", { agentId });
+}
+
+export interface AgentSummary {
+  id: string;
+  display_name: string;
+  description: string;
+  install_type: string | null;
+}
+
+/** Reuses the onboarding command that returns all CLIs in agents.json. */
+export function listAgents(): Promise<AgentSummary[]> {
+  return invoke<AgentSummary[]>("list_agents");
+}
+
+export interface TerminalOption {
+  id: string;
+  label: string;
+  installed: boolean;
+}
+
+export interface LauncherPreferences {
+  terminal: string;
+  options: TerminalOption[];
+  workspace: string;
+  workspaceOptions: WorkspaceOption[];
+  defaultAgent: string;
+  defaultProfiles: Record<string, string>;
+  compatibilityProxy: CompatibilityProxyMode;
+}
+
+export interface WorkspaceOption {
+  path: string;
+  label: string;
+  detail: string;
+  kind: string;
+  isDefault: boolean;
+}
+
+export function getLauncherPreferences(): Promise<LauncherPreferences> {
+  return invoke<LauncherPreferences>("launcher_get_preferences");
+}
+
+export function setLauncherTerminal(terminalId: string): Promise<void> {
+  return invoke<void>("launcher_set_terminal", { terminalId });
+}
+
+export function setLauncherWorkspace(workspacePath: string): Promise<void> {
+  return invoke<void>("launcher_set_workspace", { workspacePath });
+}
+
+export function setLauncherCompatibilityProxy(
+  mode: CompatibilityProxyMode,
+): Promise<void> {
+  return invoke<void>("launcher_set_compatibility_proxy", { mode });
+}
+
+export function setLauncherDefault(
+  agentId: string,
+  profileId: string | null,
+): Promise<void> {
+  return invoke<void>("launcher_set_default", { agentId, profileId });
+}
+
+export function listCatalog(): Promise<CatalogEntry[]> {
+  return invoke<CatalogEntry[]>("profiles_catalog");
+}

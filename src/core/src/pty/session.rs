@@ -31,6 +31,12 @@ pub struct SessionMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_path: Option<String>,
     pub tool: PtyTool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch_target: Option<String>,
     /// If this session is attached to a tmux session, its name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tmux_session: Option<String>,
@@ -66,6 +72,12 @@ impl CircularBuffer {
     pub fn dump(&self) -> Vec<u8> {
         let g = self.data.lock().expect("buffer mutex");
         g.clone()
+    }
+}
+
+impl Default for CircularBuffer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

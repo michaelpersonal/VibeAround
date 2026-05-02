@@ -10,6 +10,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 const STORAGE_KEY = "vibearound.auth.token";
 const POLL_INTERVAL_MS = 2000;
 const CODE_TTL_SECS = 60;
@@ -221,13 +224,13 @@ export function PairingGate() {
 
         {/* Refresh button when expired */}
         {status === "expired" && (
-          <button
+          <Button
             type="button"
             onClick={startPairing}
-            className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            className="w-full"
           >
             Generate new code
-          </button>
+          </Button>
         )}
 
         {/* Token fallback */}
@@ -246,7 +249,7 @@ export function PairingGate() {
                   Session auth token (from{" "}
                   <span className="font-mono">~/.vibearound/auth.json</span>)
                 </span>
-                <input
+                <Input
                   type="text"
                   autoComplete="off"
                   spellCheck={false}
@@ -256,18 +259,19 @@ export function PairingGate() {
                     if (tokenError) setTokenError(null);
                   }}
                   placeholder="hex token…"
-                  className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/60"
+                  className="font-mono text-xs"
                 />
               </label>
               {tokenError && (
                 <p className="text-xs text-destructive">{tokenError}</p>
               )}
-              <button
+              <Button
                 type="submit"
-                className="w-full rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                size="sm"
+                className="w-full text-xs"
               >
                 Unlock dashboard
-              </button>
+              </Button>
             </form>
           </details>
         )}

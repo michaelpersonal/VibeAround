@@ -5,6 +5,7 @@
 //! - Lazy install: `Agent::spawn` falls through here when a binary is missing.
 
 use anyhow::Context;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::resources;
 
@@ -25,6 +26,28 @@ pub async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
 pub async fn auto_install_npm_agent_with_output(
     npm_package: &str,
 ) -> anyhow::Result<InstallOutput> {
+    auto_install_npm_agent_with_progress(npm_package, |_| {}).await
+}
+
+pub async fn auto_install_npm_agent_with_progress<F>(
+    npm_package: &str,
+    on_log: F,
+) -> anyhow::Result<InstallOutput>
+where
+    F: FnMut(String),
+{
+    auto_install_npm_agent_with_progress_and_cancel(npm_package, on_log, || false).await
+}
+
+pub async fn auto_install_npm_agent_with_progress_and_cancel<F, C>(
+    npm_package: &str,
+    mut on_log: F,
+    is_cancelled: C,
+) -> anyhow::Result<InstallOutput>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
     let plugins_dir = crate::process::env::acp_agents_dir();
     std::fs::create_dir_all(&plugins_dir).with_context(|| format!("creating {:?}", plugins_dir))?;
 
@@ -35,12 +58,12 @@ pub async fn auto_install_npm_agent_with_output(
             .context("writing package.json")?;
     }
 
-    let output = crate::process::env::command("npm")
-        .args(["install", npm_package])
-        .current_dir(&plugins_dir)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
+    let output = npm_command_streaming(
+        &["install", npm_package],
+        &plugins_dir,
+        &mut on_log,
+        is_cancelled,
+    )
         .await
         .with_context(|| format!("running npm install {}", npm_package))?;
 
@@ -52,6 +75,144 @@ pub async fn auto_install_npm_agent_with_output(
     }
     tracing::info!("[agent] installed {}", npm_package);
     Ok(InstallOutput { stdout, stderr })
+}
+
+async fn npm_process(
+    args: &[&str],
+    cwd: &std::path::Path,
+) -> std::io::Result<tokio::process::Command> {
+    let node_info = crate::process::env::command("node")
+        .args(["-p", "process.execPath"])
+        .output()
+        .await?;
+    let node_exec = String::from_utf8_lossy(&node_info.stdout)
+        .trim()
+        .to_string();
+    let node_dir = std::path::Path::new(&node_exec).parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "cannot determine node install directory",
+        )
+    })?;
+
+    let candidates = [
+        node_dir
+            .join("node_modules")
+            .join("npm")
+            .join("bin")
+            .join("npm-cli.js"),
+        node_dir.join("../lib/node_modules/npm/bin/npm-cli.js"),
+        std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
+        std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
+    ];
+    let npm_cli = candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "npm-cli.js not found in any of: {:?} — is npm installed with Node.js?",
+                    candidates
+                ),
+            )
+        })?;
+
+    let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
+    node_args.extend(args.iter().map(|s| s.to_string()));
+
+    let mut command = crate::process::env::command("node");
+    command
+        .args(&node_args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    Ok(command)
+}
+
+async fn npm_command_streaming<F>(
+    args: &[&str],
+    cwd: &std::path::Path,
+    on_log: &mut F,
+    is_cancelled: impl Fn() -> bool,
+) -> std::io::Result<std::process::Output>
+where
+    F: FnMut(String),
+{
+    let mut child = npm_process(args, cwd).await?.spawn()?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(&'static str, String)>();
+
+    if let Some(stdout) = stdout {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = tx.send(("stdout", line));
+            }
+        });
+    }
+    if let Some(stderr) = stderr {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = tx.send(("stderr", line));
+            }
+        });
+    }
+    drop(tx);
+
+    let mut stdout_buf = String::new();
+    let mut stderr_buf = String::new();
+    let mut cancel_tick = tokio::time::interval(std::time::Duration::from_millis(200));
+    let status = loop {
+        tokio::select! {
+            _ = cancel_tick.tick() => {
+                if is_cancelled() {
+                    let _ = child.start_kill();
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "install cancelled",
+                    ));
+                }
+                if let Some(status) = child.try_wait()? {
+                    break status;
+                }
+            }
+            maybe = rx.recv() => {
+                if let Some((stream, line)) = maybe {
+                    if stream == "stdout" {
+                        stdout_buf.push_str(&line);
+                        stdout_buf.push('\n');
+                    } else {
+                        stderr_buf.push_str(&line);
+                        stderr_buf.push('\n');
+                    }
+                    on_log(format!("{stream}: {line}"));
+                }
+            }
+        }
+    };
+
+    while let Ok((stream, line)) = rx.try_recv() {
+        if stream == "stdout" {
+            stdout_buf.push_str(&line);
+            stdout_buf.push('\n');
+        } else {
+            stderr_buf.push_str(&line);
+            stderr_buf.push('\n');
+        }
+        on_log(format!("{stream}: {line}"));
+    }
+
+    Ok(std::process::Output {
+        status,
+        stdout: stdout_buf.into_bytes(),
+        stderr: stderr_buf.into_bytes(),
+    })
 }
 
 /// Install a native agent CLI by running its official install command.
@@ -100,6 +261,11 @@ pub fn is_program_available(program: &str) -> bool {
 
 /// Pre-install all ACP agent packages (npm or binary) for enabled agents.
 pub async fn install_acp_agents(settings: &serde_json::Value) {
+    if !has_enabled_channels(settings) {
+        tracing::info!("[agent] no IM channels enabled; skipping ACP agent preinstall");
+        return;
+    }
+
     let all_agents = resources::agent_ids();
     let enabled_agents = super::resolve_enabled_agents(settings, &all_agents);
 
@@ -130,4 +296,12 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
             }
         }
     }
+}
+
+fn has_enabled_channels(settings: &serde_json::Value) -> bool {
+    settings
+        .get("channels")
+        .and_then(|v| v.as_object())
+        .map(|channels| !channels.is_empty())
+        .unwrap_or(false)
 }

@@ -28,6 +28,7 @@ function App() {
     maximizedSession,
     sessionsLoading,
     addCli,
+    addProfileCli,
     attachTmux,
     closeSession,
     setSessionState,
@@ -78,6 +79,7 @@ function App() {
             tmuxAvailable={tmux.available}
             tmuxSessions={tmux.sessions}
             onAddCli={addCli}
+            onAddProfileCli={addProfileCli}
             onAttachTmux={attachTmux}
             onRefreshTmux={tmux.refresh}
           />
@@ -120,6 +122,7 @@ function App() {
                   tmuxAvailable={tmux.available}
                   tmuxSessions={tmux.sessions}
                   onAddCli={addCli}
+                  onAddProfileCli={addProfileCli}
                   onAttachTmux={attachTmux}
                   onRefreshTmux={tmux.refresh}
                 />

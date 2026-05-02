@@ -58,6 +58,8 @@ pub struct Conversation {
     event_tx: broadcast::Sender<SystemEvent>,
     /// Cached available commands from the agent's `available_commands_update` notification.
     agent_commands: Mutex<serde_json::Value>,
+    /// Last IM session ID written to the append-only startup index.
+    logged_session_id: Mutex<Option<String>>,
     // --- Handover state (consumed once on next prompt) ---
     handover_resume_session_id: Mutex<Option<String>>,
     handover_cwd: Mutex<Option<String>>,
@@ -91,6 +93,7 @@ impl Conversation {
             started_at: unix_now_secs(),
             event_tx,
             agent_commands: Mutex::new(serde_json::Value::Array(vec![])),
+            logged_session_id: Mutex::new(None),
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
             suppress_replay: Mutex::new(None),
@@ -106,11 +109,13 @@ impl Conversation {
         cli_kind: String,
         resume_session_id: String,
         cwd: Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
+        let cli_kind = crate::resources::resolve_agent_id(&cli_kind).map_err(anyhow::Error::msg)?;
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(cli_kind);
         *self.handover_resume_session_id.lock().await = Some(resume_session_id);
         *self.handover_cwd.lock().await = cwd;
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -256,7 +261,9 @@ impl Conversation {
     }
 
     /// Switch agent kind — kill current agent, next prompt spawns a new one.
-    pub async fn switch_agent(&self, agent_kind: String) {
+    pub async fn switch_agent(&self, agent_kind: String) -> anyhow::Result<String> {
+        let agent_kind =
+            crate::resources::resolve_agent_id(&agent_kind).map_err(anyhow::Error::msg)?;
         tracing::info!(
             "[Conversation] switch_agent route={} new_kind={}",
             self.route, agent_kind
@@ -268,6 +275,7 @@ impl Conversation {
             "[Conversation] switch_agent done route={} cli_kind={:?}",
             self.route, agent_kind
         );
+        Ok(agent_kind)
     }
 
     /// Switch profile — kill current agent, next prompt spawns a new one.
@@ -284,6 +292,7 @@ impl Conversation {
     /// Reset session — kill session but keep agent (start a fresh thread).
     pub async fn reset_session(&self) {
         *self.session_id.lock().await = None;
+        *self.logged_session_id.lock().await = None;
         let _ = self.change_tx.send(());
     }
 

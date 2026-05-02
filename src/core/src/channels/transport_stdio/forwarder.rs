@@ -8,7 +8,7 @@
 //! - `SessionReady`       → `ext_notification("va/session_ready", ...)`
 //! - `CommandMenu`        → `ext_notification("va/command_menu", ...)`
 //! - `PermissionRequest`  → real `request_permission` call; response is
-//!                          routed back through `PluginHost::pending_permissions`.
+//!   routed back through `PluginHost::pending_permissions`.
 
 use std::sync::Arc;
 
@@ -32,7 +32,7 @@ pub(super) async fn forward_output_to_plugin(
                 Ok(mut notification) => {
                     notification.session_id = route.chat_id.clone().into();
                     if let Err(error) =
-                        acp::Client::session_notification(&*conn, notification).await
+                        acp::Client::session_notification(conn, notification).await
                     {
                         tracing::info!(
                             "[{}] failed to send session_notification: {}",
@@ -131,7 +131,7 @@ pub(super) async fn forward_output_to_plugin(
                     return;
                 }
             };
-            let response = acp::Client::request_permission(&*conn, request).await;
+            let response = acp::Client::request_permission(conn, request).await;
             let Some((_, (_, tx))) = plugin_host.pending_permissions.remove(&request_id) else {
                 tracing::info!(
                     "[{}] PermissionRequest response dropped — no pending route={} request_id={}",
@@ -175,7 +175,7 @@ async fn send_ext_notification(
             }
         };
     let notification = acp::ExtNotification::new(method, raw_params);
-    if let Err(error) = acp::Client::ext_notification(&*conn, notification).await {
+    if let Err(error) = acp::Client::ext_notification(conn, notification).await {
         tracing::info!(
             "[{}] failed to send ext_notification {}: {}",
             channel_kind, method, error

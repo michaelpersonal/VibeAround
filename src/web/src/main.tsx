@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { PairingGate } from "./PairingGate";
 import { initTheme } from "./lib/theme";
-import { initAuthFromUrl, getAuthToken } from "./lib/auth";
+import { initAuthFromUrl, getAuthToken, isLocalDashboard } from "./lib/auth";
 import "./index.css";
 
 initTheme();
@@ -57,7 +57,8 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
     const isApiCall =
       typeof url === "string" &&
       (url.includes("/api/") || url.includes("/mcp") || url.includes("/ws"));
-    if (isApiCall) {
+    const hadBearerToken = Boolean(window.sessionStorage.getItem("vibearound.auth.token"));
+    if (isApiCall && hadBearerToken) {
       window.sessionStorage.removeItem("vibearound.auth.token");
       // Hard reload so React unmounts and `main.tsx` re-evaluates the gate.
       // Guard with a one-shot flag so a burst of 401s doesn't loop.
@@ -70,12 +71,13 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
   return res;
 };
 
-// Auth gate: render the Unauthorized page if we have no token to send.
+// Auth gate: render the pairing page if we have no token to send.
 // The SPA bundle is fetched through the public `/` + `/assets/*` routes
 // regardless — this only changes what we render once React boots, so
 // anyone who loads the page without a token sees a clear explanation
 // instead of an empty broken-looking dashboard.
-const hasToken = getAuthToken() !== null;
+const hasLocalAccess = isLocalDashboard();
+const hasToken = hasLocalAccess || getAuthToken() !== null;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>{hasToken ? <App /> : <PairingGate />}</StrictMode>

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 
+import { getProfiles, type ProfileLaunchOption } from "@/api/sessions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,6 +20,7 @@ interface AddCliDropdownProps {
   tmuxAvailable: boolean | null;
   tmuxSessions: string[];
   onAddCli: (tool: ToolType) => void;
+  onAddProfileCli: (profileId: string, launchTarget: string) => void;
   onAttachTmux: (sessionName: string) => void;
   onRefreshTmux: () => void;
   trigger?: ReactNode;
@@ -35,13 +37,23 @@ export function AddCliDropdown({
   tmuxAvailable,
   tmuxSessions,
   onAddCli,
+  onAddProfileCli,
   onAttachTmux,
   onRefreshTmux,
   trigger,
 }: AddCliDropdownProps) {
   const [newTmuxName, setNewTmuxName] = useState("");
+  const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
   const align = variant === "top" ? "start" : "center";
   const inputFontClass = variant === "top" ? "text-[11px]" : "text-sm";
+
+  const refreshProfiles = () => {
+    getProfiles()
+      .then((items) => {
+        setProfiles(items.filter((profile) => profile.launch_targets.length > 0));
+      })
+      .catch((e) => console.error("[VibeAround] getProfiles:", e));
+  };
 
   const submitNewTmux = () => {
     const name = newTmuxName.trim();
@@ -67,7 +79,13 @@ export function AddCliDropdown({
   );
 
   return (
-    <DropdownMenu onOpenChange={(open) => open && onRefreshTmux()}>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open) return;
+        onRefreshTmux();
+        refreshProfiles();
+      }}
+    >
       <DropdownMenuTrigger asChild>{trigger ?? defaultTrigger}</DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-[140px] font-mono text-xs" align={align}>
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -78,6 +96,24 @@ export function AddCliDropdown({
             {sessionToName(tool)}
           </DropdownMenuItem>
         ))}
+        {profiles.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Profiles
+            </DropdownMenuLabel>
+            {profiles.flatMap((profile) =>
+              profile.launch_targets.map((target) => (
+                <DropdownMenuItem
+                  key={`${profile.id}:${target.id}`}
+                  onSelect={() => onAddProfileCli(profile.id, target.id)}
+                >
+                  {target.label} · {profile.label}
+                </DropdownMenuItem>
+              )),
+            )}
+          </>
+        )}
         {tmuxAvailable && (
           <>
             <DropdownMenuSeparator />

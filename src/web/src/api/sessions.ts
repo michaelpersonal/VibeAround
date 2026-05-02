@@ -2,19 +2,25 @@
  * Sessions API: list, create, delete. Base URL follows current page (works with tunnel).
  */
 
-import { browserBaseUrl } from "@va/client";
+import {
+  browserBaseUrl,
+  CreateSessionResponseSchema,
+  ProfileLaunchOptionsSchema,
+  SessionListSchema,
+  TmuxSessionsResponseSchema,
+  type CreateSessionResponse,
+  type ProfileLaunchOption,
+  type PtyTool,
+  type SessionListItem,
+  type TmuxSessionsResponse,
+} from "@va/client";
 
-export interface SessionListItem {
-  session_id: string;
-  tool: string;
-  status: string;
-  created_at: number;
-  project_path?: string;
-  tmux_session?: string;
-}
+export type { CreateSessionResponse, ProfileLaunchOption, SessionListItem, TmuxSessionsResponse };
 
 export interface CreateSessionBody {
-  tool: string;
+  tool?: PtyTool;
+  profile_id?: string;
+  launch_target?: string;
   project_path?: string;
   tmux_session?: string;
   /** "dark" | "light" — sets COLORFGBG in PTY env as fallback for non-OSC programs. */
@@ -25,22 +31,16 @@ export interface CreateSessionBody {
   rows?: number;
 }
 
-export interface CreateSessionResponse {
-  session_id: string;
-  tool: string;
-  created_at: number;
-  project_path?: string;
-}
-
-export interface TmuxSessionsResponse {
-  available: boolean;
-  sessions: string[];
-}
-
 export async function getSessions(): Promise<SessionListItem[]> {
   const res = await fetch(`${browserBaseUrl()}/api/sessions`);
   if (!res.ok) throw new Error(`GET /api/sessions: ${res.status}`);
-  return res.json();
+  return SessionListSchema.parse(await res.json());
+}
+
+export async function getProfiles(): Promise<ProfileLaunchOption[]> {
+  const res = await fetch(`${browserBaseUrl()}/api/profiles`);
+  if (!res.ok) throw new Error(`GET /api/profiles: ${res.status}`);
+  return ProfileLaunchOptionsSchema.parse(await res.json());
 }
 
 export async function createSession(body: CreateSessionBody): Promise<CreateSessionResponse> {
@@ -53,7 +53,7 @@ export async function createSession(body: CreateSessionBody): Promise<CreateSess
     const text = await res.text();
     throw new Error(`POST /api/sessions: ${res.status} ${text}`);
   }
-  return res.json();
+  return CreateSessionResponseSchema.parse(await res.json());
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
@@ -64,5 +64,5 @@ export async function deleteSession(sessionId: string): Promise<void> {
 export async function getTmuxSessions(): Promise<TmuxSessionsResponse> {
   const res = await fetch(`${browserBaseUrl()}/api/tmux/sessions`);
   if (!res.ok) throw new Error(`GET /api/tmux/sessions: ${res.status}`);
-  return res.json();
+  return TmuxSessionsResponseSchema.parse(await res.json());
 }

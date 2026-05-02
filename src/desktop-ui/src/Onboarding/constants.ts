@@ -4,5 +4,5 @@
 export type AgentId = string;
 export type TunnelProvider = string;
 
-export const STEPS = ["Welcome", "Agents", "Channels", "Tunnel", "Confirm"] as const;
+export const STEPS = ["Welcome", "Quick Launch", "Channels", "Tunnel", "Confirm"] as const;
 export type OnboardingStep = (typeof STEPS)[number];

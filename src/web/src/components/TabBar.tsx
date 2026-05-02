@@ -12,6 +12,7 @@ interface TabBarProps {
   tmuxAvailable: boolean | null;
   tmuxSessions: string[];
   onAddCli: (tool: ToolType) => void;
+  onAddProfileCli: (profileId: string, launchTarget: string) => void;
   onAttachTmux: (name: string) => void;
   onRefreshTmux: () => void;
 }
@@ -24,6 +25,7 @@ export function TabBar({
   tmuxAvailable,
   tmuxSessions,
   onAddCli,
+  onAddProfileCli,
   onAttachTmux,
   onRefreshTmux,
 }: TabBarProps) {
@@ -110,6 +112,7 @@ export function TabBar({
             tmuxAvailable={tmuxAvailable}
             tmuxSessions={tmuxSessions}
             onAddCli={onAddCli}
+            onAddProfileCli={onAddProfileCli}
             onAttachTmux={onAttachTmux}
             onRefreshTmux={onRefreshTmux}
           />

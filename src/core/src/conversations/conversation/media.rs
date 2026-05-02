@@ -75,7 +75,7 @@ pub(super) async fn relocate_cached_media(
 
             let new_uri = format!("file://{}", dest.to_string_lossy());
             tracing::info!("[Conversation] relocate: {} -> {}", src.display(), dest.display());
-            rl.uri = new_uri.into();
+            rl.uri = new_uri;
         }
     }
 

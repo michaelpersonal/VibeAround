@@ -1,4 +1,6 @@
 import {
+  ChevronDown,
+  ChevronRight,
   Check,
   CircleDot,
   Loader2,
@@ -6,6 +8,14 @@ import {
   Rocket,
   X,
 } from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 import type { InstallTaskProgress, StepConfirmProps } from "../types";
 
@@ -14,22 +24,17 @@ export function StepConfirm({
   tunnels,
   pluginRegistry,
   enabledAgents,
-  defaultAgent,
   tunnelProvider,
   enabledChannels,
   isInstalling,
   installComplete,
   installTasks,
-  onCancel,
-  onComplete,
 }: StepConfirmProps) {
   if (isInstalling) {
     return (
       <InstallProgressView
         tasks={installTasks}
         complete={installComplete}
-        onCancel={onCancel}
-        onComplete={onComplete}
       />
     );
   }
@@ -38,10 +43,7 @@ export function StepConfirm({
   const tunnelLabels = new Map(tunnels.map((t) => [t.id, t.display_name]));
 
   const agentSummary = Array.from(enabledAgents)
-    .map(
-      (id) =>
-        `${agentLabels.get(id) ?? id}${id === defaultAgent ? " \u2605" : ""}`,
-    )
+    .map((id) => agentLabels.get(id) ?? id)
     .join(", ");
 
   const channelNames = Array.from(enabledChannels).map((id) => {
@@ -63,6 +65,11 @@ export function StepConfirm({
       </div>
 
       <div className="space-y-2 text-sm">
+        <SummaryRow
+          label="Quick Launch"
+          value={`${agentLabels.get("claude") ?? "Claude Code"} · Direct launch`}
+        />
+        <SummaryRow label="Workspace" value="~/.vibearound/workspaces" />
         <SummaryRow label="Agents" value={agentSummary} />
         <SummaryRow
           label="Channels"
@@ -94,13 +101,9 @@ export function StepConfirm({
 function InstallProgressView({
   tasks,
   complete,
-  onCancel,
-  onComplete,
 }: {
   tasks: InstallTaskProgress[];
   complete: boolean;
-  onCancel: () => void;
-  onComplete: () => void;
 }) {
   const hasErrors = tasks.some((t) => t.status === "error");
   const hasCancelled = tasks.some((t) => t.status === "cancelled");
@@ -138,33 +141,6 @@ function InstallProgressView({
           <TaskRow key={task.id} task={task} />
         ))}
       </div>
-
-      <div className="flex items-center justify-between pt-3 border-t border-border">
-        {!complete ? (
-          <>
-            <div />
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors"
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <div />
-            <button
-              onClick={onComplete}
-              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              <Rocket className="w-4 h-4" />
-              {hasErrors || hasCancelled
-                ? "Continue Anyway"
-                : "Open VibeAround"}
-            </button>
-          </>
-        )}
-      </div>
     </div>
   );
 }
@@ -174,39 +150,73 @@ function InstallProgressView({
 // ---------------------------------------------------------------------------
 
 function TaskRow({ task }: { task: InstallTaskProgress }) {
+  const [expanded, setExpanded] = useState(false);
+  const logs = task.logs ?? [];
+  const hasLogs = logs.length > 0;
+  const latest = task.message ?? logs.at(-1);
+
   return (
-    <div className="flex items-start gap-2.5 py-2 px-3 rounded-md bg-muted/30">
-      <div className="mt-0.5 shrink-0">
-        <StatusIcon status={task.status} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-sm ${
-              task.status === "done" || task.status === "skipped"
-                ? "text-muted-foreground"
-                : task.status === "error"
-                  ? "text-destructive"
-                  : "text-foreground"
-            }`}
-          >
-            {task.label}
-          </span>
+    <Collapsible
+      open={expanded}
+      onOpenChange={setExpanded}
+      className="rounded-md bg-muted/30"
+    >
+      <div className="flex items-start gap-2.5 py-2 px-3">
+        <div className="mt-0.5 shrink-0">
+          <StatusIcon status={task.status} />
         </div>
-        {task.message && (
-          <p
-            className={`text-[11px] mt-0.5 leading-relaxed truncate ${
-              task.status === "error"
-                ? "text-destructive/80"
-                : "text-muted-foreground"
-            }`}
-            title={task.message}
-          >
-            {task.message}
-          </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-sm ${
+                task.status === "done" || task.status === "skipped"
+                  ? "text-muted-foreground"
+                  : task.status === "error"
+                    ? "text-destructive"
+                    : "text-foreground"
+              }`}
+            >
+              {task.label}
+            </span>
+          </div>
+          {latest && (
+            <p
+              className={`text-[11px] mt-0.5 leading-relaxed truncate ${
+                task.status === "error"
+                  ? "text-destructive/80"
+                  : "text-muted-foreground"
+              }`}
+              title={latest}
+            >
+              {latest}
+            </p>
+          )}
+        </div>
+        {hasLogs && (
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label={expanded ? "Collapse install log" : "Expand install log"}
+            >
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
         )}
       </div>
-    </div>
+
+      <CollapsibleContent>
+        <pre className="mx-3 mb-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          {logs.join("\n\n")}
+        </pre>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

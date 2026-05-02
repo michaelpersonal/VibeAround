@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Star, Trash2, RefreshCw } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { WorkspacesResponseSchema, type WorkspacesResponse } from "@va/client";
+
+import { EmptyBlock, PageHeader, PageShell, StatusBanner } from "@/components/page";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { apiFetch } from "./lib/api";
-
-interface WorkspaceItem {
-  path: string;
-  is_default: boolean;
-  is_builtin: boolean;
-}
-
-interface WorkspacesResponse {
-  workspaces: WorkspaceItem[];
-  default_workspace: string;
-}
 
 export function Workspaces() {
   const [data, setData] = useState<WorkspacesResponse | null>(null);
@@ -26,7 +20,7 @@ export function Workspaces() {
     try {
       const res = await apiFetch(`/api/workspaces`);
       if (!res.ok) throw new Error(await res.text());
-      setData(await res.json());
+      setData(WorkspacesResponseSchema.parse(await res.json()));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -88,54 +82,64 @@ export function Workspaces() {
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold flex items-center gap-2">
-          <FolderOpen className="w-4 h-4 text-primary" />
-          Workspaces
-        </h2>
-        <button
-          onClick={fetchWorkspaces}
-          className="p-1 rounded hover:bg-accent transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 text-muted-foreground ${loading ? "animate-spin" : ""}`} />
-        </button>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        Workspace folders where agents build projects. The built-in workspace creates per-agent subdirectories automatically.
-      </p>
+    <PageShell>
+      <PageHeader
+        icon={<FolderOpen className="w-4 h-4 text-primary" />}
+        title="Workspaces"
+        description="Workspace folders where agents build projects. The built-in workspace is used when no default folder is selected."
+        actions={(
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={fetchWorkspaces}
+              title="Refresh"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-muted-foreground ${loading ? "animate-spin" : ""}`}
+              />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={addWorkspace}
+              disabled={adding}
+              className="text-xs font-semibold"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {adding ? "Selecting…" : "Add Folder"}
+            </Button>
+          </>
+        )}
+      />
 
       {error && (
-        <div className="text-xs text-destructive bg-destructive/10 rounded-md px-3 py-2">
-          {error}
-        </div>
+        <StatusBanner>{error}</StatusBanner>
       )}
 
-      {/* Workspace list */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         {data?.workspaces.map((ws, i) => (
           <div
             key={ws.path}
-            className={`flex items-center justify-between px-4 py-3 ${
+            className={`flex items-center justify-between px-3 py-2 ${
               i > 0 ? "border-t border-border" : ""
             }`}
           >
             <div className="flex items-center gap-3 min-w-0">
               <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
               <div className="min-w-0">
-                <div className="text-sm font-mono truncate">{ws.path}</div>
+                <div className="text-xs font-mono truncate">{ws.path}</div>
                 <div className="flex items-center gap-2 mt-0.5">
                   {ws.is_builtin && (
-                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                    <Badge className="text-[10px]">
                       Built-in
-                    </span>
+                    </Badge>
                   )}
                   {ws.is_default && (
-                    <span className="text-[10px] bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                    <Badge className="text-[10px] bg-amber-500/10 text-amber-600">
                       <Star className="w-2.5 h-2.5" /> Default
-                    </span>
+                    </Badge>
                   )}
                 </div>
               </div>
@@ -143,43 +147,38 @@ export function Workspaces() {
 
             <div className="flex items-center gap-1 shrink-0">
               {!ws.is_default && (
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setDefault(ws.path)}
-                  className="p-1.5 rounded hover:bg-accent transition-colors"
                   title="Set as default"
                 >
                   <Star className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
+                </Button>
               )}
               {!ws.is_builtin && (
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => removeWorkspace(ws.path)}
-                  className="p-1.5 rounded hover:bg-destructive/10 transition-colors"
+                  className="hover:bg-destructive/10"
                   title="Remove workspace"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
+                </Button>
               )}
             </div>
           </div>
         ))}
 
         {(!data || data.workspaces.length === 0) && !loading && (
-          <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+          <EmptyBlock>
             No workspaces configured
-          </div>
+          </EmptyBlock>
         )}
       </div>
-
-      {/* Add workspace */}
-      <button
-        onClick={addWorkspace}
-        disabled={adding}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-      >
-        <Plus className="w-3.5 h-3.5" />
-        {adding ? "Selecting…" : "Add Workspace Folder"}
-      </button>
-    </div>
+    </PageShell>
   );
 }

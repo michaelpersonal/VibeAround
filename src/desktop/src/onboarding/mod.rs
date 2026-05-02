@@ -8,10 +8,12 @@ mod plugin_install;
 mod plugin_session;
 
 pub use plugin_install::{
-    check_plugin_status, install_plugin,
+    __cmd__check_plugin_status,
     // Re-export Tauri macro-generated handler identifiers so generate_handler! works
     // when commands are referenced as `onboarding::install_plugin`.
-    __cmd__install_plugin, __cmd__check_plugin_status,
+    __cmd__install_plugin,
+    check_plugin_status,
+    install_plugin,
 };
 pub use plugin_session::PluginSession;
 
@@ -91,17 +93,10 @@ fn read_settings_value() -> Value {
 }
 
 fn write_settings_value(val: &Value) -> Result<(), String> {
-    let path = settings_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let pretty = serde_json::to_string_pretty(val).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty).map_err(|e| e.to_string())?;
     // settings.json holds bot tokens, webhook secrets, and tunnel credentials
     // in plain text (by design — the user edits this file directly). Ensure
     // other local users cannot read it. No-op on Windows.
-    common::auth::set_owner_only(&path).map_err(|e| e.to_string())?;
-    Ok(())
+    config::write_settings_json(val)
 }
 
 // ---------------------------------------------------------------------------
@@ -264,13 +259,16 @@ pub async fn plugin_auth_wait(
         .get_mut(&request.plugin_id)
         .ok_or_else(|| format!("auth session for '{}' not started", request.plugin_id))?;
 
-    let result: Value =
-        plugin_session::plugin_request(session, "login_qr_wait", request.params)
-            .await
-            .map_err(|e| e.to_string())?;
+    let result: Value = plugin_session::plugin_request(session, "login_qr_wait", request.params)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Shutdown on success
-    if result.get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if result
+        .get("connected")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         if let Some(mut session) = sessions.remove(&request.plugin_id) {
             plugin_session::shutdown_plugin_session(&mut session).await;
         }
@@ -305,12 +303,16 @@ pub async fn finish_onboarding<R: Runtime>(
     }
     drop(sessions);
 
+    let mut settings = read_settings_value();
+    if let Some(obj) = settings.as_object_mut() {
+        obj.insert("onboarded".into(), serde_json::json!(true));
+    }
+    write_settings_value(&settings)?;
+
     let _ = app.emit("onboarding-complete", ());
 
     if let Some(active) = app.try_state::<OnboardingActive>() {
-        let was_onboarding = active
-            .0
-            .swap(false, Ordering::Relaxed);
+        let was_onboarding = active.0.swap(false, Ordering::Relaxed);
         if was_onboarding {
             if let Some(gate) = app.try_state::<OnboardingGate>() {
                 gate.notify.notify_one();

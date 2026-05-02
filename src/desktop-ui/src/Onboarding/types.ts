@@ -1,4 +1,5 @@
 import type { AgentId, TunnelProvider } from "./constants";
+import type { ProfileSummary } from "../Launch/types";
 
 // Resource types — returned by Tauri commands
 export interface AgentSummary {
@@ -25,6 +26,7 @@ export interface Settings {
   workspaces?: string[];
   default_workspace?: string;
   default_agent?: string;
+  default_profiles?: Record<string, string>;
   enabled_agents?: string[];
   tunnel?: {
     provider?: string;
@@ -76,7 +78,12 @@ export interface DiscoveredChannelPlugin {
   capabilities: PluginCapabilities;
 }
 
-export type PluginInstallStatus = "not_installed" | "installing" | "installed_not_built" | "ready";
+export type PluginInstallStatus =
+  | "not_installed"
+  | "installing"
+  | "installed_not_built"
+  | "installed_not_discoverable"
+  | "ready";
 
 export type AuthFlowStatus = "idle" | "generating" | "waiting" | "connected" | "error";
 
@@ -90,10 +97,11 @@ export interface AuthFlowState {
 
 export interface StepAgentsProps {
   agents: AgentSummary[];
+  profiles: ProfileSummary[];
   enabled: Set<AgentId>;
-  defaultAgent: AgentId;
   onToggle: (id: AgentId) => void;
-  onSetDefault: (id: AgentId) => void;
+  onCreateProfile: () => void;
+  onDeleteProfile: (id: string) => void;
 }
 
 export interface StepChannelsProps {
@@ -129,15 +137,12 @@ export interface StepConfirmProps {
   tunnels: TunnelSummary[];
   pluginRegistry: PluginRegistryEntry[];
   enabledAgents: Set<AgentId>;
-  defaultAgent: AgentId;
   tunnelProvider: TunnelProvider;
   enabledChannels: Set<string>;
   // Install progress state
   isInstalling: boolean;
   installComplete: boolean;
   installTasks: InstallTaskProgress[];
-  onCancel: () => void;
-  onComplete: () => void;
 }
 
 export type InstallTaskStatus = "pending" | "running" | "done" | "error" | "skipped" | "cancelled";
@@ -147,6 +152,7 @@ export interface InstallTaskProgress {
   label: string;
   status: InstallTaskStatus;
   message?: string;
+  logs?: string[];
 }
 
 export interface InstallTaskInfo {

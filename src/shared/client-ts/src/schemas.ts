@@ -59,6 +59,111 @@ export const AgentsConfigSchema = z.object({
 });
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
 
+export const ProfileLaunchTargetSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  api_type: z.string(),
+});
+export type ProfileLaunchTarget = z.infer<typeof ProfileLaunchTargetSchema>;
+
+export const ProfileLaunchOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  provider: z.string(),
+  launch_targets: z.array(ProfileLaunchTargetSchema),
+});
+export type ProfileLaunchOption = z.infer<typeof ProfileLaunchOptionSchema>;
+export const ProfileLaunchOptionsSchema = z.array(ProfileLaunchOptionSchema);
+
+// ---------------------------------------------------------------------------
+// PTY sessions and workspace/previews endpoints.
+// ---------------------------------------------------------------------------
+
+export const PtyToolSchema = z.enum([
+  "generic",
+  "claude",
+  "codex",
+  "gemini",
+  "opencode",
+  "cursor",
+  "kiro",
+  "qwen-code",
+]);
+export type PtyTool = z.infer<typeof PtyToolSchema>;
+
+export const PtyRunStateSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("running"), tool: PtyToolSchema }),
+  z.object({
+    type: z.literal("exited"),
+    tool: PtyToolSchema,
+    exit_code: z.number(),
+  }),
+]);
+export type PtyRunState = z.infer<typeof PtyRunStateSchema>;
+
+export const SessionListItemSchema = z.object({
+  session_id: z.string(),
+  tool: PtyToolSchema,
+  status: PtyRunStateSchema,
+  created_at: z.number(),
+  project_path: z.string().nullable(),
+  profile_id: z.string().nullable(),
+  profile_label: z.string().nullable(),
+  launch_target: z.string().nullable(),
+  tmux_session: z.string().nullable(),
+});
+export type SessionListItem = z.infer<typeof SessionListItemSchema>;
+export const SessionListSchema = z.array(SessionListItemSchema);
+
+export const CreateSessionResponseSchema = z.object({
+  session_id: z.string(),
+  tool: PtyToolSchema,
+  created_at: z.number(),
+  project_path: z.string().nullable(),
+  profile_id: z.string().nullable(),
+  profile_label: z.string().nullable(),
+  launch_target: z.string().nullable(),
+});
+export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
+
+export const TmuxSessionsResponseSchema = z.object({
+  available: z.boolean(),
+  sessions: z.array(z.string()),
+});
+export type TmuxSessionsResponse = z.infer<typeof TmuxSessionsResponseSchema>;
+
+export const WorkspaceItemSchema = z.object({
+  path: z.string(),
+  is_default: z.boolean(),
+  is_builtin: z.boolean(),
+});
+export type WorkspaceItem = z.infer<typeof WorkspaceItemSchema>;
+
+export const WorkspacesResponseSchema = z.object({
+  workspaces: z.array(WorkspaceItemSchema),
+  default_workspace: z.string(),
+});
+export type WorkspacesResponse = z.infer<typeof WorkspacesResponseSchema>;
+
+export const PreviewSnapshotSchema = z.object({
+  slug: z.string(),
+  id: z.string(),
+  workspace: z.string(),
+  title: z.string(),
+  kind: z.enum(["server", "file"]),
+  port: z.number().nullable(),
+  share_key: z.string().nullable(),
+  share_expires_at_ms: z.number().nullable(),
+  created_at_ms: z.number(),
+});
+export type PreviewSnapshot = z.infer<typeof PreviewSnapshotSchema>;
+
+export const PreviewsResponseSchema = z.object({
+  previews: z.array(PreviewSnapshotSchema),
+  tunnel_url: z.string().nullable(),
+});
+export type PreviewsResponse = z.infer<typeof PreviewsResponseSchema>;
+
 // ---------------------------------------------------------------------------
 // Tunnel status — discriminated union matching Rust `TunnelStatus`
 // (`src/core/src/tunnels/status.rs`).

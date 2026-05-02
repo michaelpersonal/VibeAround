@@ -68,8 +68,19 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::SwitchAgent(kind) => {
-                conversation_manager.switch_agent(&route, kind.clone()).await;
-                send_system_text(plugin_host, &route, &format!("Switched to {}.", kind)).await;
+                match conversation_manager.switch_agent(&route, kind.clone()).await {
+                    Ok(agent_id) => {
+                        send_system_text(
+                            plugin_host,
+                            &route,
+                            &format!("Switched to {}.", agent_id),
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        send_system_text(plugin_host, &route, &format!("❌ {}", e)).await;
+                    }
+                }
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::SwitchProfile(profile) => {
@@ -113,23 +124,30 @@ pub(crate) async fn handle_prompt(
             SlashAction::PickupCode(code) => {
                 match crate::conversations::handover::pickup_codes::consume(&code) {
                     Some((agent_kind, session_id, cwd)) => {
-                        conversation_manager
+                        match conversation_manager
                             .prepare_pickup(
                                 route.clone(),
                                 agent_kind.clone(),
                                 session_id.clone(),
                                 Some(cwd),
                             )
-                            .await;
-                        send_system_text(
-                            plugin_host,
-                            &route,
-                            &format!(
-                                "Session pickup ready (agent={}, session={}).\nSend your next message to continue.",
-                                agent_kind, session_id
-                            ),
-                        )
-                        .await;
+                            .await
+                        {
+                            Ok(()) => {
+                                send_system_text(
+                                    plugin_host,
+                                    &route,
+                                    &format!(
+                                        "Session pickup ready (agent={}, session={}).\nSend your next message to continue.",
+                                        agent_kind, session_id
+                                    ),
+                                )
+                                .await;
+                            }
+                            Err(e) => {
+                                send_system_text(plugin_host, &route, &format!("❌ {}", e)).await;
+                            }
+                        }
                     }
                     None => {
                         send_system_text(
@@ -143,23 +161,30 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Pickup { agent_kind, session_id, cwd } => {
-                conversation_manager
+                match conversation_manager
                     .prepare_pickup(
                         route.clone(),
                         agent_kind.clone(),
                         session_id.clone(),
                         cwd.clone(),
                     )
-                    .await;
-                send_system_text(
-                    plugin_host,
-                    &route,
-                    &format!(
-                        "Session pickup ready (agent={}, session={}).\nSend your next message to continue.",
-                        agent_kind, session_id
-                    ),
-                )
-                .await;
+                    .await
+                {
+                    Ok(()) => {
+                        send_system_text(
+                            plugin_host,
+                            &route,
+                            &format!(
+                                "Session pickup ready (agent={}, session={}).\nSend your next message to continue.",
+                                agent_kind, session_id
+                            ),
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        send_system_text(plugin_host, &route, &format!("❌ {}", e)).await;
+                    }
+                }
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Pair(code) => {

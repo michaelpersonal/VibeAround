@@ -21,6 +21,9 @@
 
 use serde::Serialize;
 
+use common::previews::PreviewSnapshot;
+use common::pty::{PtyRunState, PtyTool};
+
 /// Per-agent display info returned under `AgentsConfig.agents`.
 ///
 /// # Wire format (JSON)
@@ -61,6 +64,21 @@ pub struct AgentInfo {
 pub struct AgentsConfig {
     pub agents: Vec<AgentInfo>,
     pub default_agent: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileLaunchTarget {
+    pub id: String,
+    pub label: String,
+    pub api_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileLaunchOption {
+    pub id: String,
+    pub label: String,
+    pub provider: String,
+    pub launch_targets: Vec<ProfileLaunchTarget>,
 }
 
 impl AgentInfo {
@@ -136,6 +154,61 @@ pub struct TunnelRuntime {
     pub url: Option<String>,
     pub status: common::tunnels::TunnelStatus,
     pub uptime_secs: u64,
+}
+
+/// One PTY session, as returned by `GET /api/sessions`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionListItem {
+    pub session_id: String,
+    pub tool: PtyTool,
+    pub status: PtyRunState,
+    pub created_at: u64,
+    pub project_path: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_label: Option<String>,
+    pub launch_target: Option<String>,
+    pub tmux_session: Option<String>,
+}
+
+/// `POST /api/sessions` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateSessionResponse {
+    pub session_id: String,
+    pub tool: PtyTool,
+    pub created_at: u64,
+    pub project_path: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_label: Option<String>,
+    pub launch_target: Option<String>,
+}
+
+/// `GET /api/tmux/sessions` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct TmuxSessionsResponse {
+    pub available: bool,
+    pub sessions: Vec<String>,
+}
+
+/// One workspace entry, as returned by `GET /api/workspaces`.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceItem {
+    pub path: String,
+    pub is_default: bool,
+    pub is_builtin: bool,
+}
+
+/// `GET /api/workspaces` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspacesResponse {
+    pub workspaces: Vec<WorkspaceItem>,
+    pub default_workspace: String,
+}
+
+/// `GET /api/previews` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct PreviewsResponse {
+    pub previews: Vec<PreviewSnapshot>,
+    pub tunnel_url: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

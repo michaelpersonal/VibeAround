@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-desktop:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu x64
+            runner: ubuntu-22.04
+            args: --bundles appimage,deb
+          - name: Windows x64
+            runner: windows-latest
+            args: --bundles nsis,msi
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src -> target
+
+      - name: Install frontend dependencies
+        run: bun install --cwd src --frozen-lockfile
+
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src/desktop
+          tauriScript: bun tauri
+          tagName: v__VERSION__
+          releaseName: VibeAround v__VERSION__
+          releaseBody: |
+            VibeAround desktop release.
+
+            Assets built by GitHub Actions:
+            - Windows x64 installer
+            - Ubuntu/Linux x64 packages
+
+            macOS DMG is built locally and attached separately.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

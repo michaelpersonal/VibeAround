@@ -1,7 +1,8 @@
 {
   "env": {
     "TERM": "xterm-256color",
-    "COLORTERM": "truecolor"
+    "COLORTERM": "truecolor",
+    "CLICOLOR": "1"
   },
   "themes": {
     "light": { "fg": "1e293b", "bg": "ffffff", "COLORFGBG": "0;15" },

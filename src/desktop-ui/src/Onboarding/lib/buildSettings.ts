@@ -4,7 +4,6 @@ import type { AgentId, TunnelProvider } from "../constants";
 export interface BuildSettingsInput {
   settings: Settings;
   enabledAgents: Set<AgentId>;
-  defaultAgent: AgentId;
   enabledChannels: Set<string>;
   channelConfigs: Record<string, Record<string, string>>;
   discoveredPlugins: DiscoveredChannelPlugin[];
@@ -24,7 +23,6 @@ export function buildSettings(input: BuildSettingsInput): Settings {
   const {
     settings,
     enabledAgents,
-    defaultAgent,
     enabledChannels,
     channelConfigs,
     discoveredPlugins,
@@ -38,8 +36,9 @@ export function buildSettings(input: BuildSettingsInput): Settings {
   const result: Settings = {
     ...settings,
     enabled_agents: Array.from(enabledAgents),
-    default_agent: defaultAgent,
   };
+  delete result.default_agent;
+  delete result.default_profiles;
 
   const channels: Record<string, Record<string, unknown>> = {};
   for (const id of enabledChannels) {

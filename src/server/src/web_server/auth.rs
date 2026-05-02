@@ -61,6 +61,28 @@ fn extract_token<B>(req: &Request<B>) -> Option<String> {
     None
 }
 
+fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim().to_ascii_lowercase();
+    if matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1") {
+        return true;
+    }
+
+    let without_port = host
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once(']').map(|(addr, _)| addr.to_string()))
+        .or_else(|| host.rsplit_once(':').map(|(addr, _)| addr.to_string()))
+        .unwrap_or(host);
+
+    matches!(without_port.as_str(), "localhost" | "127.0.0.1" | "::1")
+}
+
+fn is_loopback_dashboard<B>(req: &Request<B>) -> bool {
+    req.headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(is_loopback_host)
+}
+
 /// axum middleware that rejects any request lacking a valid token.
 pub async fn require_auth(
     State(state): State<AuthState>,
@@ -68,6 +90,10 @@ pub async fn require_auth(
     next: Next,
 ) -> Response {
     let is_mcp = req.uri().path() == "/mcp";
+    if is_loopback_dashboard(&req) {
+        return next.run(req).await;
+    }
+
     let token = extract_token(&req);
     let authorized = match token.as_deref() {
         Some(candidate) => state.0.matches(candidate),
@@ -190,5 +216,17 @@ mod tests {
         assert_eq!(url_decode("hello%20world"), "hello world");
         assert_eq!(url_decode("plain"), "plain");
         assert_eq!(url_decode("deadbeef"), "deadbeef");
+    }
+
+    #[test]
+    fn recognizes_loopback_hosts() {
+        assert!(is_loopback_host("localhost"));
+        assert!(is_loopback_host("localhost:12358"));
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("127.0.0.1:12358"));
+        assert!(is_loopback_host("::1"));
+        assert!(is_loopback_host("[::1]:12358"));
+        assert!(!is_loopback_host("example.com"));
+        assert!(!is_loopback_host("example.com:12358"));
     }
 }

@@ -22,6 +22,21 @@ pub(super) fn log_line(log_file: &Arc<Mutex<Option<std::fs::File>>>, line: &str)
     }
 }
 
+pub(super) fn output_excerpt(label: &str, output: &str) -> Option<String> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    const MAX_CHARS: usize = 4000;
+    let mut excerpt = trimmed.to_string();
+    if excerpt.len() > MAX_CHARS {
+        let start = excerpt.len().saturating_sub(MAX_CHARS);
+        excerpt = format!("...{}", &excerpt[start..]);
+    }
+    Some(format!("{label}:\n{excerpt}"))
+}
+
 pub(super) fn resolve_enabled_agents(settings: &Value, all_agents: &[&str]) -> Vec<String> {
     common::agent::resolve_enabled_agents(settings, all_agents)
 }

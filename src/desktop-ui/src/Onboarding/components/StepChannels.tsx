@@ -1,6 +1,12 @@
 import { MessageSquare, Download, ExternalLink, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+
 import type { StepChannelsProps, ConfigSchemaProperty } from "../types";
 
 /** Determine if a config field should use password input. */
@@ -144,39 +150,32 @@ function PluginCard({
         </div>
 
         {isReady ? (
-          <button
-            type="button"
-            onClick={() => onToggle(!enabled)}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
-              enabled ? "border-primary bg-primary" : "border-border bg-muted"
-            }`}
-            aria-pressed={enabled}
+          <Switch
+            checked={enabled}
+            onCheckedChange={onToggle}
             aria-label={`Toggle ${name}`}
-          >
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+          />
         ) : installing ? (
-          <button
+          <Button
             key="installing"
             disabled
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium opacity-50 shrink-0"
+            size="sm"
+            className="text-xs"
           >
             <Loader2 className="w-3 h-3 animate-spin" />
             Installing…
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
             key="install"
+            type="button"
             onClick={onInstall}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 shrink-0"
+            size="sm"
+            className="text-xs"
           >
             <Download className="w-3 h-3" />
             Install
-          </button>
+          </Button>
         )}
       </div>
 
@@ -192,12 +191,12 @@ function PluginCard({
                     {fieldLabel(key, prop)}
                     {required.has(key) && <span className="text-destructive ml-0.5">*</span>}
                   </span>
-                  <input
+                  <Input
                     type={isSecretField(key) ? "password" : "text"}
                     value={config[key] ?? prop.default ?? ""}
                     onChange={(e) => onConfigChange(key, e.target.value)}
                     placeholder={prop.default ?? ""}
-                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/40"
+                    className="mt-1"
                   />
                 </label>
               ))}
@@ -235,7 +234,7 @@ function AuthFlowSection({
   const isBusy = status === "generating" || status === "waiting";
 
   return (
-    <div className="rounded-lg border border-border p-3 space-y-3 bg-muted/20">
+    <Card className="space-y-3 bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-medium">QR Login</div>
@@ -245,39 +244,44 @@ function AuthFlowSection({
         </div>
         <div className="flex items-center gap-2">
           {isBusy && (
-            <button
+            <Button
+              type="button"
               onClick={onCancel}
-              className="px-3 py-2 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors"
+              variant="outline"
+              size="sm"
+              className="text-xs"
             >
               Cancel
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            type="button"
             onClick={onStart}
             disabled={isBusy}
-            className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+            size="sm"
+            className="text-xs"
           >
             {status === "connected"
               ? "Reconnect"
               : isBusy
                 ? "Waiting…"
                 : "Connect"}
-          </button>
+          </Button>
         </div>
       </div>
 
       {authState?.message && (
-        <div
-          className={`text-xs rounded-md px-3 py-2 ${
+        <Alert
+          variant={
             status === "error"
-              ? "bg-destructive/10 text-destructive"
+              ? "destructive"
               : status === "connected"
-                ? "bg-primary/10 text-primary"
-                : "bg-background text-muted-foreground"
-          }`}
+                ? "success"
+                : "default"
+          }
         >
           {authState.message}
-        </div>
+        </Alert>
       )}
 
       {authState?.qrCodeUrl && (
@@ -298,6 +302,6 @@ function AuthFlowSection({
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

@@ -12,6 +12,12 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Cached full environment from the user's login shell.
 static ENRICHED_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
 
@@ -32,6 +38,7 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
 /// Drop-in replacement for `tokio::process::Command::new(program)`.
 pub fn command(program: &str) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(program);
+    hide_windows_console(&mut cmd);
     cmd.env_clear();
     cmd.envs(enriched_env());
     cmd
@@ -40,10 +47,27 @@ pub fn command(program: &str) -> tokio::process::Command {
 /// Create a `std::process::Command` with the enriched environment pre-set.
 pub fn std_command(program: &str) -> std::process::Command {
     let mut cmd = std::process::Command::new(program);
+    hide_windows_console_std(&mut cmd);
     cmd.env_clear();
     cmd.envs(enriched_env());
     cmd
 }
+
+#[cfg(windows)]
+fn hide_windows_console(cmd: &mut tokio::process::Command) {
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_windows_console(_: &mut tokio::process::Command) {}
+
+#[cfg(windows)]
+fn hide_windows_console_std(cmd: &mut std::process::Command) {
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_windows_console_std(_: &mut std::process::Command) {}
 
 /// Directory where npm-based ACP agent packages are installed.
 /// Shared with channel plugins at `~/.vibearound/plugins/` so common

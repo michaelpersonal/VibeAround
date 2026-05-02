@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { AgentInfo } from "@/api/agents";
+import type { AgentInfo } from "@va/client";
 
 const TEXTAREA_MAX_HEIGHT_PX = 128;
 

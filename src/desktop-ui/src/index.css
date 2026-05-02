@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@source "../../shared/ui/src";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -76,7 +77,8 @@
 }
 
 @theme inline {
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
@@ -125,6 +127,11 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.35;
+    letter-spacing: 0;
+    font-synthesis: none;
   }
   * {
     @apply border-border outline-ring/50;
