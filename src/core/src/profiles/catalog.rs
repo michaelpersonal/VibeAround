@@ -112,11 +112,10 @@ pub struct FieldDef {
 pub struct RenderRules {
     #[serde(default)]
     pub env: std::collections::BTreeMap<String, String>,
-    /// Files to materialize alongside the env exports. Codex specifically
-    /// needs *both* `config.toml` (model_provider routing) and `auth.json`
-    /// (the API key — codex ignores `OPENAI_API_KEY` env when auth.json
-    /// is missing and instead drops into its ChatGPT OAuth welcome screen),
-    /// hence the array rather than a single optional file.
+    /// Files to materialize alongside the env exports for CLIs that support
+    /// an explicit config path. Codex profile launches intentionally avoid
+    /// CODEX_HOME and translate these settings into `-c` CLI overrides so the
+    /// user's own Codex home, skills, and plugins remain active.
     #[serde(default)]
     pub settings_files: Vec<SettingsFileTemplate>,
 }

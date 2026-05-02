@@ -1,6 +1,8 @@
 //! VibeAround server crate: Axum HTTP + WebSocket, and the unified ServerDaemon entry point.
 
+pub mod agent_hooks;
 pub mod api_types;
+pub mod openai_proxy;
 mod web_server;
 
 pub use web_server::run_web_server;
@@ -12,12 +14,12 @@ use anyhow::{anyhow, Context};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use common::conversations::ConversationManager;
 use common::auth::{self, AuthToken};
 use common::channels::{handle_channel_input, ChannelManager, WebChannelManager};
-use common::process::registry::{self as child_registry, ChildRegistry};
 use common::config;
+use common::conversations::ConversationManager;
 use common::plugins;
+use common::process::registry::{self as child_registry, ChildRegistry};
 use common::pty::{PtySessionManager, Registry, SessionId};
 use common::tunnels::{self, TunnelManager};
 
@@ -41,6 +43,7 @@ pub struct RunningDaemon {
     pub web_dispatch_handle: JoinHandle<()>,
     pub tunnels: Arc<TunnelManager>,
     pub pty: Registry,
+    pub hook_registry: Arc<agent_hooks::AgentHookRegistry>,
     /// Signal to the channel-input OS thread that it should unwind.
     /// Dropped sender = no wake-up ever, so we hold this for the life of
     /// `RunningDaemon` and signal on `stop()`.
@@ -57,8 +60,9 @@ impl RunningDaemon {
         self.channel_hub.shutdown_all().await;
 
         // Safety net: synchronously kill any child process still registered
-        // after the graceful shutdown paths ran. Covers cases where guardian
-        // tasks didn't get a chance to poll their drop handlers.
+        // after the graceful shutdown paths ran. Covers cases where the
+        // supervisor-driven cancel + kill_on_drop never got polled because
+        // the tokio runtime tore down first.
         ChildRegistry::global().kill_all();
 
         // Kill any user-started dev servers we were previewing so they don't
@@ -66,7 +70,8 @@ impl RunningDaemon {
         common::previews::shutdown_kill_all_ports();
 
         let pty_manager = PtySessionManager::from_registry(Arc::clone(&self.pty));
-        let session_ids: Vec<SessionId> = self.pty.iter().map(|entry| entry.key().clone()).collect();
+        let session_ids: Vec<SessionId> =
+            self.pty.iter().map(|entry| entry.key().clone()).collect();
         for session_id in session_ids {
             let _ = pty_manager.delete_session(session_id);
         }
@@ -122,7 +127,10 @@ impl ServerDaemon {
     }
 
     pub async fn start_background(&self, dist_path: PathBuf) -> anyhow::Result<RunningDaemon> {
-        if tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await.is_ok() {
+        if tokio::net::TcpStream::connect(("127.0.0.1", self.port))
+            .await
+            .is_ok()
+        {
             return Err(anyhow!(
                 "Port {} is already in use — another VibeAround instance may be running",
                 self.port
@@ -178,7 +186,9 @@ impl ServerDaemon {
         // `Arc<PluginHost>` transitively holds the input_tx — so we give it
         // an explicit shutdown `Notify` and hand the join handle back to
         // `RunningDaemon` so `stop()` can unwind cleanly.
-        let mut input_rx = channel_hub.take_input_rx().context("input_rx already taken")?;
+        let mut input_rx = channel_hub
+            .take_input_rx()
+            .context("input_rx already taken")?;
         let manager_for_input = Arc::clone(&conversation_manager);
         let plugin_host_for_input = channel_hub.plugin_host();
         let channel_input_shutdown = Arc::new(Notify::new());
@@ -226,11 +236,13 @@ impl ServerDaemon {
         }
 
         // 4. Web server (Axum)
+        let hook_registry = agent_hooks::AgentHookRegistry::new();
         let web_tunnels = Arc::clone(&tunnels);
         let web_pty = Arc::clone(&pty);
         let web_channel_hub = Arc::clone(&channel_hub);
         let web_channel_manager = Arc::clone(&web_channel);
         let web_auth_token = Arc::clone(&self.auth_token);
+        let web_hook_registry = Arc::clone(&hook_registry);
         let daemon_port = self.port;
         let web_handle = tokio::spawn(async move {
             run_web_server(
@@ -241,6 +253,7 @@ impl ServerDaemon {
                 web_channel_hub,
                 web_channel_manager,
                 web_auth_token,
+                web_hook_registry,
             )
             .await
             .map_err(|e| e.to_string())
@@ -256,6 +269,9 @@ impl ServerDaemon {
                     Ok((guard, url)) => {
                         tracing::info!(url = %url, "tunnel connected");
                         tunnel_manager.set_url(tunnel_provider.as_str(), &url);
+                        if let Some(id) = guard.registry_id() {
+                            tunnel_manager.set_registry_id(tunnel_provider.as_str(), id);
+                        }
                         guard.wait().await;
                     }
                     Err(e) => {
@@ -279,6 +295,7 @@ impl ServerDaemon {
             web_dispatch_handle,
             tunnels,
             pty,
+            hook_registry,
             channel_input_shutdown,
             channel_input_thread: Some(channel_input_thread),
         })

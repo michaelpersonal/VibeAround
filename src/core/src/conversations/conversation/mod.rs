@@ -58,6 +58,8 @@ pub struct Conversation {
     event_tx: broadcast::Sender<SystemEvent>,
     /// Cached available commands from the agent's `available_commands_update` notification.
     agent_commands: Mutex<serde_json::Value>,
+    /// Last IM session ID written to the append-only startup index.
+    logged_session_id: Mutex<Option<String>>,
     // --- Handover state (consumed once on next prompt) ---
     handover_resume_session_id: Mutex<Option<String>>,
     handover_cwd: Mutex<Option<String>>,
@@ -91,6 +93,7 @@ impl Conversation {
             started_at: unix_now_secs(),
             event_tx,
             agent_commands: Mutex::new(serde_json::Value::Array(vec![])),
+            logged_session_id: Mutex::new(None),
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
             suppress_replay: Mutex::new(None),
@@ -289,6 +292,7 @@ impl Conversation {
     /// Reset session — kill session but keep agent (start a fresh thread).
     pub async fn reset_session(&self) {
         *self.session_id.lock().await = None;
+        *self.logged_session_id.lock().await = None;
         let _ = self.change_tx.send(());
     }
 

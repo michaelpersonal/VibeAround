@@ -208,6 +208,7 @@ fn main() {
             profiles::profiles_get,
             profiles::profiles_upsert,
             profiles::profiles_delete,
+            profiles::profiles_reorder,
             profiles::profiles_launch,
             profiles::profiles_launch_default,
             profiles::profiles_launch_direct,
@@ -216,6 +217,7 @@ fn main() {
             profiles::launcher_set_default,
             profiles::launcher_set_terminal,
             profiles::launcher_set_workspace,
+            profiles::launcher_set_compatibility_proxy,
         ])
         .setup({
             let daemon = Arc::clone(&daemon);

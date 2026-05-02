@@ -32,28 +32,26 @@ pub fn materialize_env(
     rendered: RenderedProfile,
 ) -> anyhow::Result<Vec<(String, String)>> {
     let mut env = rendered.env.clone();
-    if rendered.settings_files.is_empty() {
+    let Some(target) = rendered.config_env else {
         return Ok(env);
-    }
+    };
 
     let dir = profile_state_dir(profile_id);
     for sf in &rendered.settings_files {
         materialize_settings_file(&dir, &sf.rel_path, &sf.contents)?;
     }
-    if let Some(target) = rendered.config_env {
-        match target {
-            ConfigEnvTarget::Directory(env_name) => {
-                env.push((env_name.to_string(), dir.to_string_lossy().into_owned()));
-            }
-            ConfigEnvTarget::File {
-                env: env_name,
-                rel_path,
-            } => {
-                env.push((
-                    env_name.to_string(),
-                    dir.join(rel_path).to_string_lossy().into_owned(),
-                ));
-            }
+    match target {
+        ConfigEnvTarget::Directory(env_name) => {
+            env.push((env_name.to_string(), dir.to_string_lossy().into_owned()));
+        }
+        ConfigEnvTarget::File {
+            env: env_name,
+            rel_path,
+        } => {
+            env.push((
+                env_name.to_string(),
+                dir.join(rel_path).to_string_lossy().into_owned(),
+            ));
         }
     }
 

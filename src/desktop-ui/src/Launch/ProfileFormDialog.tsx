@@ -27,6 +27,7 @@ import {
   arraysEqual,
   collectFields,
   pruneOverrides,
+  pruneProviderSettings,
   stripEmpty,
 } from "./profileFormHelpers";
 import type {
@@ -34,6 +35,7 @@ import type {
   AuthMode,
   CatalogEntry,
   ProfileDef,
+  ProviderSettings,
 } from "./types";
 import { isProviderApiKind } from "./types";
 
@@ -83,6 +85,9 @@ export function ProfileFormDialog({
   const [overrides, setOverrides] = useState<Record<string, ApiTypeOverrides>>(
     initial?.overrides ?? {},
   );
+  const [providerSettings, setProviderSettings] = useState<ProviderSettings>(
+    initial?.provider_settings ?? {},
+  );
   const [revealKeys, setRevealKeys] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -101,6 +106,16 @@ export function ProfileFormDialog({
       };
     }
     setOverrides(next);
+    setProviderSettings(
+      provider.id === "deepseek"
+        ? {
+            deepseek: {
+              thinking: true,
+              replay_reasoning_content: true,
+            },
+          }
+        : {},
+    );
   }, [provider, editing]);
 
   useEffect(() => {
@@ -162,6 +177,7 @@ export function ProfileFormDialog({
       api_types: selectedApiTypes,
       credentials: stripEmpty(credentials),
       overrides: pruneOverrides(overrides, selectedApiTypes, provider),
+      provider_settings: pruneProviderSettings(provider.id, providerSettings),
     };
 
     setSaving(true);
@@ -209,6 +225,8 @@ export function ProfileFormDialog({
               setCredentials={setCredentials}
               overrides={overrides}
               setOverrides={setOverrides}
+              providerSettings={providerSettings}
+              setProviderSettings={setProviderSettings}
               revealKeys={revealKeys}
               setRevealKeys={setRevealKeys}
             />

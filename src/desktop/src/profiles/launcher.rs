@@ -15,15 +15,13 @@
 //!   two are not interchangeable.
 
 use std::collections::HashMap;
-use std::path::Path;
-#[cfg(target_os = "windows")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context};
 
 #[cfg(target_os = "windows")]
 use common::auth;
-use common::{profiles, resources};
+use common::{config, profiles, resources};
 
 use super::terminal::{self, TerminalChoice};
 use profiles::ProfileDef;
@@ -33,8 +31,11 @@ use profiles::ProfileDef;
 // ---------------------------------------------------------------------------
 
 pub fn launch(profile: &ProfileDef, launch_target: &str) -> anyhow::Result<()> {
-    let rendered = profiles::runtime::render_for_launch(profile, launch_target)?;
-    do_launch(profile, launch_target, rendered)
+    let launch_id = uuid::Uuid::new_v4().to_string();
+    let mut rendered = profiles::runtime::render_for_launch(profile, launch_target)?;
+    apply_compatibility_proxy(profile, launch_target, &launch_id, &mut rendered)?;
+    apply_codex_session_hooks(profile, launch_target, &launch_id, &mut rendered)?;
+    do_launch(profile, launch_target, &launch_id, rendered)
 }
 
 /// "Direct" launch — open a Terminal running the named coding CLI with NO
@@ -57,10 +58,17 @@ pub fn launch_direct(agent_id: &str) -> anyhow::Result<()> {
 fn do_launch(
     profile: &ProfileDef,
     launch_target: &str,
+    launch_id: &str,
     rendered: profiles::render::RenderedProfile,
 ) -> anyhow::Result<()> {
     let command_args = rendered.command_args.clone();
-    let env = profiles::runtime::materialize_env(&profile.id, rendered)?;
+    let mut env = profiles::runtime::materialize_env(&profile.id, rendered)?;
+    env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id.to_string()));
+    env.push(("VIBEAROUND_PROFILE_ID".to_string(), profile.id.clone()));
+    env.push((
+        "VIBEAROUND_LAUNCH_TARGET".to_string(),
+        launch_target.to_string(),
+    ));
     let agent_id = profiles::runtime::agent_id_for(launch_target)?;
     let agent = resources::agent_by_id(agent_id)
         .ok_or_else(|| anyhow!("agent '{}' not found in agents.json", agent_id))?;
@@ -68,6 +76,47 @@ fn do_launch(
     let workspace = terminal::resolve_workspace_preference()?;
 
     spawn_terminal(&env, &pty_command, &profile.label, &workspace)?;
+    Ok(())
+}
+
+fn apply_codex_session_hooks(
+    profile: &ProfileDef,
+    launch_target: &str,
+    launch_id: &str,
+    rendered: &mut profiles::render::RenderedProfile,
+) -> anyhow::Result<()> {
+    if launch_target != "codex" {
+        return Ok(());
+    }
+
+    let hook_helper = resolve_hook_helper_path()?;
+    push_codex_config_arg(&mut rendered.command_args, "features.codex_hooks", "true");
+
+    let command_for = |event: &str| {
+        build_hook_command(
+            &hook_helper,
+            event,
+            launch_id,
+            &profile.id,
+            launch_target,
+            &format!("http://127.0.0.1:{}", config::DEFAULT_PORT),
+        )
+    };
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        "hooks.SessionStart",
+        &codex_hook_config_value(Some("startup|resume|clear"), &command_for("SessionStart")),
+    );
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        "hooks.UserPromptSubmit",
+        &codex_hook_config_value(None, &command_for("UserPromptSubmit")),
+    );
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        "hooks.Stop",
+        &codex_hook_config_value(None, &command_for("Stop")),
+    );
     Ok(())
 }
 
@@ -83,6 +132,156 @@ fn command_with_args(command: &str, args: &[String]) -> String {
             arg.as_str(),
         )));
     }
+    out
+}
+
+fn apply_compatibility_proxy(
+    profile: &ProfileDef,
+    launch_target: &str,
+    launch_id: &str,
+    rendered: &mut profiles::render::RenderedProfile,
+) -> anyhow::Result<()> {
+    let mode = terminal::read_compatibility_proxy_preference();
+    if mode == terminal::CompatibilityProxyMode::Off {
+        return Ok(());
+    }
+
+    let provider = profiles::catalog::get(&profile.provider)
+        .ok_or_else(|| anyhow!("unknown provider '{}'", profile.provider))?;
+    let api_type = profiles::runtime::api_type_for_launch_target(profile, provider, launch_target)?;
+
+    if api_type != "openai-chat" || launch_target != "codex" {
+        return Ok(());
+    }
+
+    let proxy_base_url = format!(
+        "http://127.0.0.1:{}/va/openai-proxy/{}/{}/v1",
+        config::DEFAULT_PORT,
+        profile.id,
+        launch_id
+    );
+
+    let provider_key = format!("model_providers.{}", profile.provider);
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        &format!("{provider_key}.base_url"),
+        &toml_basic_string(&proxy_base_url),
+    );
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        &format!("{provider_key}.wire_api"),
+        &toml_basic_string("responses"),
+    );
+
+    Ok(())
+}
+
+fn push_codex_config_arg(args: &mut Vec<String>, key: &str, value: &str) {
+    args.push("-c".to_string());
+    args.push(format!("{key}={value}"));
+}
+
+fn codex_hook_config_value(matcher: Option<&str>, command: &str) -> String {
+    let mut fields = Vec::new();
+    if let Some(matcher) = matcher {
+        fields.push(format!("matcher = {}", toml_basic_string(matcher)));
+    }
+    fields.push(format!(
+        "hooks = [{{ type = \"command\", command = {}, timeout = 5 }}]",
+        toml_basic_string(command)
+    ));
+    format!("[{{ {} }}]", fields.join(", "))
+}
+
+fn build_hook_command(
+    hook_helper: &Path,
+    event: &str,
+    launch_id: &str,
+    profile_id: &str,
+    launch_target: &str,
+    server_url: &str,
+) -> String {
+    [
+        quote_hook_arg(&hook_helper.to_string_lossy()),
+        "--agent".to_string(),
+        quote_hook_arg("codex"),
+        "--event".to_string(),
+        quote_hook_arg(event),
+        "--launch-id".to_string(),
+        quote_hook_arg(launch_id),
+        "--profile-id".to_string(),
+        quote_hook_arg(profile_id),
+        "--launch-target".to_string(),
+        quote_hook_arg(launch_target),
+        "--server".to_string(),
+        quote_hook_arg(server_url),
+    ]
+    .join(" ")
+}
+
+fn resolve_hook_helper_path() -> anyhow::Result<PathBuf> {
+    let exe = std::env::current_exe().context("resolve current executable")?;
+    let exe_dir = exe
+        .parent()
+        .ok_or_else(|| anyhow!("current executable has no parent: {:?}", exe))?;
+    let sidecar_dir = if exe_dir.ends_with("deps") {
+        exe_dir.parent().unwrap_or(exe_dir)
+    } else {
+        exe_dir
+    };
+    let candidate = sidecar_dir.join(hook_helper_name());
+    if candidate.exists() {
+        return Ok(candidate);
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let dev_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/debug")
+            .join(hook_helper_name());
+        if dev_candidate.exists() {
+            return Ok(dev_candidate);
+        }
+    }
+
+    bail!(
+        "VibeAround hook helper not found next to executable: {:?}",
+        candidate
+    )
+}
+
+fn hook_helper_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "vibearound-hook.exe"
+    } else {
+        "vibearound-hook"
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn quote_hook_arg(value: &str) -> String {
+    shell_escape::unix::escape(std::borrow::Cow::Borrowed(value)).into_owned()
+}
+
+#[cfg(target_os = "windows")]
+fn quote_hook_arg(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\\\""))
+}
+
+fn toml_basic_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
     out
 }
 
@@ -188,8 +387,7 @@ fn spawn_terminal(
     // `Command` inherits all inheritable handles by default on Windows; if a
     // launched CLI keeps the daemon's TCP listener handle alive, VibeAround's
     // next start sees 127.0.0.1:12358 as occupied by a stale PID.
-    open::with(params, "cmd.exe")
-        .with_context(|| format!("open {}", choice.label()))?;
+    open::with(params, "cmd.exe").with_context(|| format!("open {}", choice.label()))?;
 
     Ok(())
 }
@@ -241,6 +439,7 @@ fn build_powershell_script(
     for (k, v) in env {
         out.push_str(&format!("$env:{} = '{}'\n", k, v.replace('\'', "''")));
     }
+    append_powershell_color_env(&mut out);
     out.push_str(&format!(
         "Set-Location -LiteralPath '{}'\n",
         escape_powershell_single_quoted(&workspace.to_string_lossy())
@@ -269,6 +468,7 @@ fn build_cmd_script(
     for (k, v) in env {
         out.push_str(&format!("set \"{}={}\"\r\n", k, v));
     }
+    append_cmd_color_env(&mut out);
     out.push_str(&format!(
         "cd /d \"{}\"\r\n",
         escape_cmd_quoted(&workspace.to_string_lossy())
@@ -316,6 +516,7 @@ fn build_bash_script(
         let escaped = shell_escape::unix::escape(std::borrow::Cow::Borrowed(v.as_str()));
         out.push_str(&format!("export {}={}\n", k, escaped));
     }
+    append_bash_color_env(&mut out);
 
     // `open -a Terminal foo.command` opens the new window with $TMPDIR as
     // CWD; surfacing the user in /private/var/folders/... is jarring. Move
@@ -328,14 +529,40 @@ fn build_bash_script(
     out
 }
 
+fn append_bash_color_env(out: &mut String) {
+    out.push_str("unset NO_COLOR\n");
+    out.push_str(
+        "if [ -z \"${TERM:-}\" ] || [ \"$TERM\" = \"dumb\" ]; then export TERM=xterm-256color; fi\n",
+    );
+    out.push_str("export COLORTERM=${COLORTERM:-truecolor}\n");
+    out.push_str("export CLICOLOR=${CLICOLOR:-1}\n");
+}
+
 #[cfg(target_os = "windows")]
 fn escape_powershell_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
 }
 
 #[cfg(target_os = "windows")]
+fn append_powershell_color_env(out: &mut String) {
+    out.push_str("Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue\n");
+    out.push_str("if (-not $env:TERM -or $env:TERM -eq 'dumb') { $env:TERM = 'xterm-256color' }\n");
+    out.push_str("if (-not $env:COLORTERM) { $env:COLORTERM = 'truecolor' }\n");
+    out.push_str("if (-not $env:CLICOLOR) { $env:CLICOLOR = '1' }\n");
+}
+
+#[cfg(target_os = "windows")]
 fn escape_cmd_quoted(value: &str) -> String {
     value.replace('"', "\"\"")
+}
+
+#[cfg(target_os = "windows")]
+fn append_cmd_color_env(out: &mut String) {
+    out.push_str("set \"NO_COLOR=\"\r\n");
+    out.push_str("if not defined TERM set \"TERM=xterm-256color\"\r\n");
+    out.push_str("if /I \"%TERM%\"==\"dumb\" set \"TERM=xterm-256color\"\r\n");
+    out.push_str("if not defined COLORTERM set \"COLORTERM=truecolor\"\r\n");
+    out.push_str("if not defined CLICOLOR set \"CLICOLOR=1\"\r\n");
 }
 
 #[cfg(target_os = "windows")]
@@ -381,5 +608,62 @@ mod tests {
     fn build_bash_script_cd_selected_workspace() {
         let script = build_bash_script(&[], "claude", "x", Path::new("/tmp/my project"));
         assert!(script.contains("cd '/tmp/my project'\n"));
+    }
+
+    #[test]
+    fn build_bash_script_restores_color_capable_terminal_env() {
+        let env = vec![("NO_COLOR".to_string(), "1".to_string())];
+        let script = build_bash_script(&env, "codex", "x", Path::new("/tmp/work dir"));
+
+        assert!(script.contains("export NO_COLOR=1\n"));
+        assert!(script.contains("unset NO_COLOR\n"));
+        assert!(script.contains("export TERM=xterm-256color"));
+        assert!(script.contains("export COLORTERM=${COLORTERM:-truecolor}\n"));
+        assert!(script.contains("export CLICOLOR=${CLICOLOR:-1}\n"));
+        assert!(script.find("export NO_COLOR=1").unwrap() < script.find("unset NO_COLOR").unwrap());
+    }
+
+    #[test]
+    fn appends_codex_config_args_for_proxy() {
+        let mut args = Vec::new();
+        push_codex_config_arg(
+            &mut args,
+            "model_providers.deepseek.base_url",
+            &toml_basic_string("http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1"),
+        );
+        push_codex_config_arg(
+            &mut args,
+            "model_providers.deepseek.wire_api",
+            &toml_basic_string("responses"),
+        );
+
+        assert_eq!(
+            args,
+            vec![
+                "-c".to_string(),
+                "model_providers.deepseek.base_url=\"http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1\"".to_string(),
+                "-c".to_string(),
+                "model_providers.deepseek.wire_api=\"responses\"".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn builds_codex_hook_config_arg_value() {
+        let command = build_hook_command(
+            Path::new("/Applications/VibeAround.app/Contents/MacOS/vibearound-hook"),
+            "SessionStart",
+            "launch-123",
+            "profile-456",
+            "codex",
+            "http://127.0.0.1:12358",
+        );
+        let value = codex_hook_config_value(Some("startup|resume|clear"), &command);
+
+        assert!(value.starts_with("[{ matcher = \"startup|resume|clear\""));
+        assert!(value.contains("hooks = [{ type = \"command\""));
+        assert!(value.contains("--launch-id launch-123"));
+        assert!(value.contains("--profile-id profile-456"));
+        assert!(value.ends_with(" }]"));
     }
 }

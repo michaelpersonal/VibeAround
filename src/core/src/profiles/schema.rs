@@ -36,6 +36,36 @@ pub struct ApiTypeOverrides {
     pub reasoning_effort: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ProviderSettings {
+    #[serde(default, skip_serializing_if = "DeepSeekProviderSettings::is_empty")]
+    pub deepseek: DeepSeekProviderSettings,
+}
+
+impl ProviderSettings {
+    pub fn is_empty(&self) -> bool {
+        self.deepseek.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DeepSeekProviderSettings {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub thinking: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub replay_reasoning_content: bool,
+}
+
+impl DeepSeekProviderSettings {
+    pub fn is_empty(&self) -> bool {
+        !self.thinking && !self.replay_reasoning_content
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileDef {
     pub id: String,
@@ -56,6 +86,11 @@ pub struct ProfileDef {
     /// inherit catalog defaults.
     #[serde(default)]
     pub overrides: BTreeMap<String, ApiTypeOverrides>,
+    /// Provider-specific behavior. Missing fields intentionally deserialize
+    /// to false/empty so existing profile JSON never gains new behavior
+    /// unless the user explicitly saves it.
+    #[serde(default, skip_serializing_if = "ProviderSettings::is_empty")]
+    pub provider_settings: ProviderSettings,
 }
 
 // ---------------------------------------------------------------------------
@@ -220,5 +255,25 @@ mod tests {
         assert!(!is_valid_id("../etc"));
         assert!(!is_valid_id("kimi.personal"));
         assert!(!is_valid_id(&"a".repeat(65)));
+    }
+
+    #[test]
+    fn provider_settings_default_to_empty_for_existing_profiles() {
+        let profile: ProfileDef = serde_json::from_str(
+            r#"{
+                "id": "deepseek",
+                "label": "DeepSeek",
+                "provider": "deepseek",
+                "auth_mode": "api_key",
+                "api_types": ["openai-chat"]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!profile.provider_settings.deepseek.thinking);
+        assert!(!profile.provider_settings.deepseek.replay_reasoning_content);
+
+        let body = serde_json::to_string(&profile).unwrap();
+        assert!(!body.contains("provider_settings"));
     }
 }

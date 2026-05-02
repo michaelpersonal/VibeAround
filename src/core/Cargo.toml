@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.5.2"
+version = "0.5.3"
 description = "VibeAround shared logic: PTY, session registry, tunnel, headless CLI, IM (Telegram)"
 edition = "2021"
 rust-version = "1.82"
@@ -22,6 +22,7 @@ chrono = "0.4"
 agent-client-protocol = "0.9"
 tokio-util = { version = "0.7", features = ["compat"] }
 anyhow = "1"
+thiserror = "1"
 toml = "0.8"
 toml_edit = "0.22"
 rand = "0.8"

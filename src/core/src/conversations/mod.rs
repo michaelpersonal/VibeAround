@@ -29,6 +29,7 @@ use self::conversation::Conversation;
 pub mod conversation;
 pub mod event;
 pub mod handover;
+mod session_log;
 
 pub use conversation::ConversationState;
 pub use event::SystemEvent;

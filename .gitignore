@@ -9,6 +9,7 @@ src/target/
 # Tauri (desktop app generated files)
 src/desktop/WixTools/
 src/desktop/gen/
+src/desktop/binaries/
 
 # VibeAround job workspace (if working_dir ever points into repo)
 projects.json

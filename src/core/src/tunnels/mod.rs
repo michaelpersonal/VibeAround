@@ -70,20 +70,45 @@ pub trait TunnelBackend: Send + Sync {
     ) -> Result<(TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>>;
 }
 
-/// Guard that keeps the tunnel alive. Await `wait()` until the tunnel is done (e.g. process exit or SDK session closed).
+/// Guard that keeps the tunnel alive. Await `wait()` until the tunnel
+/// is done (process exit / SDK session closed).
+///
+/// The process variant holds a `ChildRegistry` id rather than the `Child`
+/// directly. `wait()` pops the `Child` back out so `kill_on_drop` still
+/// fires on task abort (the `Child` lives in the stack frame of the
+/// wait-in-progress future), while daemon shutdown's
+/// `ChildRegistry::kill_all()` covers the case where the task is
+/// cancelled before even reaching `wait()`.
 pub enum TunnelGuard {
-    /// Tunnel is a child process (e.g. localtunnel, or ngrok CLI).
-    Process(tokio::process::Child),
+    /// Tunnel is a child process (e.g. localtunnel, cloudflared).
+    /// The child itself lives in the global `ChildRegistry`.
+    Process { registry_id: u64 },
     /// Tunnel is held by an SDK task (e.g. ngrok Rust SDK).
     Sdk(tokio::task::JoinHandle<()>),
 }
 
 impl TunnelGuard {
-    /// Wait until the tunnel exits. For Process, waits for the child; for Sdk, waits for the background task.
+    /// Registry id for the child, if any. Propagated to `TunnelManager`
+    /// so `kill()` can SIGKILL on demand even if the owning task is
+    /// cancelled before it reaches `wait()`.
+    pub fn registry_id(&self) -> Option<u64> {
+        match self {
+            TunnelGuard::Process { registry_id } => Some(*registry_id),
+            TunnelGuard::Sdk(_) => None,
+        }
+    }
+
+    /// Wait until the tunnel exits. For `Process`, pops the `Child` out
+    /// of the registry and awaits its exit; if the task is aborted
+    /// mid-wait, the `Child` is dropped and `kill_on_drop` fires.
     pub async fn wait(self) {
         match self {
-            TunnelGuard::Process(mut child) => {
-                let _ = child.wait().await;
+            TunnelGuard::Process { registry_id } => {
+                if let Some(mut child) = crate::process::registry::ChildRegistry::global()
+                    .remove(registry_id)
+                {
+                    let _ = child.wait().await;
+                }
             }
             TunnelGuard::Sdk(handle) => {
                 let _ = handle.await;

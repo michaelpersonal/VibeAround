@@ -28,9 +28,9 @@ pub struct RenderedProfile {
     pub settings_files: Vec<RenderedSettingsFile>,
     pub command_args: Vec<String>,
     /// Which env var should point at profile-local rendered config once
-    /// the launcher materializes any settings files. Some CLIs expect a
-    /// directory (`CODEX_HOME`), while others expect a concrete file path
-    /// (`OPENCODE_CONFIG`).
+    /// the launcher materializes any settings files. We avoid overriding
+    /// agent home dirs such as CODEX_HOME or CLAUDE_CONFIG_DIR so those CLIs
+    /// keep loading the user's own sessions, plugins, and skills.
     pub config_env: Option<ConfigEnvTarget>,
 }
 
@@ -160,8 +160,6 @@ fn pick_auth_mode<'a>(
 
 fn config_env_for(launch_target: &str) -> Option<ConfigEnvTarget> {
     match launch_target {
-        "claude" => Some(ConfigEnvTarget::Directory("CLAUDE_CONFIG_DIR")),
-        "codex" => Some(ConfigEnvTarget::Directory("CODEX_HOME")),
         "opencode" => Some(ConfigEnvTarget::File {
             env: "OPENCODE_CONFIG",
             rel_path: "opencode.json",
@@ -206,22 +204,50 @@ fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<
     }
 
     let mut args = Vec::new();
-    if let Some(model) = ctx.get("model").filter(|v| !v.is_empty()) {
+    let mut push_config = |key: &str, value: String| {
         args.push("-c".to_string());
-        args.push(format!("model={}", toml_string(model)));
+        args.push(format!("{key}={value}"));
+    };
+    if let Some(model) = ctx.get("model").filter(|v| !v.is_empty()) {
+        push_config("model", toml_string(model));
     }
     if let Some(provider_id) = ctx.get("provider_id").filter(|v| !v.is_empty()) {
-        args.push("-c".to_string());
-        args.push(format!("model_provider={}", toml_string(provider_id)));
+        push_config("model_provider", toml_string(provider_id));
     }
     if let Some(reasoning_effort) = ctx.get("reasoning_effort").filter(|v| !v.is_empty()) {
-        args.push("-c".to_string());
-        args.push(format!(
-            "model_reasoning_effort={}",
-            toml_string(reasoning_effort)
-        ));
+        push_config("model_reasoning_effort", toml_string(reasoning_effort));
     }
+
+    let Some(provider_id) = ctx.get("provider_id").filter(|v| !v.is_empty()) else {
+        return args;
+    };
+    let provider_key = format!("model_providers.{provider_id}");
+    if let Some(provider_label) = ctx.get("provider_label").filter(|v| !v.is_empty()) {
+        push_config(&format!("{provider_key}.name"), toml_string(provider_label));
+    }
+    if let Some(base_url) = ctx.get("base_url").filter(|v| !v.is_empty()) {
+        push_config(&format!("{provider_key}.base_url"), toml_string(base_url));
+    }
+    if let Some(api_type) = ctx.get("api_type").filter(|v| !v.is_empty()) {
+        let wire_api = if api_type == "openai-chat" {
+            "chat"
+        } else {
+            "responses"
+        };
+        push_config(&format!("{provider_key}.wire_api"), toml_string(wire_api));
+    }
+    push_config(
+        &format!("{provider_key}.env_key"),
+        toml_string(codex_provider_env_key(provider_id)),
+    );
     args
+}
+
+fn codex_provider_env_key(provider_id: &str) -> &'static str {
+    match provider_id {
+        "azure" => "AZURE_OPENAI_API_KEY",
+        _ => "OPENAI_API_KEY",
+    }
 }
 
 fn toml_string(s: &str) -> String {
@@ -456,6 +482,46 @@ mod tests {
         let c = ctx(&[("k", "sk-\"hi\"")]);
         // No filter → raw substitution (caller must trust the value).
         assert_eq!(substitute("X={{k}}", &c), "X=sk-\"hi\"");
+    }
+
+    #[test]
+    fn codex_launch_uses_cli_config_args_without_home_env() {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "sk-test".to_string());
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "openai-chat".to_string(),
+            ApiTypeOverrides {
+                base_url: Some("https://api.deepseek.com/v1".to_string()),
+                model: Some("deepseek-v4-flash".to_string()),
+                reasoning_effort: Some("high".to_string()),
+            },
+        );
+        let profile = ProfileDef {
+            id: "deepseek-test".to_string(),
+            label: "DeepSeek".to_string(),
+            provider: "deepseek".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        };
+        let rendered = render(
+            &profile,
+            "openai-chat",
+            "codex",
+            crate::profiles::catalog::get("deepseek").unwrap(),
+        )
+        .unwrap();
+        let args = rendered.command_args.join(" ");
+
+        assert!(rendered.config_env.is_none());
+        assert!(args.contains("model=\"deepseek-v4-flash\""));
+        assert!(args.contains("model_provider=\"deepseek\""));
+        assert!(args.contains("model_providers.deepseek.base_url=\"https://api.deepseek.com/v1\""));
+        assert!(args.contains("model_providers.deepseek.wire_api=\"chat\""));
+        assert!(args.contains("model_providers.deepseek.env_key=\"OPENAI_API_KEY\""));
     }
 
     #[test]

@@ -29,6 +29,37 @@ pub enum TerminalChoice {
     Cmd,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompatibilityProxyMode {
+    Auto,
+    On,
+    Off,
+}
+
+impl CompatibilityProxyMode {
+    #[cfg(test)]
+    pub const ALL: &'static [CompatibilityProxyMode] = &[Self::Auto, Self::On, Self::Off];
+
+    #[cfg(test)]
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::On => "on",
+            Self::Off => "off",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "auto" => Some(Self::Auto),
+            "on" => Some(Self::On),
+            "off" => Some(Self::Off),
+            _ => None,
+        }
+    }
+}
+
 impl TerminalChoice {
     #[cfg(target_os = "macos")]
     pub const ALL: &'static [TerminalChoice] = &[Self::Terminal, Self::Iterm2];
@@ -119,6 +150,8 @@ struct LauncherPrefsFile {
     terminal: Option<String>,
     #[serde(default)]
     workspace: Option<PathBuf>,
+    #[serde(default)]
+    compatibility_proxy: Option<CompatibilityProxyMode>,
 }
 
 fn prefs_path() -> PathBuf {
@@ -151,6 +184,18 @@ pub fn read_workspace_preference() -> Option<PathBuf> {
 pub fn write_workspace_preference(path: PathBuf) -> anyhow::Result<()> {
     let mut prefs = read_prefs_file();
     prefs.workspace = Some(canonical_workspace_path(&path)?);
+    write_prefs_file(&prefs)
+}
+
+pub fn read_compatibility_proxy_preference() -> CompatibilityProxyMode {
+    read_prefs_file()
+        .compatibility_proxy
+        .unwrap_or(CompatibilityProxyMode::Auto)
+}
+
+pub fn write_compatibility_proxy_preference(mode: CompatibilityProxyMode) -> anyhow::Result<()> {
+    let mut prefs = read_prefs_file();
+    prefs.compatibility_proxy = Some(mode);
     write_prefs_file(&prefs)
 }
 
@@ -244,5 +289,12 @@ mod tests {
     fn unknown_id_is_none() {
         assert!(TerminalChoice::from_id("warp").is_none());
         assert!(TerminalChoice::from_id("").is_none());
+    }
+
+    #[test]
+    fn compatibility_proxy_mode_ids_roundtrip() {
+        for mode in CompatibilityProxyMode::ALL {
+            assert_eq!(CompatibilityProxyMode::from_id(mode.id()), Some(*mode));
+        }
     }
 }

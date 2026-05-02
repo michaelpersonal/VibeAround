@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { AlertTriangle, MoreVertical, Pencil, Star, Trash2 } from "lucide-react";
+import type { Ref } from "react";
+import { AlertTriangle, GripVertical, MoreVertical, Pencil, Star, Trash2 } from "lucide-react";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,9 @@ interface Props {
   onDelete: () => Promise<void>;
   defaultAgent?: string;
   defaultProfiles?: Record<string, string>;
+  dragHandleRef?: Ref<HTMLDivElement>;
+  dragHandleDisabled?: boolean;
+  isDragging?: boolean;
 }
 
 export function ProfileCard({
@@ -31,9 +35,15 @@ export function ProfileCard({
   onDelete,
   defaultAgent,
   defaultProfiles = {},
+  dragHandleRef,
+  dragHandleDisabled = false,
+  isDragging = false,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
+  const isDefaultProfile = profile.launchTargets.some(
+    (target) => defaultAgent === target.id && defaultProfiles[target.id] === profile.id,
+  );
 
   async function handleLaunch(launchTarget: string) {
     setBusy(true);
@@ -64,8 +74,30 @@ export function ProfileCard({
   }
 
   return (
-    <div className="border border-border rounded-md p-2.5 flex flex-col gap-1.5 hover:border-primary/40 transition-colors">
+    <div
+      className={`border rounded-md p-2.5 flex flex-col gap-1.5 transition-colors ${
+        isDefaultProfile
+          ? "border-emerald-500/70 bg-emerald-500/5 hover:border-emerald-500"
+          : "border-border bg-card hover:border-primary/40"
+      } ${
+        isDragging ? "opacity-55" : ""
+      }`}
+    >
       <div className="flex items-start gap-2">
+        {dragHandleRef && (
+          <div
+            ref={dragHandleRef}
+            role="button"
+            tabIndex={0}
+            aria-label={`Reorder ${profile.label}`}
+            aria-disabled={dragHandleDisabled}
+            className={`mt-0.5 h-7 w-5 shrink-0 rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground inline-flex items-center justify-center select-none ${
+              dragHandleDisabled ? "cursor-not-allowed opacity-40" : "cursor-grab active:cursor-grabbing"
+            }`}
+          >
+            <GripVertical className="w-3.5 h-3.5" />
+          </div>
+        )}
         <BrandIcon
           kind="provider"
           id={profile.provider}

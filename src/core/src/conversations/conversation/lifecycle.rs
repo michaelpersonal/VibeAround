@@ -19,6 +19,9 @@ use crate::profiles;
 
 use super::super::event::SystemEvent;
 use super::super::handover::HandoverHandler;
+use super::super::session_log::{
+    append_im_session_started, is_im_route, ImSessionStartRecord, SessionStartSource,
+};
 use super::Conversation;
 
 impl Conversation {
@@ -171,6 +174,7 @@ impl Conversation {
 
         let ready = match Agent::spawn(
             agent_id,
+            &self.route,
             &workspace,
             resume_session_id.clone(),
             handler,
@@ -212,6 +216,12 @@ impl Conversation {
 
         if let Some(session_id) = resume_session_id.or(ready.startup_session_id) {
             *self.session_id.lock().await = Some(session_id.clone());
+            let source = if is_handover {
+                SessionStartSource::Pickup
+            } else {
+                SessionStartSource::StartupSession
+            };
+            self.log_im_session_started_once(&session_id, source).await;
             self.emit(SystemEvent::SessionReady {
                 route: self.route.clone(),
                 session_id,
@@ -246,6 +256,8 @@ impl Conversation {
             acp::Agent::new_session(&**agent, acp::NewSessionRequest::new(workspace)).await?;
         let session_id = response.session_id.to_string();
         *self.session_id.lock().await = Some(session_id.clone());
+        self.log_im_session_started_once(&session_id, SessionStartSource::NewSession)
+            .await;
 
         self.emit(SystemEvent::SessionReady {
             route: self.route.clone(),
@@ -271,10 +283,44 @@ impl Conversation {
         *self.initialize.lock().await = None;
         *self.failed.lock().await = None;
         *self.busy.lock().await = false;
+        *self.logged_session_id.lock().await = None;
         *self.handover_resume_session_id.lock().await = None;
         *self.handover_cwd.lock().await = None;
         *self.suppress_replay.lock().await = None;
         tracing::debug!(route = %self.route, "full_reset complete");
+    }
+
+    async fn log_im_session_started_once(&self, session_id: &str, source: SessionStartSource) {
+        if !is_im_route(&self.route) {
+            return;
+        }
+
+        {
+            let mut logged_session_id = self.logged_session_id.lock().await;
+            if logged_session_id.as_deref() == Some(session_id) {
+                return;
+            }
+            *logged_session_id = Some(session_id.to_string());
+        }
+
+        let state = self.state().await;
+        let record = ImSessionStartRecord::new(
+            self.route.clone(),
+            state.cli_kind,
+            state.profile,
+            session_id.to_string(),
+            source,
+            state.workspace,
+        );
+
+        if let Err(error) = append_im_session_started(record).await {
+            tracing::warn!(
+                route = %self.route,
+                session_id = %session_id,
+                error = %error,
+                "failed to append IM session startup index"
+            );
+        }
     }
 }
 

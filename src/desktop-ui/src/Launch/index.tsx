@@ -6,6 +6,9 @@
  * provider's API kinds.
  */
 import { useCallback, useEffect, useState } from "react";
+import { DragDropProvider } from "@dnd-kit/react";
+import type { DragEndEvent } from "@dnd-kit/react";
+import { isSortable, useSortable } from "@dnd-kit/react/sortable";
 import { Plus, Rocket } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,14 +21,15 @@ import {
   launchProfile,
   listCatalog,
   listProfiles,
+  reorderProfiles,
   setLauncherDefault,
   upsertProfile,
   type LauncherPreferences,
 } from "./api";
 import { DirectCards } from "./DirectCards";
+import { LaunchSettingsMenu } from "./LaunchSettingsMenu";
 import { ProfileCard } from "./ProfileCard";
 import { ProfileFormDialog } from "./ProfileFormDialog";
-import { TerminalPicker } from "./TerminalPicker";
 import { WorkspacePicker } from "./WorkspacePicker";
 import type { CatalogEntry, ProfileDef, ProfileSummary } from "./types";
 
@@ -39,6 +43,7 @@ export function Launch() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<ProfileDef | null>(null);
   const [directBusy, setDirectBusy] = useState(false);
+  const [reorderBusy, setReorderBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -147,6 +152,37 @@ export function Launch() {
     await refresh();
   }
 
+  function handleProfileDragEnd(event: DragEndEvent) {
+    if (event.canceled || reorderBusy) return;
+
+    const { source } = event.operation;
+    if (!isSortable(source) || source.initialIndex === source.index) return;
+
+    const previousProfiles = profiles;
+    const nextProfiles = moveProfileByIndex(profiles, source.initialIndex, source.index);
+    if (nextProfiles === profiles) return;
+
+    void persistProfileOrder(nextProfiles, previousProfiles);
+  }
+
+  async function persistProfileOrder(
+    nextProfiles: ProfileSummary[],
+    previousProfiles: ProfileSummary[],
+  ) {
+    setProfiles(nextProfiles);
+    setError(null);
+    setReorderBusy(true);
+    try {
+      await reorderProfiles(nextProfiles.map((profile) => profile.id));
+      setToast("Profile order updated");
+    } catch (e) {
+      setProfiles(previousProfiles);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReorderBusy(false);
+    }
+  }
+
   return (
     <div className="h-full flex flex-col">
       <header className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
@@ -167,8 +203,8 @@ export function Launch() {
           >
             <Plus className="w-3 h-3" /> New profile
           </Button>
-          <TerminalPicker />
-          <WorkspacePicker />
+          <WorkspacePicker prefs={prefs} onChange={setPrefs} />
+          <LaunchSettingsMenu prefs={prefs} onChange={setPrefs} />
           <Button
             type="button"
             onClick={handleLaunchDefault}
@@ -209,18 +245,22 @@ export function Launch() {
             {profiles.length === 0 ? (
               <EmptyState onNew={openNewEditor} />
             ) : (
-              profiles.map((p) => (
-                <ProfileCard
-                  key={p.id}
-                  profile={p}
-                  onLaunch={(t) => handleLaunch(p, t)}
-                  onSetDefault={(t) => handleSetDefault(t, p.id)}
-                  onEdit={() => handleEdit(p)}
-                  onDelete={() => handleDelete(p)}
-                  defaultAgent={prefs?.defaultAgent}
-                  defaultProfiles={prefs?.defaultProfiles}
-                />
-              ))
+              <DragDropProvider onDragEnd={handleProfileDragEnd}>
+                {profiles.map((p, index) => (
+                  <SortableProfileCard
+                    key={p.id}
+                    profile={p}
+                    index={index}
+                    reorderBusy={reorderBusy}
+                    onLaunch={(t) => handleLaunch(p, t)}
+                    onSetDefault={(t) => handleSetDefault(t, p.id)}
+                    onEdit={() => handleEdit(p)}
+                    onDelete={() => handleDelete(p)}
+                    defaultAgent={prefs?.defaultAgent}
+                    defaultProfiles={prefs?.defaultProfiles}
+                  />
+                ))}
+              </DragDropProvider>
             )}
           </>
         )}
@@ -237,6 +277,77 @@ export function Launch() {
           onSave={handleSave}
         />
       )}
+    </div>
+  );
+}
+
+function moveProfileByIndex(
+  profiles: ProfileSummary[],
+  fromIndex: number,
+  toIndex: number,
+): ProfileSummary[] {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= profiles.length ||
+    toIndex >= profiles.length
+  ) {
+    return profiles;
+  }
+
+  const next = [...profiles];
+  const [dragged] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, dragged);
+  return next;
+}
+
+function SortableProfileCard({
+  profile,
+  index,
+  reorderBusy,
+  onLaunch,
+  onSetDefault,
+  onEdit,
+  onDelete,
+  defaultAgent,
+  defaultProfiles,
+}: {
+  profile: ProfileSummary;
+  index: number;
+  reorderBusy: boolean;
+  onLaunch: (launchTarget: string) => Promise<void>;
+  onSetDefault: (launchTarget: string) => Promise<void>;
+  onEdit: () => void;
+  onDelete: () => Promise<void>;
+  defaultAgent?: string;
+  defaultProfiles?: Record<string, string>;
+}) {
+  const { ref, handleRef, isDragging, isDropTarget } = useSortable({
+    id: profile.id,
+    index,
+    disabled: reorderBusy,
+  });
+
+  return (
+    <div
+      ref={ref}
+      className={`relative rounded-md transition-shadow ${
+        isDropTarget ? "ring-2 ring-primary/35 shadow-lg shadow-primary/20" : ""
+      }`}
+    >
+      <ProfileCard
+        profile={profile}
+        onLaunch={onLaunch}
+        onSetDefault={onSetDefault}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        defaultAgent={defaultAgent}
+        defaultProfiles={defaultProfiles}
+        dragHandleRef={handleRef}
+        dragHandleDisabled={reorderBusy}
+        isDragging={isDragging}
+      />
     </div>
   );
 }

@@ -23,14 +23,18 @@
 //!
 //! ## Module layout
 //!
-//! - `runtime`    — `StdioPluginRuntime` + `spawn()` (child process lifecycle)
-//! - `bridge`     — `run_acp_plugin_bridge` (the ACP IO driver thread)
+//! - `runtime`    — `StdioPluginRuntime` (output-sender shell; no lifecycle)
+//! - `bridge`     — `run_acp_plugin_bridge` (the ACP IO driver, cancel-aware)
 //! - `forwarder`  — `ChannelOutput` → ACP Client-method dispatch
 //! - `handler`    — `PluginAgentHandler` (`acp::Agent` impl consumed by the plugin)
+//!
+//! Spawn + supervise lives in `process::Supervisor`; the ACP bridge is
+//! wrapped into a `ProcessBridge` by `channels::plugin_bridge`.
 
 mod bridge;
 mod forwarder;
 mod handler;
 mod runtime;
 
+pub(crate) use bridge::run_acp_plugin_bridge;
 pub use runtime::StdioPluginRuntime;

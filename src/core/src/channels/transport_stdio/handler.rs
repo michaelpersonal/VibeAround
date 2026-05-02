@@ -8,6 +8,8 @@ use tokio::sync::mpsc;
 
 use agent_client_protocol as acp;
 
+use crate::proc_log;
+use crate::process::registry::ProcessKind;
 use crate::routing::RouteKey;
 use crate::conversations::ConversationManager;
 
@@ -51,7 +53,12 @@ impl acp::Agent for PluginAgentHandler {
         &self,
         _args: acp::InitializeRequest,
     ) -> acp::Result<acp::InitializeResponse> {
-        tracing::info!("[{}] ACP initialize from plugin", self.channel_kind);
+        proc_log!(
+            info,
+            kind = ProcessKind::ChannelPlugin,
+            label = self.channel_kind,
+            event = "acp_initialize"
+        );
 
         let mut meta = serde_json::Map::new();
         meta.insert("channelKind".into(), self.channel_kind.clone().into());
@@ -146,7 +153,13 @@ impl acp::Agent for PluginAgentHandler {
         let chat_id = args.session_id.to_string();
         let route = RouteKey::new(&self.channel_kind, &chat_id);
 
-        tracing::info!("[{}] ACP cancel chat_id={}", self.channel_kind, chat_id);
+        proc_log!(
+            info,
+            kind = ProcessKind::ChannelPlugin,
+            label = self.channel_kind,
+            event = "acp_cancel",
+            chat_id = %chat_id
+        );
 
         let _ = self.input_tx.send(ChannelInput::Stop { route });
         Ok(())
@@ -223,7 +236,13 @@ impl acp::Agent for PluginAgentHandler {
 
     async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
         let method = args.method.to_string();
-        tracing::info!("[{}] unhandled ext_method: {}", self.channel_kind, method);
+        proc_log!(
+            info,
+            kind = ProcessKind::ChannelPlugin,
+            label = self.channel_kind,
+            event = "unhandled_ext_method",
+            method = %method
+        );
         Err(acp::Error::method_not_found())
     }
 }
