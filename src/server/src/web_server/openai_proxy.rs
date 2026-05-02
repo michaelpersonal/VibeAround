@@ -25,10 +25,39 @@ type UpstreamByteStream =
 
 pub async fn responses_handler(
     State(state): State<AppState>,
+    Path((profile_id, launch_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(original_request): Json<Value>,
+) -> Response {
+    responses_handler_inner(
+        state,
+        profile_id,
+        Some(launch_id),
+        headers,
+        original_request,
+    )
+    .await
+}
+
+pub async fn legacy_responses_handler(
+    State(state): State<AppState>,
     Path(profile_id): Path<String>,
     headers: HeaderMap,
     Json(original_request): Json<Value>,
 ) -> Response {
+    responses_handler_inner(state, profile_id, None, headers, original_request).await
+}
+
+async fn responses_handler_inner(
+    state: AppState,
+    profile_id: String,
+    launch_id: Option<String>,
+    headers: HeaderMap,
+    original_request: Value,
+) -> Response {
+    let codex_session_state = launch_id
+        .as_deref()
+        .and_then(|launch_id| state.hook_registry.codex_session_for_launch(launch_id));
     let upstream_endpoint = match upstream_chat_completions_endpoint(&profile_id) {
         Ok(endpoint) => endpoint,
         Err((status, message)) => return json_error(status, &message),
@@ -42,6 +71,13 @@ pub async fn responses_handler(
     provider_adapter.prepare_chat_request(&original_request, &mut chat_request);
     log_proxy_exchange(
         &profile_id,
+        launch_id.as_deref(),
+        codex_session_state
+            .as_ref()
+            .and_then(|state| state.session_id.as_deref()),
+        codex_session_state
+            .as_ref()
+            .and_then(|state| state.last_turn_id.as_deref()),
         &upstream_endpoint.url,
         &original_request,
         &chat_request,
@@ -93,9 +129,12 @@ pub async fn responses_handler(
         }
         tracing::info!(
             target: "server::web_server::openai_proxy",
-            profile_id = %profile_id,
-            upstream_status = %upstream.status(),
-            "OpenAI proxy upstream returned error"
+        profile_id = %profile_id,
+        launch_id = ?launch_id,
+        codex_session_id = ?codex_session_state.as_ref().and_then(|state| state.session_id.as_deref()),
+        codex_turn_id = ?codex_session_state.as_ref().and_then(|state| state.last_turn_id.as_deref()),
+        upstream_status = %upstream.status(),
+        "OpenAI proxy upstream returned error"
         );
         return upstream_error_response(upstream).await;
     }
@@ -103,6 +142,9 @@ pub async fn responses_handler(
     tracing::info!(
         target: "server::web_server::openai_proxy",
         profile_id = %profile_id,
+        launch_id = ?launch_id,
+        codex_session_id = ?codex_session_state.as_ref().and_then(|state| state.session_id.as_deref()),
+        codex_turn_id = ?codex_session_state.as_ref().and_then(|state| state.last_turn_id.as_deref()),
         upstream_status = %upstream.status(),
         stream = stream,
         "OpenAI proxy upstream accepted request"
@@ -185,6 +227,9 @@ fn authorization_header(headers: &HeaderMap) -> Option<String> {
 
 fn log_proxy_exchange(
     profile_id: &str,
+    launch_id: Option<&str>,
+    codex_session_id: Option<&str>,
+    codex_turn_id: Option<&str>,
     upstream_url: &str,
     original_request: &Value,
     chat_request: &Value,
@@ -197,6 +242,9 @@ fn log_proxy_exchange(
     tracing::info!(
         target: "server::web_server::openai_proxy",
         profile_id = %profile_id,
+        launch_id = ?launch_id,
+        codex_session_id = ?codex_session_id,
+        codex_turn_id = ?codex_turn_id,
         upstream = %redacted_url(upstream_url),
         responses_model = %string_field(original_request, "model"),
         responses_stream = bool_field(original_request, "stream"),
@@ -211,8 +259,11 @@ fn log_proxy_exchange(
     );
     if proxy_debug_enabled() {
         eprintln!(
-            "[va-openai-proxy] transform profile={} upstream={} responses(model={}, stream={}, tools={:?}, tool_choice={}) -> chat(model={}, stream={}, tools={:?}, tool_choice={}, messages={})",
+            "[va-openai-proxy] transform profile={} launch={:?} session={:?} turn={:?} upstream={} responses(model={}, stream={}, tools={:?}, tool_choice={}) -> chat(model={}, stream={}, tools={:?}, tool_choice={}, messages={})",
             profile_id,
+            launch_id,
+            codex_session_id,
+            codex_turn_id,
             redacted_url(upstream_url),
             string_field(original_request, "model"),
             bool_field(original_request, "stream"),

@@ -230,8 +230,12 @@ pub async fn run_web_server(
         // localhost-only and requires the CLI's Authorization header; it
         // never reads API keys from profile files.
         .route(
-            "/openai-proxy/{profile_id}/v1/responses",
+            "/openai-proxy/{profile_id}/{launch_id}/v1/responses",
             post(openai_proxy::responses_handler),
+        )
+        .route(
+            "/openai-proxy/{profile_id}/v1/responses",
+            post(openai_proxy::legacy_responses_handler),
         )
         .route(
             "/internal/agent-hooks/codex",

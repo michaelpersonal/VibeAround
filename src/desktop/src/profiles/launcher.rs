@@ -32,9 +32,11 @@ use profiles::ProfileDef;
 // ---------------------------------------------------------------------------
 
 pub fn launch(profile: &ProfileDef, launch_target: &str) -> anyhow::Result<()> {
+    let launch_id = uuid::Uuid::new_v4().to_string();
     let mut rendered = profiles::runtime::render_for_launch(profile, launch_target)?;
-    apply_compatibility_proxy(profile, launch_target, &mut rendered)?;
-    do_launch(profile, launch_target, rendered)
+    apply_compatibility_proxy(profile, launch_target, &launch_id, &mut rendered)?;
+    apply_codex_session_hooks(profile, launch_target, &launch_id, &mut rendered)?;
+    do_launch(profile, launch_target, &launch_id, rendered)
 }
 
 /// "Direct" launch — open a Terminal running the named coding CLI with NO
@@ -57,14 +59,12 @@ pub fn launch_direct(agent_id: &str) -> anyhow::Result<()> {
 fn do_launch(
     profile: &ProfileDef,
     launch_target: &str,
-    mut rendered: profiles::render::RenderedProfile,
+    launch_id: &str,
+    rendered: profiles::render::RenderedProfile,
 ) -> anyhow::Result<()> {
-    let launch_id = uuid::Uuid::new_v4().to_string();
-    apply_codex_session_hooks(profile, launch_target, &launch_id, &mut rendered)?;
-
     let command_args = rendered.command_args.clone();
     let mut env = profiles::runtime::materialize_env(&profile.id, rendered)?;
-    env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id));
+    env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id.to_string()));
     env.push(("VIBEAROUND_PROFILE_ID".to_string(), profile.id.clone()));
     env.push((
         "VIBEAROUND_LAUNCH_TARGET".to_string(),
@@ -124,6 +124,7 @@ fn command_with_args(command: &str, args: &[String]) -> String {
 fn apply_compatibility_proxy(
     profile: &ProfileDef,
     launch_target: &str,
+    launch_id: &str,
     rendered: &mut profiles::render::RenderedProfile,
 ) -> anyhow::Result<()> {
     let mode = terminal::read_compatibility_proxy_preference();
@@ -140,9 +141,10 @@ fn apply_compatibility_proxy(
     }
 
     let proxy_base_url = format!(
-        "http://127.0.0.1:{}/va/openai-proxy/{}/v1",
+        "http://127.0.0.1:{}/va/openai-proxy/{}/{}/v1",
         config::DEFAULT_PORT,
-        profile.id
+        profile.id,
+        launch_id
     );
 
     for settings_file in &mut rendered.settings_files {
@@ -643,13 +645,13 @@ requires_openai_auth = true
         let output = rewrite_codex_config_for_proxy(
             input,
             "deepseek",
-            "http://127.0.0.1:12358/va/openai-proxy/deepseek/v1",
+            "http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1",
         )
         .unwrap();
 
-        assert!(
-            output.contains(r#"base_url = "http://127.0.0.1:12358/va/openai-proxy/deepseek/v1""#)
-        );
+        assert!(output.contains(
+            r#"base_url = "http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1""#
+        ));
         assert!(output.contains(r#"wire_api = "responses""#));
     }
 

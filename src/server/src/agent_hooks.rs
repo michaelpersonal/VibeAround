@@ -103,6 +103,12 @@ impl AgentHookRegistry {
 
         append_codex_event_jsonl(&envelope, &state);
     }
+
+    pub fn codex_session_for_launch(&self, launch_id: &str) -> Option<CodexSessionState> {
+        self.codex_sessions_by_launch
+            .get(launch_id)
+            .map(|entry| entry.value().clone())
+    }
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {
