@@ -627,9 +627,11 @@ async fn models_handler_inner(
             );
         }
     };
-    let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::OK);
-    let body = match upstream.bytes().await {
-        Ok(bytes) => Body::from(bytes),
+    if !upstream.status().is_success() {
+        return upstream_error_response(upstream).await;
+    }
+    let bytes = match upstream.bytes().await {
+        Ok(bytes) => bytes,
         Err(e) => {
             return json_error(
                 StatusCode::BAD_GATEWAY,
@@ -637,11 +639,29 @@ async fn models_handler_inner(
             );
         }
     };
-    Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(body)
-        .unwrap_or_else(|_| json_error(StatusCode::BAD_GATEWAY, "failed to build models response"))
+    let upstream_json: Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return Json(json!({ "models": [] })).into_response(),
+    };
+    let models: Vec<Value> = upstream_json
+        .get("data")
+        .and_then(Value::as_array)
+        .unwrap_or(&Vec::new())
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id").and_then(Value::as_str)?;
+            let display = id.rsplit('/').next().unwrap_or(id);
+            Some(json!({
+                "id": id,
+                "slug": id,
+                "display_name": display,
+                "supported_reasoning_levels": [
+                    { "level": "medium", "effort": 50 }
+                ]
+            }))
+        })
+        .collect();
+    Json(json!({ "models": models })).into_response()
 }
 
 fn upstream_base_url(profile_id: &str) -> Result<String, (StatusCode, String)> {
