@@ -657,7 +657,7 @@ async fn models_handler_inner(
                 "slug": id,
                 "display_name": display,
                 "supported_reasoning_levels": [
-                    { "level": "medium", "effort": 50 }
+                    { "effort": "medium", "description": "Balanced reasoning" }
                 ]
             }))
         })
