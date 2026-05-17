@@ -653,6 +653,7 @@ async fn models_handler_inner(
             let display = id.rsplit('/').next().unwrap_or(id);
             Some(json!({
                 "id": id,
+                "object": "model",
                 "slug": id,
                 "display_name": display,
                 "supported_reasoning_levels": [
