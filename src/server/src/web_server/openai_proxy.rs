@@ -73,6 +73,16 @@ async fn responses_handler_inner(
         Ok(request) => request,
         Err(error) => return transform_error(error),
     };
+    if let Some(profile) = schema::load(&profile_id).map(normalize_legacy_profile) {
+        if let Some(model_name) = chat_request.get("model").and_then(Value::as_str) {
+            if let Some(full_id) = profile.model_aliases.get(model_name) {
+                chat_request.as_object_mut().unwrap().insert(
+                    "model".to_string(),
+                    Value::String(full_id.clone()),
+                );
+            }
+        }
+    }
     let mut provider_adapter = upstream_endpoint.provider_adapter;
     provider_adapter.prepare_chat_request(&original_request, &mut chat_request);
     log_proxy_exchange(
@@ -603,6 +613,11 @@ async fn models_handler_inner(
     profile_id: String,
     headers: HeaderMap,
 ) -> Response {
+    let profile = schema::load(&profile_id).map(normalize_legacy_profile);
+    let aliases = profile.as_ref().map(|p| &p.model_aliases);
+    let reverse_aliases: std::collections::HashMap<String, String> = aliases
+        .map(|a| a.iter().map(|(k, v)| (v.clone(), k.clone())).collect())
+        .unwrap_or_default();
     let base_url = match upstream_base_url(&profile_id) {
         Ok(url) => url,
         Err((status, message)) => return json_error(status, &message),
@@ -649,11 +664,12 @@ async fn models_handler_inner(
         .unwrap_or(&Vec::new())
         .iter()
         .filter_map(|m| {
-            let id = m.get("id").and_then(Value::as_str)?;
-            let display = id.rsplit('/').next().unwrap_or(id);
+            let raw_id = m.get("id").and_then(Value::as_str)?;
+            let slug = reverse_aliases.get(raw_id).map(|s| s.as_str()).unwrap_or(raw_id);
+            let display = slug.rsplit('/').next().unwrap_or(slug);
             Some(json!({
-                "id": id,
-                "slug": id,
+                "id": slug,
+                "slug": slug,
                 "object": "model",
                 "display_name": display,
                 "description": format!("{} via VibeAround", display),

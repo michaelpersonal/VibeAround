@@ -86,6 +86,11 @@ pub struct ProfileDef {
     /// inherit catalog defaults.
     #[serde(default)]
     pub overrides: BTreeMap<String, ApiTypeOverrides>,
+    /// Short slug → full model id mapping. The /v1/models endpoint returns
+    /// short slugs; the chat proxy resolves them back to full ids before
+    /// forwarding to the upstream provider.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub model_aliases: BTreeMap<String, String>,
     /// Provider-specific behavior. Missing fields intentionally deserialize
     /// to false/empty so existing profile JSON never gains new behavior
     /// unless the user explicitly saves it.
