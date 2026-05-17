@@ -682,7 +682,7 @@ async fn models_handler_inner(
                 "additional_speed_tiers": ["fast"],
                 "service_tiers": [],
                 "experimental_supported_tools": [],
-                "availability_nux": {},
+                "availability_nux": { "message": "" },
                 "base_instructions": "",
                 "upgrade": null
             }))
