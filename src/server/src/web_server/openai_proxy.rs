@@ -662,7 +662,14 @@ async fn models_handler_inner(
             }))
         })
         .collect();
-    Json(json!({ "models": models })).into_response()
+    let body_bytes = serde_json::to_vec(&json!({ "models": models })).unwrap_or_default();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_LENGTH, body_bytes.len())
+        .header(header::CONNECTION, "keep-alive")
+        .body(Body::from(body_bytes))
+        .unwrap_or_else(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed to build models response"))
 }
 
 fn upstream_base_url(profile_id: &str) -> Result<String, (StatusCode, String)> {
