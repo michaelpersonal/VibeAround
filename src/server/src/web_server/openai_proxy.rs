@@ -653,12 +653,38 @@ async fn models_handler_inner(
             let display = id.rsplit('/').next().unwrap_or(id);
             Some(json!({
                 "id": id,
-                "object": "model",
                 "slug": id,
+                "object": "model",
                 "display_name": display,
+                "description": format!("{} via VibeAround", display),
+                "shell_type": "shell_command",
+                "visibility": "list",
+                "supported_in_api": true,
+                "priority": 0,
+                "context_window": 128000,
+                "max_context_window": 128000,
+                "effective_context_window_percent": 95,
+                "default_reasoning_level": "medium",
                 "supported_reasoning_levels": [
                     { "effort": "medium", "description": "Balanced reasoning" }
-                ]
+                ],
+                "supports_parallel_tool_calls": true,
+                "supports_image_detail_original": false,
+                "supports_reasoning_summaries": false,
+                "supports_search_tool": false,
+                "default_reasoning_summary": "none",
+                "default_verbosity": "low",
+                "support_verbosity": false,
+                "apply_patch_tool_type": "freeform",
+                "web_search_tool_type": "text_and_image",
+                "input_modalities": ["text"],
+                "truncation_policy": { "mode": "tokens", "limit": 10000 },
+                "additional_speed_tiers": ["fast"],
+                "service_tiers": [],
+                "experimental_supported_tools": [],
+                "availability_nux": {},
+                "base_instructions": "",
+                "upgrade": null
             }))
         })
         .collect();
