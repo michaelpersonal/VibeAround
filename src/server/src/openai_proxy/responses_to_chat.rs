@@ -147,6 +147,7 @@ fn normalize_chat_messages(messages: Vec<Value>) -> Vec<Value> {
     }
 
     rest = merge_consecutive_tool_calls(rest);
+    rest = enforce_tool_call_adjacency(rest);
 
     if system_parts.is_empty() {
         return rest;
@@ -409,6 +410,69 @@ fn merge_consecutive_tool_calls(messages: Vec<Value>) -> Vec<Value> {
 
     merged
 }
+/// Ensures that every  message carrying  is immediately
+/// followed by the matching  response messages.  Codex sometimes injects
+/// non-tool messages (user warnings, goal context) between a function_call and
+/// its function_call_output; DeepSeek rejects these as invalid.  This pass
+/// relocates any such interlopers to just after the tool-response block.
+fn enforce_tool_call_adjacency(messages: Vec<Value>) -> Vec<Value> {
+    let mut result: Vec<Value> = Vec::new();
+    let mut i = 0;
+    let len = messages.len();
+
+    while i < len {
+        let role = messages[i].get("role").and_then(Value::as_str);
+        let has_tool_calls = messages[i]
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|tc| !tc.is_empty());
+
+        if role == Some("assistant") && has_tool_calls {
+            let tc_ids: Vec<String> = messages[i]
+                .get("tool_calls")
+                .and_then(Value::as_array)
+                .unwrap()
+                .iter()
+                .filter_map(|tc| tc.get("id").and_then(Value::as_str).map(String::from))
+                .collect();
+
+            result.push(messages[i].clone());
+            i += 1;
+
+            let mut tool_responses: Vec<Value> = Vec::new();
+            let mut displaced: Vec<Value> = Vec::new();
+            let mut satisfied = std::collections::HashSet::<String>::new();
+
+            while i < len && satisfied.len() < tc_ids.len() {
+                let msg_role = messages[i].get("role").and_then(Value::as_str);
+                if msg_role == Some("tool") {
+                    if let Some(tcid) = messages[i].get("tool_call_id").and_then(Value::as_str) {
+                        if tc_ids.contains(&tcid.to_string()) {
+                            satisfied.insert(tcid.to_string());
+                            tool_responses.push(messages[i].clone());
+                            i += 1;
+                            continue;
+                        }
+                    }
+                    displaced.push(messages[i].clone());
+                    i += 1;
+                } else {
+                    displaced.push(messages[i].clone());
+                    i += 1;
+                }
+            }
+
+            result.extend(tool_responses);
+            result.extend(displaced);
+        } else {
+            result.push(messages[i].clone());
+            i += 1;
+        }
+    }
+
+    result
+}
+
 
 fn value_to_text(value: &Value) -> Option<String> {
     match value {

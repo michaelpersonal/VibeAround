@@ -581,6 +581,112 @@ impl SseMapState {
     }
 }
 
+
+pub async fn models_handler_with_launch(
+    State(state): State<AppState>,
+    Path((profile_id, _launch_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    models_handler_inner(state, profile_id, headers).await
+}
+
+pub async fn models_handler(
+    State(state): State<AppState>,
+    Path(profile_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    models_handler_inner(state, profile_id, headers).await
+}
+
+async fn models_handler_inner(
+    state: AppState,
+    profile_id: String,
+    headers: HeaderMap,
+) -> Response {
+    let base_url = match upstream_base_url(&profile_id) {
+        Ok(url) => url,
+        Err((status, message)) => return json_error(status, &message),
+    };
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let auth = match authorization_header(&headers) {
+        Some(auth) => auth,
+        None => return json_error(StatusCode::UNAUTHORIZED, "missing Authorization header"),
+    };
+    let upstream = match state
+        .preview_client
+        .get(&url)
+        .header(reqwest::header::AUTHORIZATION, auth)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(e) => {
+            return json_error(
+                StatusCode::BAD_GATEWAY,
+                &format!("failed to reach upstream models endpoint: {e}"),
+            );
+        }
+    };
+    let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::OK);
+    let body = match upstream.bytes().await {
+        Ok(bytes) => Body::from(bytes),
+        Err(e) => {
+            return json_error(
+                StatusCode::BAD_GATEWAY,
+                &format!("failed to read upstream models response: {e}"),
+            );
+        }
+    };
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .unwrap_or_else(|_| json_error(StatusCode::BAD_GATEWAY, "failed to build models response"))
+}
+
+fn upstream_base_url(profile_id: &str) -> Result<String, (StatusCode, String)> {
+    let profile = schema::load(profile_id)
+        .map(normalize_legacy_profile)
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("profile '{profile_id}' not found"),
+            )
+        })?;
+    let provider = catalog::get(&profile.provider).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("unknown provider '{}'", profile.provider),
+        )
+    })?;
+    let endpoint = provider
+        .endpoints
+        .iter()
+        .find(|endpoint| endpoint.api_type == "openai-chat")
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "profile '{}' does not expose an OpenAI-compatible chat endpoint",
+                    profile.id
+                ),
+            )
+        })?;
+    let base_url = profile
+        .overrides
+        .get("openai-chat")
+        .and_then(|overrides| overrides.base_url.clone())
+        .unwrap_or_else(|| endpoint.default_base_url.clone());
+    let base_url = base_url.trim_end_matches('/').to_string();
+    if base_url.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("profile '{}' has no chat base URL", profile_id),
+        ));
+    }
+    Ok(base_url)
+}
+
 fn find_sse_frame_end(buffer: &[u8]) -> Option<usize> {
     if buffer.len() < 2 {
         return None;

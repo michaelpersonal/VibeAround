@@ -22,6 +22,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
+use axum::extract::DefaultBodyLimit;
 
 use crate::agent_hooks::AgentHookRegistry;
 use common::auth::AuthToken;
@@ -237,6 +238,15 @@ pub async fn run_web_server(
             "/openai-proxy/{profile_id}/v1/responses",
             post(openai_proxy::legacy_responses_handler),
         )
+        .route(
+            "/openai-proxy/{profile_id}/v1/models",
+            get(openai_proxy::models_handler),
+        )
+        .route(
+            "/openai-proxy/{profile_id}/{launch_id}/v1/models",
+            get(openai_proxy::models_handler_with_launch),
+        )
+        .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
         .route(
             "/internal/agent-hooks/codex",
             post(agent_hooks::codex_hook_handler),
