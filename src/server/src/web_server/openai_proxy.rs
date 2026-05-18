@@ -495,6 +495,9 @@ fn map_chat_sse_to_responses(
         buffer: Vec::new(),
         queue: VecDeque::new(),
         done: false,
+        finish_reason: None,
+        has_tool_calls: false,
+        text_len: 0,
     };
 
     futures_util::stream::unfold(state, |mut state| async move {
@@ -531,6 +534,9 @@ struct SseMapState {
     buffer: Vec<u8>,
     queue: VecDeque<Result<Bytes, io::Error>>,
     done: bool,
+    finish_reason: Option<String>,
+    has_tool_calls: bool,
+    text_len: usize,
 }
 
 impl SseMapState {
@@ -557,6 +563,13 @@ impl SseMapState {
             return;
         }
         if data.trim() == "[DONE]" {
+            tracing::info!(
+                target: "server::web_server::openai_proxy",
+                finish_reason = ?self.finish_reason,
+                has_tool_calls = self.has_tool_calls,
+                text_len = self.text_len,
+                "stream completed"
+            );
             self.queue
                 .push_back(Ok(Bytes::from_static(b"data: [DONE]\n\n")));
             self.done = true;
@@ -570,6 +583,19 @@ impl SseMapState {
                 return;
             }
         };
+        if let Some(choice) = chunk.get("choices").and_then(Value::as_array).and_then(|c| c.first()) {
+            if let Some(fr) = choice.get("finish_reason").and_then(Value::as_str) {
+                self.finish_reason = Some(fr.to_string());
+            }
+            if let Some(delta) = choice.get("delta").and_then(Value::as_object) {
+                if delta.get("tool_calls").and_then(Value::as_array).is_some_and(|tc| !tc.is_empty()) {
+                    self.has_tool_calls = true;
+                }
+                if let Some(content) = delta.get("content").and_then(Value::as_str) {
+                    self.text_len += content.len();
+                }
+            }
+        }
         self.provider_adapter.observe_chat_stream_chunk(&chunk);
         let events = match self.mapper.push_chat_chunk(&chunk) {
             Ok(events) => events,
