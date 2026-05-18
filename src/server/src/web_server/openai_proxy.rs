@@ -22,6 +22,22 @@ use crate::openai_proxy::{
 
 use super::AppState;
 
+fn proxy_verbose_enabled() -> bool {
+    std::env::var_os("VIBEAROUND_PROXY_VERBOSE").is_some()
+}
+
+fn dump_to_file(label: &str, data: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/vibearound-proxy-dump.jsonl")
+    {
+        let ts = chrono::Utc::now().format("%H:%M:%S%.3f");
+        let _ = writeln!(f, "[{ts}] {label}: {data}");
+    }
+}
+
 type UpstreamByteStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static>>;
 
@@ -85,6 +101,14 @@ async fn responses_handler_inner(
     }
     let mut provider_adapter = upstream_endpoint.provider_adapter;
     provider_adapter.prepare_chat_request(&original_request, &mut chat_request);
+    if chat_request.get("tools").and_then(Value::as_array).is_some_and(|t| !t.is_empty()) {
+        if let Some(obj) = chat_request.as_object_mut() {
+            obj.insert(
+                "chat_template_kwargs".to_string(),
+                json!({ "enable_thinking": false }),
+            );
+        }
+    }
     log_proxy_exchange(
         &profile_id,
         launch_id.as_deref(),
@@ -107,6 +131,10 @@ async fn responses_handler_inner(
         None => return json_error(StatusCode::UNAUTHORIZED, "missing Authorization header"),
     };
 
+    if proxy_verbose_enabled() {
+        dump_to_file("RESPONSES_REQ", &serde_json::to_string(&original_request).unwrap_or_default());
+        dump_to_file("CHAT_REQ", &serde_json::to_string(&chat_request).unwrap_or_default());
+    }
     let body = match serde_json::to_vec(&chat_request) {
         Ok(body) => body,
         Err(e) => {
@@ -576,6 +604,9 @@ impl SseMapState {
             return;
         }
 
+        if proxy_verbose_enabled() {
+            dump_to_file("MLX_SSE_RAW", &data);
+        }
         let chunk = match serde_json::from_str::<Value>(&data) {
             Ok(value) => value,
             Err(e) => {
@@ -605,6 +636,9 @@ impl SseMapState {
             }
         };
         for event in events {
+            if proxy_verbose_enabled() {
+                dump_to_file("RESPONSES_EVENT", &format!("event={} data={}", event.event, event.data));
+            }
             self.queue
                 .push_back(Ok(Bytes::from(encode_sse_event(&event.event, &event.data))));
         }

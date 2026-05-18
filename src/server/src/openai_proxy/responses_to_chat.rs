@@ -651,4 +651,72 @@ mod tests {
 
         assert!(error.to_string().contains("previous_response_id"));
     }
+
+    #[test]
+    fn tool_call_roundtrip_responses_to_chat_to_responses() {
+        use crate::openai_proxy::chat_to_responses::chat_completion_to_response;
+
+        // 1. Codex sends a Responses request with a function tool
+        let responses_request = json!({
+            "model": "qwen27b",
+            "input": [{ "role": "user", "content": "Run pwd" }],
+            "tools": [{
+                "type": "function",
+                "name": "exec_command",
+                "description": "Execute a shell command",
+                "parameters": {
+                    "type": "object",
+                    "properties": { "cmd": { "type": "string" } },
+                    "required": ["cmd"]
+                }
+            }],
+            "stream": false
+        });
+
+        // 2. Proxy translates to Chat Completions
+        let chat_request = responses_to_chat_request(responses_request.clone()).unwrap();
+        assert_eq!(chat_request["tools"][0]["function"]["name"], "exec_command");
+        assert_eq!(chat_request["model"], "qwen27b");
+
+        // 3. MLX responds with a tool_call
+        let chat_response = json!({
+            "id": "chatcmpl-abc123",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "qwen27b",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_xyz",
+                        "type": "function",
+                        "function": {
+                            "name": "exec_command",
+                            "arguments": "{\"cmd\":\"pwd\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        });
+
+        // 4. Proxy translates back to Responses format
+        let responses_response = chat_completion_to_response(
+            chat_response,
+            &responses_request,
+        ).unwrap();
+
+        // Verify the response contains a function_call output item
+        let output = responses_response["output"].as_array().unwrap();
+        let function_call = output.iter().find(|item| {
+            item["type"] == "function_call"
+        }).expect("response must contain a function_call item");
+
+        assert_eq!(function_call["name"], "exec_command");
+        assert_eq!(function_call["call_id"], "call_xyz");
+        assert_eq!(function_call["arguments"], "{\"cmd\":\"pwd\"}");
+        assert_eq!(responses_response["status"], "completed");
+    }
 }
